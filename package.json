@@ -1,0 +1,16 @@
+{
+  "name": "attendance-monitoring-web-app",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Web app for monitoring student attendance at events with QR check-in.",
+  "scripts": {
+    "dev": "concurrently -n server,client -c green,cyan \"npm run dev --prefix server\" \"npm run dev --prefix client\"",
+    "start": "npm run start --prefix server",
+    "build": "npm run build --prefix client",
+    "seed": "npm run seed --prefix server",
+    "install:all": "npm install && npm install --prefix server && npm install --prefix client"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
