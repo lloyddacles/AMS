@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db, get, all, run } from '../db.js';
+import { batch, get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
 
@@ -121,7 +121,7 @@ router.post('/bulk', async (req, res) => {
   }
 
   if (statements.length) {
-    await db.batch(statements, 'write');
+    await batch(statements, 'write');
   }
 
   res.status(201).json({ createdCount: created.length, skippedCount: skipped.length, created, skipped });

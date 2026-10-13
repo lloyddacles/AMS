@@ -10,28 +10,61 @@ if (isLocalFile) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
 }
 
-// Use the native client for local files and the pure-HTTP (web) client for
-// remote libSQL/Turso URLs, so serverless deploys don't need a native binding.
-const { createClient } = isLocalFile
-  ? await import('@libsql/client')
-  : await import('@libsql/client/web');
+// Lazily create the client so any failure surfaces as a normal request error
+// (instead of crashing the whole function at import time). Use the native
+// client for local files and the pure-HTTP (web) client for remote libSQL/Turso
+// URLs, so serverless deploys don't depend on a native binding. The import
+// specifiers are literal strings so the bundler can trace them.
+let clientPromise = null;
 
-export const db = createClient({ url: config.dbUrl, authToken: config.dbAuthToken });
+function createClientPromise() {
+  if (isLocalFile) {
+    return import('@libsql/client').then((m) =>
+      m.createClient({ url: config.dbUrl, authToken: config.dbAuthToken })
+    );
+  }
+  return import('@libsql/client/web').then((m) =>
+    m.createClient({ url: config.dbUrl, authToken: config.dbAuthToken })
+  );
+}
+
+function getClient() {
+  if (!clientPromise) clientPromise = createClientPromise();
+  return clientPromise;
+}
 
 // ---- Small helpers mirroring the previous better-sqlite3 API ----
 export async function get(sql, args = []) {
-  const rs = await db.execute({ sql, args });
+  const client = await getClient();
+  const rs = await client.execute({ sql, args });
   return rs.rows[0] ?? null;
 }
 
 export async function all(sql, args = []) {
-  const rs = await db.execute({ sql, args });
+  const client = await getClient();
+  const rs = await client.execute({ sql, args });
   return rs.rows;
 }
 
 export async function run(sql, args = []) {
-  const rs = await db.execute({ sql, args });
+  const client = await getClient();
+  const rs = await client.execute({ sql, args });
   return { changes: rs.rowsAffected, lastInsertRowid: Number(rs.lastInsertRowid ?? 0) };
+}
+
+export async function batch(statements, mode = 'write') {
+  const client = await getClient();
+  return client.batch(statements, mode);
+}
+
+async function execute(sql) {
+  const client = await getClient();
+  return client.execute(sql);
+}
+
+async function executeMultiple(sql) {
+  const client = await getClient();
+  return client.executeMultiple(sql);
 }
 
 const SCHEMA = `
@@ -92,7 +125,7 @@ const SCHEMA = `
 async function ensureColumn(table, column, ddl) {
   const cols = await all(`PRAGMA table_info(${table})`);
   if (!cols.some((c) => c.name === column)) {
-    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    await execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   }
 }
 
@@ -102,7 +135,7 @@ async function makeCheckinNullable() {
   const cols = await all('PRAGMA table_info(attendance)');
   const checkin = cols.find((c) => c.name === 'checked_in_at');
   if (!checkin || Number(checkin.notnull) === 0) return;
-  await db.executeMultiple(`
+  await executeMultiple(`
     CREATE TABLE attendance_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -132,13 +165,13 @@ export function initDb() {
 }
 
 async function doInit() {
-  await db.executeMultiple('PRAGMA foreign_keys = ON;');
-  await db.executeMultiple(SCHEMA);
+  await executeMultiple('PRAGMA foreign_keys = ON;');
+  await executeMultiple(SCHEMA);
   await ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
   await makeCheckinNullable();
-  await db.executeMultiple(`
+  await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
   `);
