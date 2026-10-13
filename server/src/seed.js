@@ -1,4 +1,4 @@
-import { db } from './db.js';
+import { get, all, run, initDb } from './db.js';
 import { newToken } from './services/users.js';
 import { ensureAdmin } from './bootstrap.js';
 
@@ -19,44 +19,42 @@ const EVENTS = [
   ['Intramurals Opening', 'Sports fest opening ceremony', 'Gymnasium', '2026-09-05', '07:30', '12:00'],
 ];
 
-function seed() {
-  ensureAdmin();
+async function seed() {
+  await initDb();
+  await ensureAdmin();
 
-  if (db.prepare('SELECT COUNT(*) AS c FROM students').get().c === 0) {
-    const insert = db.prepare(
-      `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, qr_token)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
+  if ((await get('SELECT COUNT(*) AS c FROM students')).c === 0) {
     for (const [no, first, last, course, year] of STUDENTS) {
       const email = `${first.toLowerCase()}.${last.toLowerCase().replace(/\s+/g, '')}@example.edu`;
-      insert.run(no, first, last, email, course, year, newToken());
+      await run(
+        `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, qr_token)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [no, first, last, email, course, year, newToken()]
+      );
     }
     console.log(`Seeded ${STUDENTS.length} students`);
   }
 
-  if (db.prepare('SELECT COUNT(*) AS c FROM events').get().c === 0) {
-    const insert = db.prepare(
-      `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    );
+  if ((await get('SELECT COUNT(*) AS c FROM events')).c === 0) {
     for (const [name, desc, loc, date, start, end] of EVENTS) {
-      insert.run(name, desc, loc, date, start, end, newToken());
+      await run(
+        `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [name, desc, loc, date, start, end, newToken()]
+      );
     }
     console.log(`Seeded ${EVENTS.length} events`);
   }
 
-  if (db.prepare('SELECT COUNT(*) AS c FROM attendance').get().c === 0) {
-    const eventIds = db.prepare('SELECT id FROM events').all().map((r) => r.id);
-    const studentIds = db.prepare('SELECT id FROM students').all().map((r) => r.id);
-    const insert = db.prepare(
-      `INSERT OR IGNORE INTO attendance (event_id, student_id, status, method) VALUES (?, ?, ?, ?)`
-    );
+  if ((await get('SELECT COUNT(*) AS c FROM attendance')).c === 0) {
+    const eventIds = (await all('SELECT id FROM events')).map((r) => r.id);
+    const studentIds = (await all('SELECT id FROM students')).map((r) => r.id);
     for (const eventId of eventIds) {
       for (const studentId of studentIds) {
         const roll = Math.random();
-        if (roll < 0.65) insert.run(eventId, studentId, 'present', 'qr');
-        else if (roll < 0.75) insert.run(eventId, studentId, 'late', 'qr');
-        else if (roll < 0.85) insert.run(eventId, studentId, 'absent', 'manual');
+        if (roll < 0.65) await run('INSERT OR IGNORE INTO attendance (event_id, student_id, status, method) VALUES (?, ?, ?, ?)', [eventId, studentId, 'present', 'qr']);
+        else if (roll < 0.75) await run('INSERT OR IGNORE INTO attendance (event_id, student_id, status, method) VALUES (?, ?, ?, ?)', [eventId, studentId, 'late', 'qr']);
+        else if (roll < 0.85) await run('INSERT OR IGNORE INTO attendance (event_id, student_id, status, method) VALUES (?, ?, ?, ?)', [eventId, studentId, 'absent', 'manual']);
       }
     }
     console.log('Seeded sample attendance records');
@@ -65,4 +63,7 @@ function seed() {
   console.log('Seed complete.');
 }
 
-seed();
+seed().then(() => process.exit(0)).catch((err) => {
+  console.error(err);
+  process.exit(1);
+});

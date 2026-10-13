@@ -1,15 +1,40 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import Database from 'better-sqlite3';
 import { config } from './config.js';
 
-fs.mkdirSync(path.dirname(config.dbPath), { recursive: true });
+const isLocalFile = config.dbUrl.startsWith('file:');
 
-export const db = new Database(config.dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Ensure the local data directory exists for file-based (development) databases.
+if (isLocalFile) {
+  const filePath = config.dbUrl.slice('file:'.length);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+}
 
-db.exec(`
+// Use the native client for local files and the pure-HTTP (web) client for
+// remote libSQL/Turso URLs, so serverless deploys don't need a native binding.
+const { createClient } = isLocalFile
+  ? await import('@libsql/client')
+  : await import('@libsql/client/web');
+
+export const db = createClient({ url: config.dbUrl, authToken: config.dbAuthToken });
+
+// ---- Small helpers mirroring the previous better-sqlite3 API ----
+export async function get(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows[0] ?? null;
+}
+
+export async function all(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return rs.rows;
+}
+
+export async function run(sql, args = []) {
+  const rs = await db.execute({ sql, args });
+  return { changes: rs.rowsAffected, lastInsertRowid: Number(rs.lastInsertRowid ?? 0) };
+}
+
+const SCHEMA = `
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     username TEXT NOT NULL UNIQUE,
@@ -27,6 +52,7 @@ db.exec(`
     email TEXT,
     course TEXT,
     year_level TEXT,
+    section TEXT,
     qr_token TEXT NOT NULL UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -60,24 +86,23 @@ db.exec(`
 
   CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
   CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
-`);
+`;
 
 // Lightweight migrations for databases created before a column existed.
-function ensureColumn(table, column, ddl) {
-  const cols = db.prepare(`PRAGMA table_info(${table})`).all();
+async function ensureColumn(table, column, ddl) {
+  const cols = await all(`PRAGMA table_info(${table})`);
   if (!cols.some((c) => c.name === column)) {
-    db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+    await db.execute(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
   }
 }
 
 // Older databases had `checked_in_at NOT NULL`, which forced an artificial time-in
 // even for absent/excused marks. Rebuild the table to allow NULL.
-function makeCheckinNullable() {
-  const cols = db.prepare('PRAGMA table_info(attendance)').all();
+async function makeCheckinNullable() {
+  const cols = await all('PRAGMA table_info(attendance)');
   const checkin = cols.find((c) => c.name === 'checked_in_at');
-  if (!checkin || checkin.notnull === 0) return;
-  db.exec(`
-    BEGIN;
+  if (!checkin || Number(checkin.notnull) === 0) return;
+  await db.executeMultiple(`
     CREATE TABLE attendance_new (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
@@ -96,13 +121,25 @@ function makeCheckinNullable() {
     ALTER TABLE attendance_new RENAME TO attendance;
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
-    COMMIT;
   `);
 }
 
-ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
-ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
-ensureColumn('students', 'section', 'section TEXT');
-makeCheckinNullable();
-db.exec('CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);');
-db.exec('CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);');
+let initPromise = null;
+
+export function initDb() {
+  if (!initPromise) initPromise = doInit();
+  return initPromise;
+}
+
+async function doInit() {
+  await db.executeMultiple('PRAGMA foreign_keys = ON;');
+  await db.executeMultiple(SCHEMA);
+  await ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
+  await ensureColumn('students', 'section', 'section TEXT');
+  await makeCheckinNullable();
+  await db.executeMultiple(`
+    CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
+    CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
+  `);
+}

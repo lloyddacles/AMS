@@ -21,9 +21,13 @@ if (fs.existsSync(envPath)) {
   }
 }
 
+const defaultDbUrl = `file:${path.join(__dirname, '..', 'data', 'attendance.sqlite')}`;
+
 export const config = {
   port: Number(process.env.PORT || 4000),
   jwtSecret: process.env.JWT_SECRET || 'dev-insecure-secret',
   clientOrigin: process.env.CLIENT_ORIGIN || 'http://localhost:5173',
-  dbPath: process.env.DB_PATH || path.join(__dirname, '..', 'data', 'attendance.sqlite'),
+  // Hosted SQLite (libSQL/Turso) in production; a local file for development.
+  dbUrl: process.env.TURSO_DATABASE_URL || process.env.DB_URL || defaultDbUrl,
+  dbAuthToken: process.env.TURSO_AUTH_TOKEN || process.env.DB_AUTH_TOKEN || undefined,
 };
