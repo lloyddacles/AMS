@@ -94,8 +94,8 @@ async function applyScan({ eventId, studentId, method, userId, event }) {
     const verdict = classifyTimeIn(event || {});
     if (verdict.blocked) return { blocked: true, message: verdict.message };
     const info = await run(
-      `INSERT INTO attendance (event_id, student_id, status, method, marked_by)
-       VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO attendance (event_id, student_id, status, method, marked_by, checked_in_at)
+       VALUES (?, ?, ?, ?, ?, datetime('now'))`,
       [eventId, studentId, verdict.status, method, userId || null]
     );
     return { row: await getAttendanceRow(info.lastInsertRowid), action: 'time-in' };
