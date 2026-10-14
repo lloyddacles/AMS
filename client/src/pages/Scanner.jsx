@@ -150,10 +150,8 @@ export default function Scanner() {
               )}
               {pending.eventClosed && <span className="pill pill-red">Check-in closed</span>}
             </div>
-            {pending.nextAction === 'time-in' && !pending.windowBlocked && pending.checkinOpensAt && (
-              <div className="muted small">
-                Check-in open from {pending.checkinOpensAt} · late after {pending.lateAfterAt}
-              </div>
+            {pending.nextAction === 'time-in' && !pending.windowBlocked && pending.lateAfterAt && (
+              <div className="muted small">Late after {pending.lateAfterAt}</div>
             )}
             {pending.nextAction === 'time-out' && !pending.windowBlocked && pending.timeoutOpensAt && (
               <div className="muted small">Time-out opens at {pending.timeoutOpensAt}</div>

@@ -25,7 +25,6 @@ async function nowUtc() {
 }
 
 // ---- Time windows (minutes) ----
-const OPEN_EARLY_MIN = 15; // check-in opens this many minutes before start
 const LATE_AFTER_MIN = 5; // still "present" up to this many minutes after start
 const TIMEOUT_OPEN_MIN = 30; // time-out opens this many minutes before end
 
@@ -49,15 +48,11 @@ function nowMinutes() {
   return d.getHours() * 60 + d.getMinutes();
 }
 
-// Present = scanned within the 15-min pre-start window (or up to 5 min after start).
-// Late = scanned more than 5 min after start. Scanning earlier than the window is rejected.
+// Check-in is allowed at any time. Scans after the grace period become "late".
 function classifyTimeIn(event) {
   const start = toMinutes(event.start_time);
   if (start === null) return { status: 'present' };
   const diff = nowMinutes() - start;
-  if (diff < -OPEN_EARLY_MIN) {
-    return { blocked: true, message: `Check-in opens ${OPEN_EARLY_MIN} minutes before the event (at ${fmtHM(start - OPEN_EARLY_MIN)}).` };
-  }
   return { status: diff > LATE_AFTER_MIN ? 'late' : 'present' };
 }
 
@@ -196,13 +191,7 @@ router.post('/lookup', async (req, res) => {
   let windowMessage = '';
   let plannedStatus = null;
   if (nextAction === 'time-in') {
-    const verdict = classifyTimeIn(event);
-    if (verdict.blocked) {
-      windowBlocked = true;
-      windowMessage = verdict.message;
-    } else {
-      plannedStatus = verdict.status;
-    }
+    plannedStatus = classifyTimeIn(event).status;
   } else if (nextAction === 'time-out') {
     const verdict = canTimeOut(event);
     if (!verdict.ok) {
@@ -222,7 +211,7 @@ router.post('/lookup', async (req, res) => {
     plannedStatus,
     windowBlocked,
     windowMessage,
-    checkinOpensAt: startM !== null ? fmtHM(startM - OPEN_EARLY_MIN) : null,
+    checkinOpensAt: null,
     lateAfterAt: startM !== null ? fmtHM(startM + LATE_AFTER_MIN) : null,
     timeoutOpensAt: endM !== null ? fmtHM(endM - TIMEOUT_OPEN_MIN) : null,
     startTime: event.start_time || null,
