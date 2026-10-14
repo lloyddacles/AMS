@@ -73,6 +73,7 @@ export const api = {
   regenerateEventCode: (id) => request(`/events/${id}/regenerate-code`, { method: 'POST' }),
 
   getEventAttendance: (eventId) => request(`/attendance/event/${eventId}`),
+  getTodayAttendance: () => request('/attendance/today'),
   lookupAttendance: (eventId, qrToken) => request('/attendance/lookup', { method: 'POST', body: { eventId, qrToken } }),
   scanAttendance: (eventId, qrToken, status, confirmValue) =>
     request('/attendance/scan', { method: 'POST', body: { eventId, qrToken, status, confirmValue } }),
@@ -87,6 +88,7 @@ export const api = {
 
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
+  publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),
 };
 
 export async function exportCsv(type, eventId) {

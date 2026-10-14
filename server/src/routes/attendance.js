@@ -1,13 +1,30 @@
 import { Router } from 'express';
 import { get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import {
+  classifyByTime,
+  displayStatus,
+  timeoutOpensAt,
+  absentCutoff,
+  formatTzTime,
+  isAttendedStatus,
+  todayInTz,
+} from '../classify.js';
 
 const router = Router();
 
 const selectFields = `a.id, a.event_id AS eventId, a.student_id AS studentId, a.status,
   a.method, a.note, a.checked_in_at AS checkedInAt, a.checked_out_at AS checkedOutAt,
   s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
-  s.course, s.year_level AS yearLevel`;
+  s.course, s.year_level AS yearLevel, s.section`;
+
+const studentFields = `s.id AS studentId, s.student_no AS studentNo, s.first_name AS firstName,
+  s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.section`;
+
+// Current time as a SQLite-style UTC timestamp.
+function nowUtc() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
 
 function getAttendanceRow(id) {
   return get(
@@ -16,96 +33,81 @@ function getAttendanceRow(id) {
   );
 }
 
-const ATTENDED_STATUSES = ['present', 'late'];
-const isAttended = (status) => ATTENDED_STATUSES.includes(status);
+const todayCols = `a.id, a.event_id AS eventId, a.student_id AS studentId, a.status, a.method,
+  a.checked_in_at AS checkedInAt, a.checked_out_at AS checkedOutAt,
+  s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
+  e.name AS eventName, e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime`;
 
-async function nowUtc() {
-  const row = await get("SELECT datetime('now') AS t");
-  return row.t;
+// Every time-in recorded today (across all of today's events), with the
+// time-based classification applied.
+async function todaysCheckins(date) {
+  const records = await all(
+    `SELECT ${todayCols}
+     FROM attendance a
+     JOIN students s ON s.id = a.student_id
+     JOIN events e ON e.id = a.event_id
+     WHERE e.event_date = ? AND a.checked_in_at IS NOT NULL
+     ORDER BY a.checked_in_at DESC`,
+    [date]
+  );
+  return records.map((r) => ({
+    id: r.id,
+    eventId: r.eventId,
+    eventName: r.eventName,
+    studentId: r.studentId,
+    studentNo: r.studentNo,
+    firstName: r.firstName,
+    lastName: r.lastName,
+    method: r.method,
+    checkedInAt: r.checkedInAt,
+    checkedOutAt: r.checkedOutAt,
+    classification: displayStatus(
+      { event_date: r.eventDate, start_time: r.startTime, end_time: r.endTime },
+      r
+    ),
+  }));
 }
 
-// ---- Time windows (minutes) ----
-const LATE_AFTER_MIN = 5; // still "present" up to this many minutes after start
-const TIMEOUT_OPEN_MIN = 30; // time-out opens this many minutes before end
-
-function toMinutes(hm) {
-  if (!hm) return null;
-  const [h, m] = String(hm).split(':').map(Number);
-  if (Number.isNaN(h) || Number.isNaN(m)) return null;
-  return h * 60 + m;
-}
-
-function fmtHM(total) {
-  const m = ((total % 1440) + 1440) % 1440;
-  const h = Math.floor(m / 60);
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  return `${h12}:${String(m % 60).padStart(2, '0')} ${ampm}`;
-}
-
-function nowMinutes() {
-  const d = new Date();
-  return d.getHours() * 60 + d.getMinutes();
-}
-
-// Check-in is allowed at any time. Scans after the grace period become "late".
-function classifyTimeIn(event) {
-  const start = toMinutes(event.start_time);
-  if (start === null) return { status: 'present' };
-  const diff = nowMinutes() - start;
-  return { status: diff > LATE_AFTER_MIN ? 'late' : 'present' };
-}
-
-// Time-out only opens 30 minutes before the event ends.
-function canTimeOut(event) {
-  const end = toMinutes(event.end_time);
-  if (end === null) return { ok: true };
-  const opens = end - TIMEOUT_OPEN_MIN;
-  if (nowMinutes() < opens) {
-    return { ok: false, message: `Time-out opens ${TIMEOUT_OPEN_MIN} minutes before the event ends (at ${fmtHM(opens)}).` };
-  }
-  return { ok: true };
-}
-
-// Manual marking by staff. Only present/late get a time-in; absent/excused stay time-less.
+// Manual marking by staff. Only attended statuses get a time-in.
 async function markManual({ eventId, studentId, status, note, userId }) {
   const existing = await get('SELECT * FROM attendance WHERE event_id = ? AND student_id = ?', [eventId, studentId]);
+  const checkedIn = isAttendedStatus(status) ? nowUtc() : null;
   if (existing) {
-    const checkedIn = existing.checked_in_at || (isAttended(status) ? await nowUtc() : null);
     await run(
       `UPDATE attendance SET status = ?, method = 'manual', note = ?, marked_by = ?, checked_in_at = ? WHERE id = ?`,
-      [status, note ?? existing.note, userId ?? existing.marked_by, checkedIn, existing.id]
+      [status, note ?? existing.note, userId ?? existing.marked_by, existing.checked_in_at || checkedIn, existing.id]
     );
     return { row: await getAttendanceRow(existing.id), duplicate: true };
   }
   const info = await run(
     `INSERT INTO attendance (event_id, student_id, status, method, note, marked_by, checked_in_at)
      VALUES (?, ?, ?, 'manual', ?, ?, ?)`,
-    [eventId, studentId, status, note || null, userId || null, isAttended(status) ? await nowUtc() : null]
+    [eventId, studentId, status, note || null, userId || null, checkedIn]
   );
   return { row: await getAttendanceRow(info.lastInsertRowid), duplicate: false };
 }
 
-// QR scanning alternates: first scan = time-in (present/late by start time),
-// second scan = time-out (only when the end window is open).
+// QR scanning alternates: first scan = time-in (early/on-time/late/absent by
+// the clock), second scan = time-out (only when the end window is open).
 async function applyScan({ eventId, studentId, method, userId, event }) {
   const existing = await get('SELECT * FROM attendance WHERE event_id = ? AND student_id = ?', [eventId, studentId]);
   if (!existing) {
-    const verdict = classifyTimeIn(event || {});
-    if (verdict.blocked) return { blocked: true, message: verdict.message };
+    const status = classifyByTime(event, nowUtc()) || 'present';
     const info = await run(
       `INSERT INTO attendance (event_id, student_id, status, method, marked_by, checked_in_at)
-       VALUES (?, ?, ?, ?, ?, datetime('now'))`,
-      [eventId, studentId, verdict.status, method, userId || null]
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [eventId, studentId, status, method, userId || null, nowUtc()]
     );
     return { row: await getAttendanceRow(info.lastInsertRowid), action: 'time-in' };
   }
   if (!existing.checked_out_at) {
-    const verdict = canTimeOut(event || {});
-    if (!verdict.ok) return { blocked: true, message: verdict.message };
+    const opens = timeoutOpensAt(event);
+    if (opens && new Date() < opens) {
+      return { blocked: true, message: `Time-out opens at ${formatTzTime(opens)}.` };
+    }
     await run(
-      `UPDATE attendance SET checked_out_at = datetime('now'), method = ?, marked_by = ? WHERE id = ?`,
-      [method, userId ?? existing.marked_by, existing.id]
+      `UPDATE attendance SET checked_out_at = ?, method = ?, marked_by = ? WHERE id = ?`,
+      [nowUtc(), method, userId ?? existing.marked_by, existing.id]
     );
     return { row: await getAttendanceRow(existing.id), action: 'time-out' };
   }
@@ -129,6 +131,23 @@ function studentNoMatches(provided, expected) {
 }
 
 // ---- Public self check-in (student scans event QR and enters their student number) ----
+
+// Public list of everyone who has checked in today (names only, no numbers).
+router.get('/public/today/checkins', async (req, res) => {
+  const date = todayInTz();
+  const records = await todaysCheckins(date);
+  res.json({
+    date,
+    count: records.length,
+    students: records.map((r) => ({
+      firstName: r.firstName,
+      lastName: r.lastName,
+      checkedInAt: r.checkedInAt,
+      classification: r.classification,
+      eventName: r.eventName,
+    })),
+  });
+});
 
 router.get('/public/:code', async (req, res) => {
   const event = await get(
@@ -154,49 +173,79 @@ router.post('/public/:code/checkin', async (req, res) => {
 
 router.use(requireAuth);
 
+// Everyone who has checked in today across all of today's events.
+router.get('/today', async (req, res) => {
+  const date = todayInTz();
+  const records = await todaysCheckins(date);
+  res.json({ date, count: records.length, records });
+});
+
+// Full attendance view for an event: every student, classified. Students with
+// no time-in are marked absent once the absence window (start + 60 min) passes.
 router.get('/event/:eventId', async (req, res) => {
-  const rows = await all(
-    `SELECT ${selectFields} FROM attendance a JOIN students s ON s.id = a.student_id
-     WHERE a.event_id = ? ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+  const event = await get('SELECT * FROM events WHERE id = ?', [req.params.eventId]);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const records = await all(
+    `SELECT ${selectFields} FROM attendance a JOIN students s ON s.id = a.student_id WHERE a.event_id = ?`,
     [req.params.eventId]
   );
+  const byStudent = new Map(records.map((r) => [r.studentId, r]));
+  const students = await all(
+    `SELECT ${studentFields} FROM students s ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`
+  );
+  const cutoff = absentCutoff(event);
+  const windowPassed = cutoff ? new Date() > cutoff : false;
+  const rows = students.map((s) => {
+    const r = byStudent.get(s.studentId);
+    if (r) return { ...r, classification: displayStatus(event, r) };
+    return {
+      id: null,
+      eventId: event.id,
+      studentId: s.studentId,
+      status: null,
+      method: null,
+      note: null,
+      checkedInAt: null,
+      checkedOutAt: null,
+      studentNo: s.studentNo,
+      firstName: s.firstName,
+      lastName: s.lastName,
+      course: s.course,
+      yearLevel: s.yearLevel,
+      section: s.section,
+      classification: windowPassed ? 'absent' : null,
+    };
+  });
   res.json(rows);
 });
 
-// Resolve a scanned QR to a student WITHOUT recording attendance (privacy-preserving lookup).
+// Resolve a scanned QR for the scanner UI (preview before committing).
 router.post('/lookup', async (req, res) => {
   const { eventId, qrToken } = req.body || {};
   if (!eventId || !qrToken) return res.status(400).json({ error: 'eventId and qrToken are required' });
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const student = await get(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
-            course, year_level AS yearLevel
-     FROM students WHERE qr_token = ?`,
-    [resolveToken(qrToken)]
-  );
+  const student = await get('SELECT * FROM students WHERE qr_token = ?', [resolveToken(qrToken)]);
   if (!student) return res.status(404).json({ error: 'Unrecognized QR code' });
 
   const existing = await get(
-    'SELECT id, status, checked_in_at AS checkedInAt, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ? AND student_id = ?',
+    'SELECT * FROM attendance WHERE event_id = ? AND student_id = ?',
     [eventId, student.id]
   );
 
-  const nextAction = !existing ? 'time-in' : (!existing.checkedOutAt ? 'time-out' : 'already-complete');
+  const nextAction = !existing ? 'time-in' : (!existing.checked_out_at ? 'time-out' : 'already-complete');
 
-  const startM = toMinutes(event.start_time);
-  const endM = toMinutes(event.end_time);
+  let plannedStatus = null;
   let windowBlocked = false;
   let windowMessage = '';
-  let plannedStatus = null;
   if (nextAction === 'time-in') {
-    plannedStatus = classifyTimeIn(event).status;
+    plannedStatus = classifyByTime(event, nowUtc()) || 'present';
   } else if (nextAction === 'time-out') {
-    const verdict = canTimeOut(event);
-    if (!verdict.ok) {
+    const opens = timeoutOpensAt(event);
+    if (opens && new Date() < opens) {
       windowBlocked = true;
-      windowMessage = verdict.message;
+      windowMessage = `Time-out opens at ${formatTzTime(opens)}.`;
     }
   }
 
@@ -205,15 +254,14 @@ router.post('/lookup', async (req, res) => {
     requireStudentConfirm: !!event.require_student_confirm,
     eventClosed: event.status !== 'active',
     alreadyCheckedIn: !!existing,
-    checkedInAt: existing?.checkedInAt || null,
-    checkedOutAt: existing?.checkedOutAt || null,
+    checkedInAt: existing?.checked_in_at || null,
+    checkedOutAt: existing?.checked_out_at || null,
+    classification: existing ? displayStatus(event, existing) : null,
     nextAction,
     plannedStatus,
     windowBlocked,
     windowMessage,
-    checkinOpensAt: null,
-    lateAfterAt: startM !== null ? fmtHM(startM + LATE_AFTER_MIN) : null,
-    timeoutOpensAt: endM !== null ? fmtHM(endM - TIMEOUT_OPEN_MIN) : null,
+    timeoutOpensAt: formatTzTime(timeoutOpensAt(event)),
     startTime: event.start_time || null,
     endTime: event.end_time || null,
     attendance: existing || null,
@@ -265,15 +313,12 @@ router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM attendance WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
   const { status, note } = req.body || {};
-  await run('UPDATE attendance SET status = ?, note = ? WHERE id = ?', [
+  await run("UPDATE attendance SET status = ?, note = ?, method = 'manual' WHERE id = ?", [
     status ?? existing.status,
     note ?? existing.note,
     req.params.id,
   ]);
-  const row = await get(
-    `SELECT ${selectFields} FROM attendance a JOIN students s ON s.id = a.student_id WHERE a.id = ?`,
-    [req.params.id]
-  );
+  const row = await getAttendanceRow(req.params.id);
   res.json(row);
 });
 

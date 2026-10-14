@@ -16,13 +16,24 @@ export default function Scanner() {
   const [notice, setNotice] = useState('');
   const [count, setCount] = useState(0);
   const [recent, setRecent] = useState([]);
+  const [today, setToday] = useState([]);
   const scannerRef = useRef(null);
   const pendingRef = useRef(null);
   const lastScan = useRef({ token: null, at: 0 });
   const confirmRef = useRef(null);
 
+  async function loadToday() {
+    try {
+      const data = await api.getTodayAttendance();
+      setToday(data.records);
+    } catch {
+      /* ignore */
+    }
+  }
+
   useEffect(() => {
     api.getEvent(id).then(setEvent).catch((e) => setError(e.message));
+    loadToday();
     return () => stopScanner();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
@@ -95,6 +106,7 @@ export default function Scanner() {
       setRecent((r) => [{ ...res, at: new Date().toLocaleTimeString() }, ...r].slice(0, 8));
       setNotice(`${res.firstName} ${res.lastName} ${labels[res.action] || 'recorded'} ✓`);
       beep(res.action === 'time-in' ? 880 : res.action === 'time-out' ? 660 : 400);
+      loadToday();
       setPending(null);
       setConfirmValue('');
     } catch (e) {
@@ -139,8 +151,8 @@ export default function Scanner() {
             </div>
             <div className="action-line">
               {pending.nextAction === 'time-in' && (
-                <span className={`pill ${pending.plannedStatus === 'late' ? 'pill-amber' : 'pill-green'}`}>
-                  Time In · {pending.plannedStatus === 'late' ? 'Late' : 'Present'}
+                <span className={`pill ${pending.plannedStatus === 'late' ? 'pill-amber' : pending.plannedStatus === 'early' ? 'pill-blue' : pending.plannedStatus === 'absent' ? 'pill-red' : 'pill-green'}`}>
+                  Time In · {({ early: 'Early', 'on-time': 'On-time', late: 'Late', absent: 'Absent', present: 'Present' })[pending.plannedStatus] || 'Present'}
                 </span>
               )}
               {pending.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
@@ -214,23 +226,20 @@ export default function Scanner() {
         </div>
 
         <div className="card">
-          <h3>Latest Scans</h3>
+          <h3>Today’s Check-ins</h3>
           <ul className="list">
-            {recent.map((r, i) => (
+            {today.length === 0 && <li className="muted small">No one has checked in yet today.</li>}
+            {today.map((t, i) => (
               <li key={i} className="list-row">
                 <div>
-                  <div className="strong">{r.lastName}, {r.firstName}</div>
-                  <div className="muted small">{r.studentNo}</div>
+                  <div className="strong">{t.lastName}, {t.firstName}</div>
+                  <div className="muted small">{t.eventName}</div>
                 </div>
                 <div className="scan-meta">
-                  <span className={`pill ${r.action === 'time-in' ? 'pill-green' : r.action === 'time-out' ? 'pill-blue' : 'pill-gray'}`}>
-                    {r.action === 'time-in' ? 'In' : r.action === 'time-out' ? 'Out' : 'Done'}
-                  </span>
-                  <span className="muted small">{r.at}</span>
+                  <span className="muted small">{t.checkedInAt ? new Date(t.checkedInAt + 'Z').toLocaleTimeString() : '—'}</span>
                 </div>
               </li>
             ))}
-            {recent.length === 0 && <li className="muted small">No scans yet.</li>}
           </ul>
         </div>
       </div>

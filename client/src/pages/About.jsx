@@ -2,8 +2,8 @@ import { APP_NAME, APP_TAGLINE, AUTHOR, IDE, TECH_STACK } from '../meta.js';
 
 const FEATURES = [
   'QR code check-in for fast, contactless attendance at events.',
-  'Automatic time-in / time-out tracking with present and late detection.',
-  'Time windows: check-in opens 15 minutes early, late after start + 5 min, time-out 30 min before the event ends.',
+  'Automatic time-in / time-out tracking, classified as Early, On-time, Late, or Absent.',
+  'Classification: early before the start, on-time within 10 minutes of start, late within 60 minutes, absent beyond that or with no scan. Time-out opens 30 minutes before the event ends.',
   'Printable student ID cards with QR codes (85.6 × 54 mm, CR80).',
   'Bulk student import from CSV and printable QR sheets.',
   'Dashboards and reports with CSV export.',

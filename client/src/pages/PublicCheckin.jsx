@@ -12,11 +12,16 @@ export default function PublicCheckin() {
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
 
+  const [today, setToday] = useState({ count: 0, students: [] });
+
   useEffect(() => {
     api
       .publicEvent(code)
       .then(setEvent)
       .catch((e) => setError(e.message));
+    api.publicTodayCheckins()
+      .then(setToday)
+      .catch(() => {});
   }, [code]);
 
   async function submit(e) {
@@ -80,21 +85,37 @@ export default function PublicCheckin() {
         ) : event?.status !== 'active' ? (
           <div className="alert alert-error">Check-in for this event is currently closed.</div>
         ) : (
-          <form className="form" onSubmit={submit}>
-            <label>
-              Enter your Student Number
-              <input
-                value={studentNo}
-                onChange={(e) => setStudentNo(e.target.value)}
-                placeholder="e.g. 2024-0001"
-                autoFocus
-              />
-            </label>
-            {error && <div className="alert alert-error">{error}</div>}
-            <button className="btn btn-primary btn-block" disabled={busy}>
-              {busy ? 'Recording…' : 'Mark My Attendance'}
-            </button>
-          </form>
+          <>
+            <form className="form" onSubmit={submit}>
+              <label>
+                Enter your Student Number
+                <input
+                  value={studentNo}
+                  onChange={(e) => setStudentNo(e.target.value)}
+                  placeholder="e.g. 2024-0001"
+                  autoFocus
+                />
+              </label>
+              {error && <div className="alert alert-error">{error}</div>}
+              <button className="btn btn-primary btn-block" disabled={busy}>
+                {busy ? 'Recording…' : 'Mark My Attendance'}
+              </button>
+            </form>
+            <div className="today-list" style={{ marginTop: '1rem', width: '100%' }}>
+              <h4 style={{ marginBottom: '0.5rem' }}>Already checked in today ({today.count})</h4>
+              <ul className="list" style={{ maxHeight: '12rem', overflow: 'auto' }}>
+                {today.students.length === 0 && <li className="muted small">No one yet.</li>}
+                {today.students.map((t, i) => (
+                  <li key={i} className="list-row" style={{ padding: '0.35rem 0' }}>
+                    <div>
+                      <div className="strong">{t.lastName}, {t.firstName}</div>
+                    </div>
+                    <div className="muted small">{t.checkedInAt ? new Date(t.checkedInAt + 'Z').toLocaleTimeString() : '—'}</div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </>
         )}
       </div>
       <Footer compact />

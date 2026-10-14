@@ -10,7 +10,7 @@ const selectFields = `e.id, e.name, e.description, e.location,
   e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime,
   e.checkin_code AS checkinCode, e.status, e.require_student_confirm AS requireStudentConfirm,
   e.created_at AS createdAt,
-  (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('present','late')) AS attendanceCount,
+  (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
   (SELECT COUNT(*) FROM students) AS totalStudents`;
 
 function getEvent(id) {

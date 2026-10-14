@@ -66,7 +66,8 @@ export default function Reports() {
                     <th>Student No</th>
                     <th>Name</th>
                     <th>Course</th>
-                    <th className="num">Present</th>
+                    <th className="num">Early</th>
+                    <th className="num">On-time</th>
                     <th className="num">Late</th>
                     <th className="num">Excused</th>
                     <th className="num">Absent</th>
@@ -75,14 +76,15 @@ export default function Reports() {
                 </thead>
                 <tbody>
                   {overview.students.length === 0 && (
-                    <tr><td colSpan={8} className="muted center">No students found.</td></tr>
+                    <tr><td colSpan={9} className="muted center">No students found.</td></tr>
                   )}
                   {overview.students.map((s) => (
                     <tr key={s.id}>
                       <td className="mono">{s.studentNo}</td>
                       <td className="strong">{s.lastName}, {s.firstName}</td>
                       <td>{s.course || '—'}</td>
-                      <td className="num">{s.present}</td>
+                      <td className="num">{s.early}</td>
+                      <td className="num">{s.onTime}</td>
                       <td className="num">{s.late}</td>
                       <td className="num">{s.excused}</td>
                       <td className="num">{s.absent}</td>

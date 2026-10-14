@@ -5,7 +5,23 @@ import { api, exportCsv } from '../api.js';
 import Modal from '../components/Modal.jsx';
 
 const STATUSES = ['present', 'late', 'excused', 'absent'];
-const statusClass = { present: 'pill-green', late: 'pill-amber', excused: 'pill-blue', absent: 'pill-red' };
+const statusClass = {
+  early: 'pill-blue',
+  'on-time': 'pill-green',
+  present: 'pill-green',
+  late: 'pill-amber',
+  excused: 'pill-blue',
+  absent: 'pill-red',
+};
+const statusLabel = {
+  early: 'Early',
+  'on-time': 'On-time',
+  present: 'Present',
+  late: 'Late',
+  excused: 'Excused',
+  absent: 'Absent',
+};
+const ATTENDED = ['early', 'on-time', 'present', 'late'];
 
 function fmtTime(sqliteUtc) {
   if (!sqliteUtc) return '—';
@@ -58,7 +74,7 @@ export default function EventDetail() {
   async function setStatus(student, status) {
     try {
       const existing = attendedByStudent[student.id];
-      if (existing) {
+      if (existing && existing.id) {
         if (status === 'none') {
           await api.deleteAttendance(existing.id);
         } else {
@@ -82,7 +98,7 @@ export default function EventDetail() {
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!event) return <div className="muted">Loading…</div>;
 
-  const attendedCount = attendance.filter((a) => a.status === 'present' || a.status === 'late').length;
+  const attendedCount = attendance.filter((a) => ATTENDED.includes(a.classification)).length;
   const rate = event.totalStudents ? Math.round((attendedCount / event.totalStudents) * 100) : 0;
   const filteredStudents = students.filter((s) => {
     const q = search.toLowerCase();
@@ -133,7 +149,7 @@ export default function EventDetail() {
       </div>
 
       <div className="tabs">
-        <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>Attendance ({attendance.length})</button>
+        <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>Attendance ({attendedCount}/{attendance.length})</button>
         <button className={tab === 'mark' ? 'active' : ''} onClick={() => setTab('mark')}>Mark Attendance</button>
       </div>
 
@@ -154,21 +170,33 @@ export default function EventDetail() {
             </thead>
             <tbody>
               {attendance.length === 0 && (
-                <tr><td colSpan={8} className="muted center">No one has checked in yet.</td></tr>
+                <tr><td colSpan={8} className="muted center">No students yet.</td></tr>
               )}
               {attendance.map((a) => (
-                <tr key={a.id}>
+                <tr key={a.id ?? `s${a.studentId}`}>
                   <td className="mono">{a.studentNo}</td>
                   <td className="strong">{a.lastName}, {a.firstName}</td>
-                  <td><span className={`pill ${statusClass[a.status] || 'pill-gray'}`}>{a.status}</span></td>
-                  <td className="muted">{a.method}</td>
+                  <td>
+                    {a.classification ? (
+                      <span className={`pill ${statusClass[a.classification] || 'pill-gray'}`}>
+                        {statusLabel[a.classification] || a.classification}
+                      </span>
+                    ) : (
+                      <span className="muted small">Pending</span>
+                    )}
+                  </td>
+                  <td className="muted">{a.method || '—'}</td>
                   <td className="muted small">{fmtTime(a.checkedInAt)}</td>
                   <td className="muted small">
                     {a.checkedOutAt ? fmtTime(a.checkedOutAt) : a.checkedInAt ? <span className="pill pill-amber">On site</span> : '—'}
                   </td>
                   <td className="muted small">{duration(a.checkedInAt, a.checkedOutAt)}</td>
                   <td className="right">
-                    <button className="btn btn-sm btn-danger" onClick={() => setStatus({ id: a.studentId }, 'none')}>Remove</button>
+                    {a.id ? (
+                      <button className="btn btn-sm btn-danger" onClick={() => setStatus({ id: a.studentId }, 'none')}>Remove</button>
+                    ) : (
+                      <span className="muted small">—</span>
+                    )}
                   </td>
                 </tr>
               ))}

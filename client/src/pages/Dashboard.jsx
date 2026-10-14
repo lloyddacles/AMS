@@ -16,6 +16,8 @@ import {
 import { api } from '../api.js';
 
 const STATUS_COLORS = {
+  early: '#0ea5e9',
+  'on-time': '#16a34a',
   present: '#16a34a',
   late: '#f59e0b',
   excused: '#3b82f6',

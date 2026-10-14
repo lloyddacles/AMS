@@ -10,10 +10,10 @@ export const TECH_STACK = [
   },
   {
     group: 'Backend',
-    items: ['Node.js', 'Express 4', 'better-sqlite3', 'SQLite', 'JWT (jsonwebtoken)', 'bcryptjs', 'nanoid', 'CORS'],
+    items: ['Node.js', 'Express 4', 'libSQL / Turso', 'JWT (jsonwebtoken)', 'bcryptjs', 'nanoid', 'CORS'],
   },
   {
     group: 'Tooling',
-    items: ['OpenCode (AI coding IDE)', 'npm', 'concurrently', 'Canvas API', 'Web Crypto'],
+    items: ['OpenCode (AI coding IDE)', 'npm', 'concurrently', 'Canvas API', 'Web Crypto', 'Vercel'],
   },
 ];
