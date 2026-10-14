@@ -22,20 +22,29 @@ const statusLabel = {
   absent: 'Absent',
 };
 const ATTENDED = ['early', 'on-time', 'present', 'late'];
+const ALL_STATUSES = ['early', 'on-time', 'present', 'late', 'excused', 'absent'];
 
 function fmtTime(sqliteUtc) {
   if (!sqliteUtc) return '—';
-  return new Date(sqliteUtc + 'Z').toLocaleTimeString();
+  try {
+    return new Date(String(sqliteUtc).replace(' ', 'T') + 'Z').toLocaleTimeString();
+  } catch {
+    return '—';
+  }
 }
 
 function duration(inAt, outAt) {
   if (!inAt || !outAt) return '—';
-  const ms = new Date(outAt + 'Z') - new Date(inAt + 'Z');
-  if (ms < 0) return '—';
-  const mins = Math.floor(ms / 60000);
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return h ? `${h}h ${m}m` : `${m}m`;
+  try {
+    const ms = new Date(String(outAt).replace(' ', 'T') + 'Z') - new Date(String(inAt).replace(' ', 'T') + 'Z');
+    if (ms < 0) return '—';
+    const mins = Math.floor(ms / 60000);
+    const h = Math.floor(mins / 60);
+    const m = mins % 60;
+    return h ? `${h}h ${m}m` : `${m}m`;
+  } catch {
+    return '—';
+  }
 }
 
 export default function EventDetail() {
@@ -193,7 +202,21 @@ export default function EventDetail() {
                   <td className="muted small">{duration(a.checkedInAt, a.checkedOutAt)}</td>
                   <td className="right">
                     {a.id ? (
-                      <button className="btn btn-sm btn-danger" onClick={() => setStatus({ id: a.studentId }, 'none')}>Remove</button>
+                      <div className="seg seg-sm">
+                        {ALL_STATUSES.map((st) => (
+                          <button
+                            key={st}
+                            className={`seg-btn ${a.classification === st ? 'active' : ''}`}
+                            onClick={() => setStatus({ id: a.studentId }, st)}
+                            title={statusLabel[st] || st}
+                          >
+                            {statusLabel[st]?.[0] || st[0].toUpperCase()}
+                          </button>
+                        ))}
+                        <button className="seg-btn" onClick={() => setStatus({ id: a.studentId }, 'none')} title="Clear">
+                          ✕
+                        </button>
+                      </div>
                     ) : (
                       <span className="muted small">—</span>
                     )}
@@ -234,24 +257,24 @@ export default function EventDetail() {
                       <td className="strong">{s.lastName}, {s.firstName}</td>
                       <td>{s.course || '—'}</td>
                       <td className="right">
-                        <div className="seg">
-                          {STATUSES.map((st) => (
-                            <button
-                              key={st}
-                              className={`seg-btn ${current === st ? 'active' : ''}`}
-                              onClick={() => setStatus(s, st)}
-                            >
-                              {st[0].toUpperCase()}
-                            </button>
-                          ))}
-                          <button
-                            className={`seg-btn ${!current ? 'active' : ''}`}
-                            onClick={() => setStatus(s, 'none')}
-                            title="Clear"
-                          >
-                            ✕
-                          </button>
-                        </div>
+                    <div className="seg">
+                      {ALL_STATUSES.map((st) => (
+                        <button
+                          key={st}
+                          className={`seg-btn ${current === st ? 'active' : ''}`}
+                          onClick={() => setStatus(s, st)}
+                        >
+                          {statusLabel[st]?.[0] || st[0].toUpperCase()}
+                        </button>
+                      ))}
+                      <button
+                        className={`seg-btn ${!current ? 'active' : ''}`}
+                        onClick={() => setStatus(s, 'none')}
+                        title="Clear"
+                      >
+                        ✕
+                      </button>
+                    </div>
                       </td>
                     </tr>
                   );
