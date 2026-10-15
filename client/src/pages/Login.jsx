@@ -56,9 +56,6 @@ export default function Login() {
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
-        <p className="login-hint">
-          Default credentials: <strong>admin</strong> / <strong>admin123</strong>
-        </p>
       </div>
       <Footer compact />
     </div>
