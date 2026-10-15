@@ -443,6 +443,9 @@ router.post('/scan/batch', async (req, res) => {
 router.post('/', async (req, res) => {
   const { eventId, studentId, status = 'present', note } = req.body || {};
   if (!eventId || !studentId) return res.status(400).json({ error: 'eventId and studentId are required' });
+  if (status === 'excused' && !String(note || '').trim()) {
+    return res.status(400).json({ error: 'A reason is required when marking a student excused' });
+  }
   const event = await get('SELECT id FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const student = await get('SELECT id FROM students WHERE id = ?', [studentId]);
@@ -453,7 +456,7 @@ router.post('/', async (req, res) => {
     action: 'attendance.mark',
     entity: 'attendance',
     entityId: row.id,
-    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}`,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}${note ? ` · ${note}` : ''}`,
   });
   res.status(duplicate ? 200 : 201).json({ ...row, duplicate });
 });
@@ -462,10 +465,15 @@ router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM attendance WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
   const { status, note } = req.body || {};
+  const nextStatus = status ?? existing.status;
+  const nextNote = note === undefined ? existing.note : note;
+  if (nextStatus === 'excused' && !String(nextNote || '').trim()) {
+    return res.status(400).json({ error: 'A reason is required when marking a student excused' });
+  }
   const before = await getAttendanceRow(req.params.id);
   await run("UPDATE attendance SET status = ?, note = ?, method = 'manual' WHERE id = ?", [
-    status ?? existing.status,
-    note ?? existing.note,
+    nextStatus,
+    nextNote,
     req.params.id,
   ]);
   const row = await getAttendanceRow(req.params.id);

@@ -2,7 +2,10 @@ import bcrypt from 'bcryptjs';
 import { nanoid } from 'nanoid';
 import { get, all, run } from '../db.js';
 
-const PUBLIC_COLS = 'id, username, name, role, avatar, active, created_at AS createdAt';
+export const DEFAULT_PASSWORD = 'admin123';
+
+const PUBLIC_COLS =
+  'id, username, name, role, avatar, active, must_change_password AS mustChangePassword, created_at AS createdAt';
 
 export async function getUser(userId) {
   return get(`SELECT ${PUBLIC_COLS} FROM users WHERE id = ?`, [userId]);
@@ -12,11 +15,11 @@ export async function listUsers() {
   return all(`SELECT ${PUBLIC_COLS} FROM users ORDER BY role DESC, name COLLATE NOCASE`);
 }
 
-export async function createUser({ username, password, name, role = 'staff' }) {
+export async function createUser({ username, password, name, role = 'staff', mustChangePassword = 0 }) {
   const password_hash = bcrypt.hashSync(password, 10);
   const info = await run(
-    'INSERT INTO users (username, password_hash, name, role) VALUES (?, ?, ?, ?)',
-    [username.trim(), password_hash, name.trim(), role]
+    'INSERT INTO users (username, password_hash, name, role, must_change_password) VALUES (?, ?, ?, ?, ?)',
+    [username.trim(), password_hash, name.trim(), role, mustChangePassword ? 1 : 0]
   );
   return getUser(info.lastInsertRowid);
 }
@@ -26,7 +29,14 @@ export async function verifyCredentials(username, password) {
   if (!user) return null;
   if (Number(user.active) === 0) return null;
   if (!bcrypt.compareSync(password || '', user.password_hash)) return null;
-  return { id: user.id, username: user.username, name: user.name, role: user.role, avatar: user.avatar || null };
+  return {
+    id: user.id,
+    username: user.username,
+    name: user.name,
+    role: user.role,
+    avatar: user.avatar || null,
+    mustChangePassword: Number(user.must_change_password) ? 1 : 0,
+  };
 }
 
 export async function changePassword(userId, currentPassword, newPassword) {
@@ -36,7 +46,7 @@ export async function changePassword(userId, currentPassword, newPassword) {
     return { ok: false, status: 400, error: 'Current password is incorrect' };
   }
   const password_hash = bcrypt.hashSync(newPassword, 10);
-  await run('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, userId]);
+  await run('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?', [password_hash, userId]);
   return { ok: true };
 }
 
@@ -113,4 +123,18 @@ export async function deleteUser(actorId, userId) {
 
 export function newToken() {
   return nanoid(12);
+}
+
+// Flag any account that is still using the built-in default password so it is
+// forced to change it on next sign-in. Returns how many were flagged.
+export async function flagUsersWithDefaultPassword(defaultPassword = DEFAULT_PASSWORD) {
+  const users = await all('SELECT id, password_hash FROM users');
+  let flagged = 0;
+  for (const u of users) {
+    if (bcrypt.compareSync(defaultPassword, u.password_hash)) {
+      await run('UPDATE users SET must_change_password = 1 WHERE id = ? AND must_change_password = 0', [u.id]);
+      flagged += 1;
+    }
+  }
+  return flagged;
 }

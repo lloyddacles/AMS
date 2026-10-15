@@ -14,6 +14,7 @@ const links = [
   { to: '/reports', label: 'Reports', icon: '▤' },
   { to: '/users', label: 'Staff', icon: '⚇', roles: ['admin'] },
   { to: '/audit', label: 'Audit Log', icon: '☰', roles: ['admin'] },
+  { to: '/backup', label: 'Backup', icon: '⭳', roles: ['admin'] },
   { to: '/about', label: 'About', icon: 'ⓘ' },
   { to: '/profile', label: 'Profile', icon: '☺' },
 ];

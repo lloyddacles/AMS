@@ -59,6 +59,8 @@ export default function EventDetail() {
   const [showQr, setShowQr] = useState(false);
   const [search, setSearch] = useState('');
   const [busy, setBusy] = useState(false);
+  const [excuseFor, setExcuseFor] = useState(null);
+  const [excuseReason, setExcuseReason] = useState('');
 
   async function load() {
     try {
@@ -82,23 +84,41 @@ export default function EventDetail() {
     return m;
   }, [attendance]);
 
-  async function setStatus(student, status) {
+  async function applyStatus(student, status, note = '') {
     try {
       const existing = attendedByStudent[student.id];
+      const payloadNote = status === 'excused' ? note : '';
       if (existing && existing.id) {
         if (status === 'none') {
           await api.deleteAttendance(existing.id);
         } else {
-          await api.updateAttendance(existing.id, { status });
+          await api.updateAttendance(existing.id, { status, note: payloadNote });
         }
       } else if (status !== 'none') {
-        await api.manualAttendance({ eventId: Number(id), studentId: student.id, status });
+        await api.manualAttendance({ eventId: Number(id), studentId: student.id, status, note: payloadNote });
       }
       await load();
       flash(`${student.firstName} ${student.lastName} · ${status === 'none' ? 'cleared' : status}`);
     } catch (e) {
       alert(e.message);
     }
+  }
+
+  function setStatus(student, status) {
+    if (status === 'excused') {
+      setExcuseReason('');
+      setExcuseFor(student);
+      return;
+    }
+    applyStatus(student, status);
+  }
+
+  function confirmExcuse() {
+    const reason = excuseReason.trim();
+    if (!reason) return;
+    const student = excuseFor;
+    setExcuseFor(null);
+    applyStatus(student, 'excused', reason);
   }
 
   function flash(msg) {
@@ -271,6 +291,9 @@ export default function EventDetail() {
                     ) : (
                       <span className="muted small">Pending</span>
                     )}
+                    {a.classification === 'excused' && a.note && (
+                      <div className="muted small" style={{ marginTop: '0.2rem' }}>{a.note}</div>
+                    )}
                   </td>
                   <td className="muted">{a.method || '—'}</td>
                   <td className="muted small">{fmtTime(a.checkedInAt)}</td>
@@ -285,7 +308,7 @@ export default function EventDetail() {
                           <button
                             key={st}
                             className={`seg-btn ${a.classification === st ? 'active' : ''}`}
-                            onClick={() => setStatus({ id: a.studentId }, st)}
+                            onClick={() => setStatus({ id: a.studentId, firstName: a.firstName, lastName: a.lastName }, st)}
                             title={statusLabel[st] || st}
                           >
                             {statusLabel[st]?.[0] || st[0].toUpperCase()}
@@ -364,6 +387,34 @@ export default function EventDetail() {
       )}
 
       {showQr && <EventQrModal event={event} onClose={() => setShowQr(false)} />}
+      {excuseFor && (
+        <Modal
+          title={`Mark excused — ${excuseFor.firstName || ''} ${excuseFor.lastName || ''}`.trim()}
+          onClose={() => setExcuseFor(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setExcuseFor(null)}>Cancel</button>
+              <button className="btn btn-primary" onClick={confirmExcuse} disabled={!excuseReason.trim()}>
+                Mark excused
+              </button>
+            </>
+          }
+        >
+          <form className="form" onSubmit={(e) => { e.preventDefault(); confirmExcuse(); }}>
+            <label>
+              Reason
+              <textarea
+                value={excuseReason}
+                onChange={(e) => setExcuseReason(e.target.value)}
+                rows={3}
+                placeholder="e.g. Medical certificate, official school activity…"
+                autoFocus
+              />
+            </label>
+            <p className="muted small">The reason is stored on the record and included in exports.</p>
+          </form>
+        </Modal>
+      )}
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

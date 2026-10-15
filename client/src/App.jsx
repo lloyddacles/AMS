@@ -16,12 +16,15 @@ import About from './pages/About.jsx';
 import Profile from './pages/Profile.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
+import MustChangePassword from './pages/MustChangePassword.jsx';
+import Backup from './pages/Backup.jsx';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
   if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
+  if (user.mustChangePassword) return <MustChangePassword />;
   return <Layout>{children}</Layout>;
 }
 
@@ -48,6 +51,7 @@ export default function App() {
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/users" element={<Protected><AdminOnly><Users /></AdminOnly></Protected>} />
       <Route path="/audit" element={<Protected><AdminOnly><AuditLog /></AdminOnly></Protected>} />
+      <Route path="/backup" element={<Protected><AdminOnly><Backup /></AdminOnly></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

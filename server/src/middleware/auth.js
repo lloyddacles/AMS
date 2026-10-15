@@ -27,11 +27,36 @@ export async function requireAuth(req, res, next) {
     if (!user || Number(user.active) === 0) {
       return res.status(401).json({ error: 'Account is inactive or no longer exists' });
     }
-    req.user = { id: user.id, username: user.username, name: user.name, role: user.role, avatar: user.avatar };
+    req.user = {
+      id: user.id,
+      username: user.username,
+      name: user.name,
+      role: user.role,
+      avatar: user.avatar,
+      mustChangePassword: Number(user.mustChangePassword) ? 1 : 0,
+    };
+
+    // An account flagged for a mandatory password change may only call the
+    // endpoints needed to complete it.
+    if (req.user.mustChangePassword && !PASSWORD_CHANGE_ALLOWED.has(pathname(req.originalUrl))) {
+      return res.status(403).json({
+        error: 'You must change your password before continuing',
+        code: 'PASSWORD_CHANGE_REQUIRED',
+      });
+    }
+
     next();
   } catch (err) {
     next(err);
   }
+}
+
+// Endpoints an un-onboarded user is still allowed to reach.
+const PASSWORD_CHANGE_ALLOWED = new Set(['/api/auth/password', '/api/auth/me']);
+
+function pathname(url) {
+  const path = String(url || '').split('?')[0];
+  return path.replace(/\/+$/, '') || path;
 }
 
 export function requireRole(...roles) {

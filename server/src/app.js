@@ -13,6 +13,7 @@ import dashboardRoutes from './routes/dashboard.js';
 import userRoutes from './routes/users.js';
 import auditRoutes from './routes/audit.js';
 import settingsRoutes from './routes/settings.js';
+import adminRoutes from './routes/admin.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -21,6 +22,9 @@ const allowedOrigins = (config.clientOrigin || '')
 
 const app = express();
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
+// Backups can be large; give the admin routes a bigger body limit before the
+// global JSON parser (which stays small to guard the public endpoints).
+app.use('/api/admin', express.json({ limit: '25mb' }));
 app.use(express.json({ limit: '2mb' }));
 
 // Run schema setup + admin seeding once per instance, before handling requests.
@@ -43,6 +47,7 @@ app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/audit', auditRoutes);
 app.use('/api/settings', settingsRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;

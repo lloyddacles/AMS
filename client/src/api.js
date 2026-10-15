@@ -115,13 +115,15 @@ export const api = {
   getAudit: (params) => request(`/audit?${new URLSearchParams(params || {}).toString()}`),
   getAuditActors: () => request('/audit/actors'),
 
+  getBackupSummary: () => request('/admin/backup/summary'),
+  restoreBackup: (backup) => request('/admin/restore', { method: 'POST', body: { backup } }),
+
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
   publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),
 };
 
-export async function exportCsv(type, eventId, extra = {}) {
-  const params = new URLSearchParams({ type });
+export async function exportCsv(type, eventId, extra = {}) {  const params = new URLSearchParams({ type });
   if (eventId) params.set('eventId', eventId);
   for (const [key, value] of Object.entries(extra)) {
     if (value !== undefined && value !== null && value !== '') params.set(key, value);
@@ -136,6 +138,24 @@ export async function exportCsv(type, eventId, extra = {}) {
   const a = document.createElement('a');
   a.href = url;
   a.download = res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'export.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadBackup() {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}/admin/backup`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error('Could not download the backup');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download =
+    res.headers.get('content-disposition')?.match(/filename="(.+)"/)?.[1] || 'attendx-backup.json';
   document.body.appendChild(a);
   a.click();
   a.remove();

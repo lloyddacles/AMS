@@ -78,7 +78,7 @@ router.get('/export', async (req, res) => {
     const event = await get(`SELECT ${EVENT_COLS} FROM events WHERE id = ?`, [eventId]);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const records = await all(
-      `SELECT ${RECORD_COLS}, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ?`,
+      `SELECT ${RECORD_COLS}, note, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ?`,
       [event.id]
     );
     const byStudent = new Map(records.map((r) => [r.studentId, r]));
@@ -95,11 +95,12 @@ router.get('/export', async (req, res) => {
         r?.method || '',
         isoUtc(r?.checkedInAt),
         isoUtc(r?.checkedOutAt),
+        r?.note || '',
       ];
     });
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader('Content-Disposition', `attachment; filename="event-${event.id}-attendance.csv"`);
-    return res.send(toCsv(['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Classification', 'Method', 'Time In', 'Time Out'], rows));
+    return res.send(toCsv(['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Classification', 'Method', 'Time In', 'Time Out', 'Reason'], rows));
   }
 
   if (type === 'matrix') {

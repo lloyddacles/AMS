@@ -1,6 +1,8 @@
 import { Router } from 'express';
-import { verifyCredentials, changePassword, getUser, updateProfile } from '../services/users.js';
+import { verifyCredentials, changePassword, getUser, updateProfile, DEFAULT_PASSWORD } from '../services/users.js';
 import { signToken, requireAuth } from '../middleware/auth.js';
+import { checkLogin, recordFailure, recordSuccess } from '../services/loginGuard.js';
+import { config } from '../config.js';
 
 const router = Router();
 
@@ -13,8 +15,30 @@ router.post('/login', async (req, res) => {
   if (!username || !password) {
     return res.status(400).json({ error: 'Username and password are required' });
   }
+
+  const gate = await checkLogin(username);
+  if (gate.locked) {
+    res.setHeader('Retry-After', String(gate.retryAfter));
+    return res.status(429).json({
+      error: `Too many failed sign-in attempts. Try again in ${Math.ceil(gate.retryAfter / 60)} minute(s).`,
+      retryAfter: gate.retryAfter,
+    });
+  }
+
   const user = await verifyCredentials(username, password);
-  if (!user) return res.status(401).json({ error: 'Invalid username or password' });
+  if (!user) {
+    const status = await recordFailure(username);
+    if (status.locked) {
+      res.setHeader('Retry-After', String(status.retryAfter));
+      return res.status(429).json({
+        error: `Too many failed sign-in attempts. This account is locked for ${config.loginLockMinutes} minute(s).`,
+        retryAfter: status.retryAfter,
+      });
+    }
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+
+  await recordSuccess(username);
   res.json({ token: signToken(user), user });
 });
 
@@ -47,9 +71,12 @@ router.post('/password', requireAuth, async (req, res) => {
   if (String(newPassword).length < 6) {
     return res.status(400).json({ error: 'New password must be at least 6 characters' });
   }
+  if (String(newPassword).toLowerCase() === DEFAULT_PASSWORD) {
+    return res.status(400).json({ error: 'Please choose a password other than the default' });
+  }
   const result = await changePassword(req.user.id, currentPassword, newPassword);
   if (!result.ok) return res.status(result.status).json({ error: result.error });
-  res.json({ ok: true });
+  res.json({ ok: true, user: await getUser(req.user.id) });
 });
 
 export default router;

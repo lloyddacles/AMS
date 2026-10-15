@@ -76,6 +76,7 @@ const SCHEMA = `
     role TEXT NOT NULL DEFAULT 'admin',
     avatar TEXT,
     active INTEGER NOT NULL DEFAULT 1,
+    must_change_password INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -149,6 +150,14 @@ const SCHEMA = `
     value TEXT NOT NULL,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS login_attempts (
+    username TEXT PRIMARY KEY,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    first_failed_at TEXT,
+    locked_until TEXT,
+    updated_at TEXT
+  );
 `;
 
 // Lightweight migrations for databases created before a column existed.
@@ -204,6 +213,7 @@ async function doInit() {
   await ensureColumn('students', 'section', 'section TEXT');
   await ensureColumn('users', 'avatar', 'avatar TEXT');
   await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
+  await ensureColumn('users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
