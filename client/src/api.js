@@ -100,6 +100,8 @@ export const api = {
   getReportOverview: (params) => request(`/reports/overview?${new URLSearchParams(params || {}).toString()}`),
   getReportMatrix: () => request('/reports/matrix'),
   getAtRisk: (params) => request(`/reports/at-risk?${new URLSearchParams(params || {}).toString()}`),
+  getRisk: () => request('/reports/risk'),
+  getStudentRisk: (id) => request(`/reports/risk/${id}`),
 
   getDashboard: () => request('/dashboard/stats'),
 

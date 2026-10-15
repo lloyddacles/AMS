@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, exportCsv } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Spinner from '../components/Spinner.jsx';
+import RiskExplainer from '../components/RiskExplainer.jsx';
 
 const SUMMARY_COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
@@ -32,6 +33,8 @@ export default function Reports() {
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [expandedRisk, setExpandedRisk] = useState(null);
+  const [riskCache, setRiskCache] = useState({});
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -275,7 +278,17 @@ export default function Reports() {
                       <td className="sticky-col strong">{s.lastName}, {s.firstName}</td>
                       {matrix.events.map((e) => {
                         const status = matrix.records[`${e.id}:${s.id}`];
-                        return (
+  function toggleRisk(student) {
+    setExpandedRisk((cur) => (cur === student.id ? null : student.id));
+    if (!riskCache[student.id]) {
+      api
+        .getStudentRisk(student.id)
+        .then((d) => setRiskCache((c) => ({ ...c, [student.id]: d })))
+        .catch(() => setRiskCache((c) => ({ ...c, [student.id]: { error: true } })));
+    }
+  }
+
+  return (
                           <td key={e.id} className="cell-mark">
                             {status ? (
                               <span className={`mark mark-${status}`} title={status}>{status[0].toUpperCase()}</span>
@@ -337,38 +350,68 @@ export default function Reports() {
                     <th className="num">Absent</th>
                     <th className="num">Excused</th>
                     <th>Rate</th>
+                    <th>Risk</th>
                   </tr>
                 </thead>
                 <tbody>
                   {atRisk.students.length === 0 && (
                     <tr>
-                      <td colSpan={8} className="muted center">
+                      <td colSpan={9} className="muted center">
                         No students below {atRisk.threshold}% attendance.
                       </td>
                     </tr>
                   )}
                   {atRisk.students.map((s) => (
-                    <tr key={s.id}>
-                      <td className="mono">{s.studentNo}</td>
-                      <td className="strong">{s.lastName}, {s.firstName}</td>
-                      <td>{s.course || '—'}</td>
-                      <td>{s.yearLevel || '—'}</td>
-                      <td className="num">{s.attended}</td>
-                      <td className="num">{s.absent}</td>
-                      <td className="num">{s.excused}</td>
-                      <td>
-                        <div className="rate-wrap">
-                          <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
-                          <span className="rate-label">{s.rate}%</span>
-                        </div>
-                      </td>
-                    </tr>
+                    <Fragment key={s.id}>
+                      <tr className={typeof s.risk === 'number' ? 'row-clickable' : ''}>
+                        <td className="mono">{s.studentNo}</td>
+                        <td className="strong">{s.lastName}, {s.firstName}</td>
+                        <td>{s.course || '—'}</td>
+                        <td>{s.yearLevel || '—'}</td>
+                        <td className="num">{s.attended}</td>
+                        <td className="num">{s.absent}</td>
+                        <td className="num">{s.excused}</td>
+                        <td>
+                          <div className="rate-wrap">
+                            <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
+                            <span className="rate-label">{s.rate}%</span>
+                          </div>
+                        </td>
+                        <td>
+                          {typeof s.risk === 'number' ? (
+                            <button
+                              type="button"
+                              className={`risk-pill risk-${s.riskLevel} ${expandedRisk === s.id ? 'open' : ''}`}
+                              onClick={() => toggleRisk(s)}
+                              title="Show what drives this risk score"
+                            >
+                              {s.risk}%
+                              <span className="risk-caret">{expandedRisk === s.id ? '▲' : '▼'}</span>
+                            </button>
+                          ) : (
+                            <span className="muted">—</span>
+                          )}
+                        </td>
+                      </tr>
+                      {expandedRisk === s.id && (
+                        <tr className="risk-detail-row">
+                          <td colSpan={9}>
+                            <RiskExplainer
+                              student={s}
+                              detail={riskCache[s.id]}
+                              context={atRisk.model?.context}
+                            />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
               <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
                 {atRisk.students.length} at-risk student{atRisk.students.length === 1 ? '' : 's'} · below {atRisk.threshold}% ·
                 {' '}based on {atRisk.totalEvents} event{atRisk.totalEvents === 1 ? '' : 's'} total.
+                {' '}Risk is an explainable logistic score (exact SHAP) — tap a score to see drivers.
               </div>
             </div>
           )}

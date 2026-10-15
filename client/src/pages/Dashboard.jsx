@@ -168,9 +168,16 @@ export default function Dashboard() {
                     <div className="strong">{s.lastName}, {s.firstName}</div>
                     <div className="muted small">{s.studentNo} · {s.attended} attended · {s.absent} absent</div>
                   </div>
-                  <div className="rate-wrap">
-                    <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
-                    <span className="rate-label">{s.rate}%</span>
+                  <div className="at-risk-right">
+                    {typeof s.risk === 'number' && (
+                      <span className={`risk-pill risk-${s.riskLevel}`} title="Explainable risk score">
+                        {s.risk}%
+                      </span>
+                    )}
+                    <div className="rate-wrap">
+                      <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
+                      <span className="rate-label">{s.rate}%</span>
+                    </div>
                   </div>
                 </li>
               ))}

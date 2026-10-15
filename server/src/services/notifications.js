@@ -1,5 +1,6 @@
 import { get, all, run } from '../db.js';
 import { buildAtRisk } from './reports.js';
+import { featureLabel } from './risk.js';
 import { todayInTz, eventStart, eventEnd } from '../classify.js';
 
 // A check-in rate below this (once an event has started) raises a low-check-in alert.
@@ -136,17 +137,44 @@ function dateInTzOffset(days, base = new Date()) {
   return todayInTz(new Date(base.getTime() - days * 86400000));
 }
 
-// One aggregated alert per day when students fall below the attendance threshold.
+// One aggregated alert per day when students fall below the attendance
+// threshold. The body summarizes each non-compliant student's explainable risk
+// score (logistic model with exact SHAP) and the group's top risk drivers.
 export async function evaluateAtRisk() {
   const { threshold, students } = await buildAtRisk({});
   if (!students.length) return false;
-  const names = students.slice(0, 8).map((s) => `${s.lastName}, ${s.firstName} (${s.rate}%)`).join('; ');
-  const more = students.length > 8 ? `; +${students.length - 8} more` : '';
+
+  const scored = students.filter((s) => typeof s.risk === 'number');
+  const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s.risk, 0) / scored.length) : null;
+  const worst = scored.reduce((m, s) => (s.risk > m ? s.risk : m), 0);
+
+  // Group-level driver importance: mean |SHAP contribution| per feature.
+  const importance = new Map();
+  for (const s of scored) {
+    for (const d of s.drivers || []) {
+      importance.set(d.key, (importance.get(d.key) || 0) + Math.abs(d.contribution));
+    }
+  }
+  const topDrivers = [...importance.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 3)
+    .map(([key]) => featureLabel(key));
+
+  const lines = [];
+  if (avg != null) lines.push(`Explainable risk (logistic SHAP) · average ${avg}%`);
+  if (topDrivers.length) lines.push(`Group drivers: ${topDrivers.join(', ')}`);
+  for (const s of scored.slice(0, 5)) {
+    const top = (s.drivers || [])[0];
+    lines.push(`${s.lastName}, ${s.firstName} — ${s.risk}% risk${top ? ` · top factor: ${top.label.toLowerCase()}` : ''}`);
+  }
+  const unscored = students.length - scored.length;
+  if (unscored > 0) lines.push(`+${unscored} more without a score`);
+
   return createNotification({
     type: 'at-risk',
     title: `Attendance risk: ${students.length} student(s) below ${threshold}%`,
-    body: names + more,
-    severity: 'warning',
+    body: lines.join('\n'),
+    severity: worst >= 75 ? 'critical' : 'warning',
     audience: 'all',
     link: '/reports',
     dedupeKey: `at-risk:${todayInTz()}`,

@@ -3,6 +3,7 @@ import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { buildOverview, buildAtRisk } from '../services/reports.js';
+import { buildRiskModel } from '../services/risk.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -54,6 +55,24 @@ router.get('/matrix', async (req, res) => {
     if (cls) map[`${r.eventId}:${r.studentId}`] = cls;
   }
   res.json({ events, students, records: map });
+});
+
+// Explainable attendance risk for every student (logistic model + exact SHAP),
+// sorted most-at-risk first.
+router.get('/risk', async (req, res) => {
+  const model = await buildRiskModel();
+  const students = [...model.students].sort(
+    (a, b) => b.risk - a.risk || String(a.lastName || '').localeCompare(String(b.lastName || ''))
+  );
+  res.json({ totalEvents: model.totalEvents, context: model.context, students });
+});
+
+// Full explanation (all feature contributions) for a single student.
+router.get('/risk/:studentId', async (req, res) => {
+  const model = await buildRiskModel();
+  const student = model.byStudent.get(Number(req.params.studentId));
+  if (!student) return res.status(404).json({ error: 'Student not found' });
+  res.json({ totalEvents: model.totalEvents, context: model.context, student });
 });
 
 router.get('/export', async (req, res) => {

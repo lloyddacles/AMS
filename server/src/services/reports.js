@@ -1,6 +1,7 @@
 import { all } from '../db.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { getSettings } from './settings.js';
+import { buildRiskModel } from './risk.js';
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
@@ -66,7 +67,9 @@ export async function buildOverview({ search = '', course = '' } = {}) {
   return { totalEvents, students: rows };
 }
 
-// Students whose attendance rate falls below the configured threshold.
+// Students whose attendance rate falls below the configured threshold. Each
+// flagged student is annotated with an explainable risk score (logistic model,
+// exact SHAP) plus its top contributing factors.
 export async function buildAtRisk(filters = {}) {
   const settings = await getSettings();
   const threshold = settings.atRiskThreshold;
@@ -83,5 +86,28 @@ export async function buildAtRisk(filters = {}) {
             String(a.firstName || '').localeCompare(String(b.firstName || ''))
         )
     : [];
-  return { threshold, minEvents, totalEvents, students: list };
+
+  // Attach the explainable risk model (best-effort: never block the report).
+  let model = null;
+  try {
+    model = await buildRiskModel();
+  } catch {
+    model = null;
+  }
+  const annotated = model
+    ? list.map((s) => {
+        const r = model.byStudent.get(s.id);
+        return r
+          ? { ...s, risk: r.risk, riskLevel: r.riskLevel, riskProbability: r.riskProbability, drivers: r.drivers }
+          : s;
+      })
+    : list;
+
+  return {
+    threshold,
+    minEvents,
+    totalEvents,
+    students: annotated,
+    model: model ? { context: model.context } : null,
+  };
 }
