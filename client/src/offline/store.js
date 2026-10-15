@@ -16,7 +16,9 @@ export async function savePack(pack) {
 }
 
 export function getPack(eventId) {
-  return idbGet('packs', Number(eventId));
+  const key = Number(eventId);
+  if (!Number.isFinite(key)) return Promise.resolve(null);
+  return idbGet('packs', key);
 }
 
 // ---- Pending-scan queue ----
