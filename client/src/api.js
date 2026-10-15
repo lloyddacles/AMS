@@ -27,11 +27,19 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
     const token = getToken();
     if (token) headers.Authorization = `Bearer ${token}`;
   }
-  const res = await fetch(`${API_BASE}${path}`, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  let res;
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      method,
+      headers,
+      body: body ? JSON.stringify(body) : undefined,
+    });
+  } catch (e) {
+    // A rejected fetch almost always means the request never left the device.
+    const err = new Error('You appear to be offline. Scans will sync automatically once connected.');
+    err.network = true;
+    throw err;
+  }
 
   const contentType = res.headers.get('content-type') || '';
   if (contentType.includes('text/csv')) {
@@ -68,6 +76,7 @@ export const api = {
 
   getEvents: () => request('/events'),
   getEvent: (id) => request(`/events/${id}`),
+  getScanPack: (id) => request(`/events/${id}/scan-pack`),
   createEvent: (data) => request('/events', { method: 'POST', body: data }),
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: data }),
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
@@ -78,8 +87,12 @@ export const api = {
   getEventAttendance: (eventId) => request(`/attendance/event/${eventId}`),
   getTodayAttendance: () => request('/attendance/today'),
   lookupAttendance: (eventId, qrToken) => request('/attendance/lookup', { method: 'POST', body: { eventId, qrToken } }),
-  scanAttendance: (eventId, qrToken, status, confirmValue) =>
-    request('/attendance/scan', { method: 'POST', body: { eventId, qrToken, status, confirmValue } }),
+  scanAttendance: (eventId, qrToken, status, confirmValue, opts = {}) =>
+    request('/attendance/scan', {
+      method: 'POST',
+      body: { eventId, qrToken, status, confirmValue, scannedAt: opts.scannedAt, clientScanId: opts.clientScanId },
+    }),
+  syncScans: (scans) => request('/attendance/scan/batch', { method: 'POST', body: { scans } }),
   manualAttendance: (data) => request('/attendance', { method: 'POST', body: data }),
   updateAttendance: (id, data) => request(`/attendance/${id}`, { method: 'PUT', body: data }),
   deleteAttendance: (id) => request(`/attendance/${id}`, { method: 'DELETE' }),

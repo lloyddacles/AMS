@@ -3,47 +3,128 @@ import { Link, useParams } from 'react-router-dom';
 import { Html5Qrcode } from 'html5-qrcode';
 import { api } from '../api.js';
 import LiveClock from '../components/LiveClock.jsx';
+import { useOffline } from '../offline/OfflineProvider.jsx';
+import {
+  savePack,
+  getPack,
+  enqueueScan,
+  newClientScanId,
+  getLocalState,
+  saveLocalState,
+  seedLocalState,
+  getTodayCache,
+  setTodayCache,
+} from '../offline/store.js';
+import { classifyByTime, timeoutOpensAt, formatTzTime } from '../offline/classify.js';
+
+const ACTION_LABELS = {
+  'time-in': 'timed in',
+  'time-out': 'timed out',
+  'already-complete': 'already completed',
+};
+
+// Same token extraction the server does, so QR URLs and bare tokens both work.
+function resolveToken(raw) {
+  let token = String(raw || '').trim();
+  const urlMatch = token.match(/[?&]token=([^&]+)/);
+  if (urlMatch) token = decodeURIComponent(urlMatch[1]);
+  return token;
+}
+
+// Mirrors the server's identity check (exact number or last 4 digits).
+function studentNoMatches(provided, expected) {
+  const p = String(provided || '').trim().toLowerCase().replace(/\s+/g, '');
+  const e = String(expected || '').trim().toLowerCase();
+  if (!p) return false;
+  if (p === e) return true;
+  const digits = e.replace(/\D/g, '');
+  return digits.length >= 4 && p === digits.slice(-4);
+}
+
+// Server timestamps are "YYYY-MM-DD HH:MM:SS" (UTC); offline optimistic entries
+// are full ISO strings. Normalise both for display.
+function fmtTime(value) {
+  if (!value) return '—';
+  const s = String(value);
+  return new Date(s.includes('T') ? s : `${s}Z`).toLocaleTimeString();
+}
 
 export default function Scanner() {
   const { id } = useParams();
+  const { online, pending, syncing, syncNow, refreshPending } = useOffline();
   const [event, setEvent] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
-  const [pending, setPending] = useState(null);
+  const [pendingScan, setPendingScan] = useState(null);
   const [confirmValue, setConfirmValue] = useState('');
   const [commitError, setCommitError] = useState('');
   const [committing, setCommitting] = useState(false);
   const [notice, setNotice] = useState('');
   const [count, setCount] = useState(0);
-  const [recent, setRecent] = useState([]);
   const [today, setToday] = useState([]);
+  const [packReady, setPackReady] = useState(false);
   const scannerRef = useRef(null);
   const pendingRef = useRef(null);
   const lastScan = useRef({ token: null, at: 0 });
   const confirmRef = useRef(null);
+  const packRef = useRef(null); // { event, students, attendance, timezone, tokenMap }
+
+  function indexPack(pack) {
+    const tokenMap = {};
+    for (const s of pack.students || []) tokenMap[s.qrToken] = s;
+    return { ...pack, tokenMap };
+  }
 
   async function loadToday() {
     try {
       const data = await api.getTodayAttendance();
       setToday(data.records);
+      setTodayCache(data.records);
     } catch {
-      /* ignore */
+      const cached = await getTodayCache().catch(() => null);
+      if (cached?.records) setToday(cached.records);
+    }
+  }
+
+  // Load the event + scan pack. Online this refreshes the offline cache; offline
+  // it falls back to the last cached pack so scanning keeps working.
+  async function loadData() {
+    const eventId = Number(id);
+    try {
+      const [evt, pack] = await Promise.all([api.getEvent(eventId), api.getScanPack(eventId)]);
+      const indexed = indexPack(pack);
+      packRef.current = indexed;
+      setEvent(evt);
+      setPackReady(true);
+      await savePack(indexed).catch(() => {});
+      await seedLocalState(eventId, pack.attendance || []).catch(() => {});
+    } catch (e) {
+      const cached = await getPack(eventId).catch(() => null);
+      if (cached) {
+        packRef.current = indexPack(cached);
+        setEvent(cached.event);
+        setPackReady(true);
+      } else if (e.network) {
+        setError('This device has not cached event data yet. Connect to the internet once to enable offline scanning.');
+      } else {
+        setError(e.message);
+      }
     }
   }
 
   useEffect(() => {
-    api.getEvent(id).then(setEvent).catch((e) => setError(e.message));
+    loadData();
     loadToday();
     return () => stopScanner();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
   useEffect(() => {
-    pendingRef.current = pending;
-    if (pending?.requireStudentConfirm) {
+    pendingRef.current = pendingScan;
+    if (pendingScan?.requireStudentConfirm) {
       setTimeout(() => confirmRef.current?.focus(), 50);
     }
-  }, [pending]);
+  }, [pendingScan]);
 
   async function startScanner() {
     setError('');
@@ -77,48 +158,179 @@ export default function Scanner() {
     if (lastScan.current.token === decodedText && now - lastScan.current.at < 2000) return;
     lastScan.current = { token: decodedText, at: now };
 
-    try {
-      const res = await api.lookupAttendance(Number(id), decodedText);
-      setNotice('');
-      setCommitError('');
-      setConfirmValue('');
-      setPending({ qrToken: decodedText, ...res });
-      beep(res.nextAction === 'time-out' ? 660 : res.nextAction === 'already-complete' ? 400 : 880);
-    } catch (e) {
-      setNotice(e.message);
-      beepError();
+    if (navigator.onLine) {
+      try {
+        const res = await api.lookupAttendance(Number(id), decodedText);
+        setNotice('');
+        setCommitError('');
+        setConfirmValue('');
+        setPendingScan({ qrToken: decodedText, ...res });
+        beep(res.nextAction === 'time-out' ? 660 : res.nextAction === 'already-complete' ? 400 : 880);
+        return;
+      } catch (e) {
+        if (!e.network) {
+          setNotice(e.message);
+          beepError();
+          return;
+        }
+        // Network dropped mid-lookup — fall through to offline handling.
+      }
     }
+
+    await offlineLookup(decodedText);
+  }
+
+  async function offlineLookup(decodedText) {
+    const pack = packRef.current;
+    const token = resolveToken(decodedText);
+    const student = pack?.tokenMap?.[token];
+    if (!student) {
+      setNotice(
+        pack
+          ? 'Unrecognized QR code (offline).'
+          : 'Offline and no cached data for this event yet.'
+      );
+      beepError();
+      return;
+    }
+
+    const eventId = Number(id);
+    const localMap = (await getLocalState(eventId).catch(() => ({}))) || {};
+    const st = localMap[String(student.id)] || {};
+    const nextAction = !st.in ? 'time-in' : !st.out ? 'time-out' : 'already-complete';
+
+    const tz = pack.timezone || 'Asia/Manila';
+    let plannedStatus = null;
+    let windowBlocked = false;
+    let windowMessage = '';
+    if (nextAction === 'time-in') {
+      plannedStatus = classifyByTime(pack.event, new Date(), tz) || 'present';
+    } else if (nextAction === 'time-out') {
+      const opens = timeoutOpensAt(pack.event, tz);
+      if (opens && new Date() < opens) {
+        windowBlocked = true;
+        windowMessage = `Time-out opens at ${formatTzTime(opens, tz)}.`;
+      }
+    }
+
+    setNotice('');
+    setCommitError('');
+    setConfirmValue('');
+    setPendingScan({
+      qrToken: decodedText,
+      offline: true,
+      student,
+      requireStudentConfirm: !!pack.event?.requireStudentConfirm,
+      eventClosed: pack.event?.status !== 'active',
+      nextAction,
+      plannedStatus,
+      windowBlocked,
+      windowMessage,
+      checkedInAt: st.in || null,
+      timeoutOpensAt: formatTzTime(timeoutOpensAt(pack.event, tz), tz),
+    });
+    beep(nextAction === 'time-out' ? 660 : nextAction === 'already-complete' ? 400 : 880);
+  }
+
+  // Record a scan locally and queue it for the next sync.
+  async function queueOffline(scan) {
+    const eventId = Number(id);
+    await enqueueScan(scan);
+    const localMap = (await getLocalState(eventId).catch(() => ({}))) || {};
+    const key = String(scan.studentId);
+    const prev = localMap[key] || {};
+    if (scan.action === 'time-out') localMap[key] = { ...prev, out: scan.scannedAt };
+    else localMap[key] = { ...prev, in: prev.in || scan.scannedAt };
+    await saveLocalState(eventId, localMap);
+    await refreshPending();
+    if (navigator.onLine) syncNow();
   }
 
   async function commit() {
-    if (!pending) return;
+    if (!pendingScan) return;
+    const { requireStudentConfirm, offline, action, qrToken } = pendingScan;
+    const studentId = pendingScan.student?.id;
+
+    // Offline (or kiosk) confirmation check happens client-side before queueing.
+    if (requireStudentConfirm && !studentNoMatches(confirmValue, pendingScan.student?.studentNo)) {
+      setCommitError('Student number confirmation did not match this QR code');
+      beepError();
+      return;
+    }
+
     setCommitting(true);
     setCommitError('');
-    try {
-      const res = await api.scanAttendance(
-        Number(id),
-        pending.qrToken,
-        undefined,
-        pending.requireStudentConfirm ? confirmValue : undefined
-      );
-      const labels = { 'time-in': 'timed in', 'time-out': 'timed out', 'already-complete': 'already completed' };
-      if (res.action === 'time-in') setCount((c) => c + 1);
-      setRecent((r) => [{ ...res, at: new Date().toLocaleTimeString() }, ...r].slice(0, 8));
-      setNotice(`${res.firstName} ${res.lastName} ${labels[res.action] || 'recorded'} ✓`);
-      beep(res.action === 'time-in' ? 880 : res.action === 'time-out' ? 660 : 400);
-      loadToday();
-      setPending(null);
-      setConfirmValue('');
-    } catch (e) {
-      setCommitError(e.message);
-      beepError();
-    } finally {
-      setCommitting(false);
+    const scannedAt = new Date().toISOString();
+    const clientScanId = newClientScanId();
+
+    // Try the server first when we can reach it. Online scans rely on the
+    // server clock (so the time-out window guard still applies); only the
+    // offline queue passes a client timestamp.
+    if (!offline && navigator.onLine) {
+      try {
+        const res = await api.scanAttendance(
+          Number(id),
+          qrToken,
+          undefined,
+          requireStudentConfirm ? confirmValue : undefined,
+          { clientScanId }
+        );
+        if (res.action === 'time-in') setCount((c) => c + 1);
+        setNotice(`${res.firstName} ${res.lastName} ${ACTION_LABELS[res.action] || 'recorded'} ✓`);
+        beep(res.action === 'time-in' ? 880 : res.action === 'time-out' ? 660 : 400);
+        loadToday();
+        setPendingScan(null);
+        setConfirmValue('');
+        setCommitting(false);
+        return;
+      } catch (e) {
+        if (!e.network) {
+          setCommitError(e.message);
+          beepError();
+          setCommitting(false);
+          return;
+        }
+        // Network drop at commit — queue it instead of losing the scan.
+      }
     }
+
+    // Offline path: queue locally with an optimistic confirmation.
+    const student = pendingScan.student || {};
+    const localAction = action || pendingScan.nextAction || 'time-in';
+    await queueOffline({
+      clientScanId,
+      eventId: Number(id),
+      qrToken,
+      confirmValue: requireStudentConfirm ? confirmValue : undefined,
+      scannedAt,
+      studentId,
+      action: localAction,
+    });
+
+    if (localAction === 'time-in') {
+      setCount((c) => c + 1);
+      setToday((t) =>
+        [
+          {
+            firstName: student.firstName,
+            lastName: student.lastName,
+            eventName: event?.name,
+            checkedInAt: scannedAt,
+            pending: true,
+          },
+          ...t,
+        ].slice(0, 100)
+      );
+    }
+    setNotice(`${student.firstName || ''} ${student.lastName || ''} ${ACTION_LABELS[localAction] || 'recorded'} · saved offline`);
+    beep(localAction === 'time-in' ? 880 : 660);
+    setPendingScan(null);
+    setConfirmValue('');
+    setCommitting(false);
   }
 
   function cancel() {
-    setPending(null);
+    setPendingScan(null);
     setConfirmValue('');
     setCommitError('');
   }
@@ -127,11 +339,12 @@ export default function Scanner() {
     function onKey(e) {
       if (e.key === 'Escape') cancel();
     }
-    if (pending) document.addEventListener('keydown', onKey);
+    if (pendingScan) document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [pending]);
+  }, [pendingScan]);
 
   const mode = event?.requireStudentConfirm ? 'kiosk' : 'staff';
+  const offline = !online;
 
   return (
     <div className="page">
@@ -150,36 +363,66 @@ export default function Scanner() {
         </div>
       </div>
 
-      {pending && (
-        <div className={`confirm-card ${pending.nextAction === 'already-complete' ? 'warn' : ''}`}>
+      {offline && (
+        <div className="offline-banner">
+          <span className="sync-dot" />
+          <div className="offline-banner-text">
+            <strong>Offline mode</strong>
+            <span className="muted small">
+              Scans are saved on this device and sync automatically when you reconnect.
+            </span>
+          </div>
+          {pending > 0 && <span className="pill pill-amber">{pending} queued</span>}
+        </div>
+      )}
+      {!offline && pending > 0 && (
+        <div className="offline-banner is-pending">
+          <span className="sync-dot" />
+          <div className="offline-banner-text">
+            <strong>{syncing ? 'Syncing…' : 'Pending sync'}</strong>
+            <span className="muted small">{pending} scan(s) waiting to upload</span>
+          </div>
+          {!syncing && (
+            <button className="btn btn-sm btn-primary" onClick={syncNow}>
+              Sync now
+            </button>
+          )}
+        </div>
+      )}
+
+      {pendingScan && (
+        <div className={`confirm-card ${pendingScan.nextAction === 'already-complete' ? 'warn' : ''}`}>
           <div className="confirm-info">
-            <div className="confirm-name">{pending.student.lastName}, {pending.student.firstName}</div>
+            <div className="confirm-name">
+              {pendingScan.student?.lastName}, {pendingScan.student?.firstName}
+            </div>
             <div className="muted">
-              {pending.student.studentNo} · {pending.student.course || '—'} · {pending.student.yearLevel || '—'}
+              {pendingScan.student?.studentNo} · {pendingScan.student?.course || '—'} · {pendingScan.student?.yearLevel || '—'}
             </div>
             <div className="action-line">
-              {pending.nextAction === 'time-in' && (
-                <span className={`pill ${pending.plannedStatus === 'late' ? 'pill-amber' : pending.plannedStatus === 'early' ? 'pill-blue' : pending.plannedStatus === 'absent' ? 'pill-red' : 'pill-green'}`}>
-                  Time In · {({ early: 'Early', 'on-time': 'On-time', late: 'Late', absent: 'Absent', present: 'Present' })[pending.plannedStatus] || 'Present'}
+              {pendingScan.nextAction === 'time-in' && (
+                <span className={`pill ${pendingScan.plannedStatus === 'late' ? 'pill-amber' : pendingScan.plannedStatus === 'early' ? 'pill-blue' : pendingScan.plannedStatus === 'absent' ? 'pill-red' : 'pill-green'}`}>
+                  Time In · {({ early: 'Early', 'on-time': 'On-time', late: 'Late', absent: 'Absent', present: 'Present' })[pendingScan.plannedStatus] || 'Present'}
                 </span>
               )}
-              {pending.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
-              {pending.nextAction === 'already-complete' && <span className="pill pill-gray">Already timed out</span>}
-              {pending.nextAction === 'time-out' && pending.checkedInAt && (
-                <span className="muted small">in at {new Date(pending.checkedInAt + 'Z').toLocaleTimeString()}</span>
+              {pendingScan.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
+              {pendingScan.nextAction === 'already-complete' && <span className="pill pill-gray">Already timed out</span>}
+              {pendingScan.nextAction === 'time-out' && pendingScan.checkedInAt && (
+                <span className="muted small">in at {fmtTime(pendingScan.checkedInAt)}</span>
               )}
-              {pending.eventClosed && <span className="pill pill-red">Check-in closed</span>}
+              {pendingScan.eventClosed && <span className="pill pill-red">Check-in closed</span>}
+              {pendingScan.offline && <span className="pill pill-amber">Offline · will sync</span>}
             </div>
-            {pending.nextAction === 'time-in' && !pending.windowBlocked && pending.lateAfterAt && (
-              <div className="muted small">Late after {pending.lateAfterAt}</div>
+            {pendingScan.nextAction === 'time-in' && !pendingScan.windowBlocked && pendingScan.lateAfterAt && (
+              <div className="muted small">Late after {pendingScan.lateAfterAt}</div>
             )}
-            {pending.nextAction === 'time-out' && !pending.windowBlocked && pending.timeoutOpensAt && (
-              <div className="muted small">Time-out opens at {pending.timeoutOpensAt}</div>
+            {pendingScan.nextAction === 'time-out' && !pendingScan.windowBlocked && pendingScan.timeoutOpensAt && (
+              <div className="muted small">Time-out opens at {pendingScan.timeoutOpensAt}</div>
             )}
-            {pending.windowMessage && <div className="alert alert-error">{pending.windowMessage}</div>}
+            {pendingScan.windowMessage && <div className="alert alert-error">{pendingScan.windowMessage}</div>}
           </div>
 
-          {pending.requireStudentConfirm && (
+          {pendingScan.requireStudentConfirm && (
             <div className="confirm-input">
               <label>Confirm identity — enter student number</label>
               <input
@@ -200,13 +443,13 @@ export default function Scanner() {
             <button
               className="btn btn-primary"
               onClick={commit}
-              disabled={committing || pending.eventClosed || pending.windowBlocked || pending.nextAction === 'already-complete'}
+              disabled={committing || pendingScan.eventClosed || pendingScan.windowBlocked || pendingScan.nextAction === 'already-complete'}
             >
               {committing
                 ? 'Recording…'
-                : pending.nextAction === 'time-out'
+                : pendingScan.nextAction === 'time-out'
                   ? 'Confirm Time Out'
-                  : pending.nextAction === 'already-complete'
+                  : pendingScan.nextAction === 'already-complete'
                     ? 'Already Completed'
                     : 'Confirm Time In'}
             </button>
@@ -219,7 +462,9 @@ export default function Scanner() {
           <div id="reader" className="reader" />
           <div className="scanner-controls">
             {!scanning ? (
-              <button className="btn btn-primary btn-block" onClick={startScanner}>Start Camera</button>
+              <button className="btn btn-primary btn-block" onClick={startScanner} disabled={!packReady && !event}>
+                Start Camera
+              </button>
             ) : (
               <button className="btn btn-danger btn-block" onClick={stopScanner}>Stop Camera</button>
             )}
@@ -241,10 +486,13 @@ export default function Scanner() {
               <li key={i} className="list-row">
                 <div>
                   <div className="strong">{t.lastName}, {t.firstName}</div>
-                  <div className="muted small">{t.eventName}</div>
+                  <div className="muted small">
+                    {t.eventName}
+                    {t.pending ? ' · pending sync' : ''}
+                  </div>
                 </div>
                 <div className="scan-meta">
-                  <span className="muted small">{t.checkedInAt ? new Date(t.checkedInAt + 'Z').toLocaleTimeString() : '—'}</span>
+                  <span className="muted small">{fmtTime(t.checkedInAt)}</span>
                 </div>
               </li>
             ))}

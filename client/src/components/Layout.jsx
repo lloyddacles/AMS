@@ -4,6 +4,7 @@ import { useAuth } from '../auth.jsx';
 import LiveClock from './LiveClock.jsx';
 import Footer from './Footer.jsx';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
+import SyncBadge from './SyncBadge.jsx';
 
 const links = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
@@ -93,6 +94,7 @@ export default function Layout({ children }) {
             ☰
           </button>
           <span className="topbar-title">AttendX</span>
+          <SyncBadge />
           <LiveClock className="topbar-clock" />
         </header>
         <main className="content">{children}</main>

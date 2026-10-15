@@ -119,6 +119,13 @@ const SCHEMA = `
     UNIQUE (event_id, student_id)
   );
 
+  CREATE TABLE IF NOT EXISTS scan_receipts (
+    client_scan_id TEXT PRIMARY KEY,
+    attendance_id INTEGER,
+    action TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
   CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
   CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
 

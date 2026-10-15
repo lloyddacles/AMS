@@ -2,9 +2,29 @@ import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from './api.js';
 
 const AuthContext = createContext(null);
+const USER_KEY = 'attendance_user';
+
+// Cache the signed-in user so the app can start (and the offline scanner can
+// run) without a round-trip to the server.
+function loadCachedUser() {
+  try {
+    return JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+  } catch {
+    return null;
+  }
+}
+
+function saveCachedUser(user) {
+  try {
+    if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(USER_KEY);
+  } catch {
+    /* ignore quota / privacy errors */
+  }
+}
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState(loadCachedUser);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -14,24 +34,41 @@ export function AuthProvider({ children }) {
     }
     api
       .me()
-      .then(({ user }) => setUser(user))
-      .catch(() => setToken(null))
+      .then(({ user: fresh }) => {
+        setUser(fresh);
+        saveCachedUser(fresh);
+      })
+      .catch((err) => {
+        // Offline: keep the session so the scanner keeps working. Only a real
+        // auth failure (e.g. 401 / invalid token) clears the session.
+        if (err?.network) {
+          const cached = loadCachedUser();
+          if (cached) setUser(cached);
+        } else {
+          setToken(null);
+          saveCachedUser(null);
+          setUser(null);
+        }
+      })
       .finally(() => setLoading(false));
   }, []);
 
   async function login(username, password) {
-    const { token, user } = await api.login(username, password);
+    const { token, user: next } = await api.login(username, password);
     setToken(token);
-    setUser(user);
+    setUser(next);
+    saveCachedUser(next);
   }
 
   function logout() {
     setToken(null);
+    saveCachedUser(null);
     setUser(null);
   }
 
   function updateUser(next) {
     setUser(next);
+    saveCachedUser(next);
   }
 
   return (

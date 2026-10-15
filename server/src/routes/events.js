@@ -3,7 +3,9 @@ import { get, all, run, batch } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
+import { getSettings } from '../services/settings.js';
 import { displayStatus } from '../classify.js';
+import { config } from '../config.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -100,6 +102,26 @@ router.get('/:id', async (req, res) => {
   const row = await getEvent(req.params.id);
   if (!row) return res.status(404).json({ error: 'Event not found' });
   res.json(row);
+});
+
+// Offline scan pack: everything the scanner needs to validate and record scans
+// without a connection. The client caches this in IndexedDB while online.
+router.get('/:id/scan-pack', async (req, res) => {
+  const event = await getEvent(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const students = await all(
+    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
+            course, year_level AS yearLevel, section, qr_token AS qrToken
+     FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
+  );
+  const attendance = await all(
+    `SELECT student_id AS studentId, status, method,
+            checked_in_at AS checkedInAt, checked_out_at AS checkedOutAt
+     FROM attendance WHERE event_id = ?`,
+    [req.params.id]
+  );
+  const settings = await getSettings();
+  res.json({ event, students, attendance, timezone: config.timezone, settings, generatedAt: nowUtc() });
 });
 
 router.post('/', async (req, res) => {

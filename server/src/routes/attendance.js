@@ -10,6 +10,7 @@ import {
   formatTzTime,
   isAttendedStatus,
   todayInTz,
+  parseUtc,
 } from '../classify.js';
 
 const router = Router();
@@ -25,6 +26,21 @@ const studentFields = `s.id AS studentId, s.student_no AS studentNo, s.first_nam
 // Current time as a SQLite-style UTC timestamp.
 function nowUtc() {
   return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// Coerce a client-supplied scan time (ISO string or ms) into a SQLite UTC
+// timestamp. Returns null when absent/invalid so the server clock is used.
+function normalizeScannedAt(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return null;
+  return d.toISOString().slice(0, 19).replace('T', ' ');
+}
+
+// Clamp a client-generated idempotency key to a safe length.
+function normalizeClientScanId(value) {
+  if (value === undefined || value === null || value === '') return undefined;
+  return String(value).slice(0, 100);
 }
 
 function getAttendanceRow(id) {
@@ -90,29 +106,87 @@ async function markManual({ eventId, studentId, status, note, userId }) {
 
 // QR scanning alternates: first scan = time-in (early/on-time/late/absent by
 // the clock), second scan = time-out (only when the end window is open).
-async function applyScan({ eventId, studentId, method, userId, event }) {
-  const existing = await get('SELECT * FROM attendance WHERE event_id = ? AND student_id = ?', [eventId, studentId]);
-  if (!existing) {
-    const status = classifyByTime(event, nowUtc()) || 'present';
-    const info = await run(
-      `INSERT INTO attendance (event_id, student_id, status, method, marked_by, checked_in_at)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [eventId, studentId, status, method, userId || null, nowUtc()]
-    );
-    return { row: await getAttendanceRow(info.lastInsertRowid), action: 'time-in' };
+//
+// Offline sync support: when the client supplies `scannedAt` (the actual time on
+// the scanning device) and/or `clientScanId`, the scan is idempotent and the
+// recorded time reflects when the scan really happened rather than when it was
+// uploaded. The time-out window guard is only enforced for live scans (no
+// scannedAt) so queued scans are never lost.
+async function applyScan({ eventId, studentId, method, userId, event, scannedAt, clientScanId }) {
+  if (clientScanId) {
+    const receipt = await get('SELECT attendance_id AS attendanceId, action FROM scan_receipts WHERE client_scan_id = ?', [
+      clientScanId,
+    ]);
+    if (receipt) {
+      return { row: await getAttendanceRow(receipt.attendanceId), action: receipt.action, idempotent: true };
+    }
   }
-  if (!existing.checked_out_at) {
-    const opens = timeoutOpensAt(event);
-    if (opens && new Date() < opens) {
-      return { blocked: true, message: `Time-out opens at ${formatTzTime(opens)}.` };
+
+  const at = scannedAt || nowUtc();
+  const existing = await get('SELECT * FROM attendance WHERE event_id = ? AND student_id = ?', [eventId, studentId]);
+
+  let action;
+  let id;
+  if (!existing || (existing.method === 'auto' && !existing.checked_in_at)) {
+    // Fresh scan, or upgrading an auto-generated absent row on a closed event.
+    const status = classifyByTime(event, at) || 'present';
+    if (existing) {
+      await run(
+        `UPDATE attendance SET status = ?, method = ?, marked_by = ?, checked_in_at = ? WHERE id = ?`,
+        [status, method, userId ?? existing.marked_by, at, existing.id]
+      );
+      id = existing.id;
+    } else {
+      const info = await run(
+        `INSERT INTO attendance (event_id, student_id, status, method, marked_by, checked_in_at)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [eventId, studentId, status, method, userId || null, at]
+      );
+      id = info.lastInsertRowid;
+    }
+    action = 'time-in';
+  } else if (!existing.checked_out_at) {
+    if (!scannedAt) {
+      const opens = timeoutOpensAt(event);
+      if (opens && new Date() < opens) {
+        return { blocked: true, message: `Time-out opens at ${formatTzTime(opens)}.` };
+      }
     }
     await run(
       `UPDATE attendance SET checked_out_at = ?, method = ?, marked_by = ? WHERE id = ?`,
-      [nowUtc(), method, userId ?? existing.marked_by, existing.id]
+      [at, method, userId ?? existing.marked_by, existing.id]
     );
-    return { row: await getAttendanceRow(existing.id), action: 'time-out' };
+    id = existing.id;
+    action = 'time-out';
+  } else {
+    id = existing.id;
+    action = 'already-complete';
   }
-  return { row: await getAttendanceRow(existing.id), action: 'already-complete' };
+
+  const row = await getAttendanceRow(id);
+
+  if (clientScanId) {
+    await run(
+      `INSERT INTO scan_receipts (client_scan_id, attendance_id, action) VALUES (?, ?, ?)
+       ON CONFLICT(client_scan_id) DO NOTHING`,
+      [clientScanId, row.id, action]
+    );
+  }
+
+  return { row, action };
+}
+
+// Resolve a scanned token to a student, returning an error string when it does
+// not match anything (shared by the live and batch scan endpoints).
+async function resolveScanTarget(event, qrToken, confirmValue) {
+  const student = await get('SELECT * FROM students WHERE qr_token = ?', [resolveToken(qrToken)]);
+  if (!student) return { error: 'Unrecognized QR code' };
+  if (event.require_student_confirm || confirmValue !== undefined) {
+    if (!studentNoMatches(confirmValue, student.student_no)) {
+      return { error: 'Student number confirmation did not match this QR code' };
+    }
+  }
+  return { student };
 }
 
 function resolveToken(qrToken) {
@@ -276,31 +350,93 @@ router.post('/lookup', async (req, res) => {
 
 // QR scan check-in: the scanned QR text is the student's qr_token.
 router.post('/scan', async (req, res) => {
-  const { eventId, qrToken, confirmValue } = req.body || {};
+  const { eventId, qrToken, confirmValue, scannedAt, clientScanId } = req.body || {};
   if (!eventId || !qrToken) return res.status(400).json({ error: 'eventId and qrToken are required' });
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  if (event.status !== 'active') return res.status(400).json({ error: 'Check-in for this event is closed' });
-
-  const student = await get('SELECT * FROM students WHERE qr_token = ?', [resolveToken(qrToken)]);
-  if (!student) return res.status(404).json({ error: 'Unrecognized QR code' });
-
-  // Identity confirmation: enforced server-side so it holds even if the client is bypassed.
-  if (event.require_student_confirm || confirmValue !== undefined) {
-    if (!studentNoMatches(confirmValue, student.student_no)) {
-      return res.status(400).json({ error: 'Student number confirmation did not match this QR code' });
-    }
+  if (event.status !== 'active' && !scannedAt) {
+    return res.status(400).json({ error: 'Check-in for this event is closed' });
   }
+
+  const target = await resolveScanTarget(event, qrToken, confirmValue);
+  if (target.error) return res.status(target.error === 'Unrecognized QR code' ? 404 : 400).json({ error: target.error });
 
   const result = await applyScan({
     eventId: event.id,
-    studentId: student.id,
+    studentId: target.student.id,
     method: 'qr',
     userId: req.user.id,
     event,
+    scannedAt: normalizeScannedAt(scannedAt),
+    clientScanId: normalizeClientScanId(clientScanId),
   });
   if (result.blocked) return res.status(400).json({ error: result.message });
-  res.status(result.action === 'time-in' ? 201 : 200).json({ ...result.row, action: result.action });
+  res.status(result.action === 'time-in' ? 201 : 200).json({ ...result.row, action: result.action, idempotent: !!result.idempotent });
+});
+
+// Batch sync for scans that were recorded while offline. Each item is
+// independently idempotent (via clientScanId) and uses the device timestamp, so
+// retries are safe and the recorded time reflects when the scan happened.
+router.post('/scan/batch', async (req, res) => {
+  const scans = Array.isArray(req.body?.scans) ? req.body.scans : null;
+  if (!scans) return res.status(400).json({ error: 'scans array is required' });
+  if (scans.length > 500) return res.status(400).json({ error: 'Too many scans in one batch (max 500)' });
+
+  const results = [];
+  let synced = 0;
+  for (const item of scans) {
+    const clientScanId = normalizeClientScanId(item?.clientScanId);
+    try {
+      const event = await get('SELECT * FROM events WHERE id = ?', [item?.eventId]);
+      if (!event) {
+        results.push({ clientScanId, ok: false, error: 'Event not found' });
+        continue;
+      }
+      const target = await resolveScanTarget(event, item?.qrToken, item?.confirmValue);
+      if (target.error) {
+        results.push({ clientScanId, ok: false, error: target.error });
+        continue;
+      }
+      const result = await applyScan({
+        eventId: event.id,
+        studentId: target.student.id,
+        method: 'qr',
+        userId: req.user.id,
+        event,
+        scannedAt: normalizeScannedAt(item?.scannedAt),
+        clientScanId,
+      });
+      if (result.blocked) {
+        results.push({ clientScanId, ok: false, error: result.message });
+        continue;
+      }
+      synced += 1;
+      results.push({
+        clientScanId,
+        ok: true,
+        action: result.action,
+        attendanceId: result.row.id,
+        studentId: result.row.studentId,
+        studentNo: result.row.studentNo,
+        firstName: result.row.firstName,
+        lastName: result.row.lastName,
+      });
+    } catch {
+      results.push({ clientScanId, ok: false, error: 'Failed to sync scan' });
+    }
+  }
+
+  if (synced) {
+    await logAudit({
+      user: req.user,
+      action: 'attendance.sync',
+      entity: 'attendance',
+      entityId: null,
+      detail: `Synced ${synced}/${scans.length} offline scan(s)`,
+    });
+  }
+
+  res.json({ synced, total: scans.length, results });
 });
 
 // Manual mark / update by student id
