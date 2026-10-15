@@ -12,6 +12,7 @@ const links = [
   { to: '/events', label: 'Events', icon: '★' },
   { to: '/reports', label: 'Reports', icon: '▤' },
   { to: '/about', label: 'About', icon: 'ⓘ' },
+  { to: '/profile', label: 'Profile', icon: '☺' },
 ];
 
 export default function Layout({ children }) {
@@ -62,13 +63,17 @@ export default function Layout({ children }) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div className="user-chip">
-            <span className="avatar">{user?.name?.[0]?.toUpperCase() || 'A'}</span>
+          <NavLink className="user-chip" to="/profile" onClick={() => setOpen(false)}>
+            {user?.avatar ? (
+              <img className="avatar" src={user.avatar} alt="" />
+            ) : (
+              <span className="avatar">{user?.name?.[0]?.toUpperCase() || 'A'}</span>
+            )}
             <div>
               <div className="user-name">{user?.name}</div>
               <div className="user-role">{user?.role}</div>
             </div>
-          </div>
+          </NavLink>
           <button className="btn btn-ghost btn-block" onClick={() => setShowPassword(true)}>
             Change password
           </button>

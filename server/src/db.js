@@ -172,6 +172,7 @@ async function doInit() {
   await ensureColumn('events', 'report_summary', 'report_summary TEXT');
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
+  await ensureColumn('users', 'avatar', 'avatar TEXT');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);

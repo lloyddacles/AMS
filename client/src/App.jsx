@@ -12,6 +12,7 @@ import Live from './pages/Live.jsx';
 import Reports from './pages/Reports.jsx';
 import PublicCheckin from './pages/PublicCheckin.jsx';
 import About from './pages/About.jsx';
+import Profile from './pages/Profile.jsx';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -35,6 +36,7 @@ export default function App() {
       <Route path="/events/:id/scan" element={<Protected><Scanner /></Protected>} />
       <Route path="/reports" element={<Protected><Reports /></Protected>} />
       <Route path="/about" element={<Protected><About /></Protected>} />
+      <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );
