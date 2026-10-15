@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
+import { notifyEventOpened, notifyEventClosed, notifyEventReopened } from '../services/notifications.js';
 import { displayStatus } from '../classify.js';
 import { config } from '../config.js';
 
@@ -152,6 +153,7 @@ router.post('/', async (req, res) => {
     entityId: created.id,
     detail: created.name,
   });
+  await notifyEventOpened(created).catch(() => {});
   res.status(201).json(created);
 });
 
@@ -219,6 +221,7 @@ router.post('/:id/close', async (req, res) => {
     entityId: event.id,
     detail: `${event.name} · attended ${summary.attended}/${summary.totalStudents} (${summary.rate}%)`,
   });
+  await notifyEventClosed(event, summary).catch(() => {});
   res.json({ ...event, reportSummary: summary });
 });
 
@@ -237,6 +240,7 @@ router.post('/:id/reopen', async (req, res) => {
     entityId: event.id,
     detail: event.name,
   });
+  await notifyEventReopened(event).catch(() => {});
   res.json(event);
 });
 

@@ -158,6 +158,27 @@ const SCHEMA = `
     locked_until TEXT,
     updated_at TEXT
   );
+
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT,
+    severity TEXT NOT NULL DEFAULT 'info',
+    audience TEXT NOT NULL DEFAULT 'all',
+    link TEXT,
+    dedupe_key TEXT UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_notifications_created ON notifications(created_at);
+
+  CREATE TABLE IF NOT EXISTS notification_reads (
+    notification_id INTEGER NOT NULL REFERENCES notifications(id) ON DELETE CASCADE,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    read_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (notification_id, user_id)
+  );
 `;
 
 // Lightweight migrations for databases created before a column existed.

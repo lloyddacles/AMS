@@ -103,6 +103,10 @@ export const api = {
 
   getDashboard: () => request('/dashboard/stats'),
 
+  getNotifications: (params) => request(`/notifications?${new URLSearchParams(params || {}).toString()}`),
+  markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),
+  markAllNotificationsRead: () => request('/notifications/read-all', { method: 'POST' }),
+
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: data }),
 

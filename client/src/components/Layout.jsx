@@ -5,6 +5,7 @@ import LiveClock from './LiveClock.jsx';
 import Footer from './Footer.jsx';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 import SyncBadge from './SyncBadge.jsx';
+import NotificationBell from './NotificationBell.jsx';
 
 const links = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
@@ -95,6 +96,7 @@ export default function Layout({ children }) {
             ☰
           </button>
           <span className="topbar-title">AttendX</span>
+          <NotificationBell />
           <SyncBadge />
           <LiveClock className="topbar-clock" />
         </header>

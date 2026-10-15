@@ -10,11 +10,13 @@ const TABLES = {
   settings: ['key', 'value', 'updated_at'],
   scan_receipts: ['client_scan_id', 'attendance_id', 'action', 'created_at'],
   audit_log: ['id', 'user_id', 'user_name', 'action', 'entity', 'entity_id', 'detail', 'created_at'],
+  notifications: ['id', 'type', 'title', 'body', 'severity', 'audience', 'link', 'dedupe_key', 'created_at'],
+  notification_reads: ['notification_id', 'user_id', 'read_at'],
 };
 
 // Delete children before parents; insert parents before children.
-const DELETE_ORDER = ['attendance', 'scan_receipts', 'audit_log', 'settings', 'events', 'students', 'users'];
-const INSERT_ORDER = ['users', 'students', 'events', 'attendance', 'settings', 'scan_receipts', 'audit_log'];
+const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance', 'scan_receipts', 'audit_log', 'settings', 'events', 'students', 'users'];
+const INSERT_ORDER = ['users', 'students', 'events', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
 
 export async function exportData() {
   const tables = {};
