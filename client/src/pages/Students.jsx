@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { composeIdCard } from '../idCard.js';
@@ -7,6 +7,17 @@ import BulkAddStudents from '../components/BulkAddStudents.jsx';
 import StudentIdCard from '../components/StudentIdCard.jsx';
 
 const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '' };
+
+const COLUMNS = [
+  { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
+  { key: 'name', label: 'Name', get: (s) => `${s.lastName || ''} ${s.firstName || ''}` },
+  { key: 'course', label: 'Course', get: (s) => s.course || '' },
+  { key: 'yearLevel', label: 'Year', get: (s) => s.yearLevel || '' },
+  { key: 'section', label: 'Section', get: (s) => s.section || '' },
+  { key: 'email', label: 'Email', get: (s) => s.email || '' },
+];
+
+const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function Students() {
   const [students, setStudents] = useState([]);
@@ -19,6 +30,31 @@ export default function Students() {
   const [qrStudent, setQrStudent] = useState(null);
   const [formError, setFormError] = useState('');
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(25);
+
+  const sorted = useMemo(() => {
+    const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
+    const dir = sort.dir === 'desc' ? -1 : 1;
+    return [...students].sort((a, b) => {
+      const av = col.get(a);
+      const bv = col.get(b);
+      return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true }) * dir;
+    });
+  }, [students, sort]);
+
+  const total = sorted.length;
+  const pageCount = Math.max(1, Math.ceil(total / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const pageRows = useMemo(
+    () => sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize),
+    [sorted, currentPage, pageSize]
+  );
+
+  useEffect(() => {
+    setPage(1);
+  }, [search, sort, pageSize]);
 
   async function load(q = search) {
     setLoading(true);
@@ -37,6 +73,10 @@ export default function Students() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  function toggleSort(key) {
+    setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
+  }
 
   function openCreate() {
     setEditing({});
@@ -105,6 +145,14 @@ export default function Students() {
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
+        <div className="toolbar-right">
+          <label className="page-size">
+            Rows
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -113,12 +161,19 @@ export default function Students() {
         <table className="table">
           <thead>
             <tr>
-              <th>Student No</th>
-              <th>Name</th>
-              <th>Course</th>
-              <th>Year</th>
-              <th>Section</th>
-              <th>Email</th>
+              {COLUMNS.map((c) => (
+                <th key={c.key}>
+                  <button
+                    type="button"
+                    className={`sortable ${sort.key === c.key ? 'active' : ''}`}
+                    onClick={() => toggleSort(c.key)}
+                    title={`Sort by ${c.label}`}
+                  >
+                    {c.label}
+                    <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                  </button>
+                </th>
+              ))}
               <th className="right">Actions</th>
             </tr>
           </thead>
@@ -129,7 +184,7 @@ export default function Students() {
             {!loading && students.length === 0 && (
               <tr><td colSpan={7} className="muted center">No students found.</td></tr>
             )}
-            {students.map((s) => (
+            {pageRows.map((s) => (
               <tr key={s.id}>
                 <td className="mono">{s.studentNo}</td>
                 <td className="strong">{s.lastName}, {s.firstName}</td>
@@ -147,6 +202,21 @@ export default function Students() {
           </tbody>
         </table>
       </div>
+
+      {total > 0 && (
+        <div className="pagination">
+          <span className="muted small">
+            Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, total)} of {total}
+          </span>
+          <div className="pager">
+            <button className="btn btn-sm" onClick={() => setPage(1)} disabled={currentPage === 1}>« First</button>
+            <button className="btn btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>‹ Prev</button>
+            <span className="pager-info">Page {currentPage} of {pageCount}</span>
+            <button className="btn btn-sm" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}>Next ›</button>
+            <button className="btn btn-sm" onClick={() => setPage(pageCount)} disabled={currentPage === pageCount}>Last »</button>
+          </div>
+        </div>
+      )}
 
       {editing && (
         <Modal

@@ -255,6 +255,36 @@ input:focus, select:focus, textarea:focus {
 .link:hover { text-decoration: underline; }
 .clamp { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 
+/* ---------- Sortable headers ---------- */
+.table th .sortable {
+  display: inline-flex; align-items: center; gap: 0.3rem;
+  background: none; border: none; padding: 0; margin: 0;
+  font: inherit; color: inherit; cursor: pointer;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.table th .sortable:hover { color: var(--primary); }
+.table th .sortable.active { color: var(--primary); }
+.sort-arrow { font-size: 0.65rem; opacity: 0.5; line-height: 1; }
+.sortable.active .sort-arrow { opacity: 1; }
+
+/* ---------- Toolbar / pagination ---------- */
+.toolbar { align-items: center; }
+.toolbar-right { margin-left: auto; }
+.page-size {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.8rem; color: var(--muted);
+}
+.page-size select {
+  padding: 0.4rem 0.5rem; border: 1px solid var(--border);
+  border-radius: 8px; background: #fff; font: inherit; color: inherit;
+}
+.pagination {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 1rem; flex-wrap: wrap; margin-top: 0.85rem;
+}
+.pager { display: flex; align-items: center; gap: 0.4rem; }
+.pager-info { font-size: 0.8rem; color: var(--muted); padding: 0 0.35rem; }
+
 /* ---------- Pills / badges ---------- */
 .pill {
   display: inline-block; padding: 0.22rem 0.68rem; border-radius: 999px;
