@@ -14,6 +14,7 @@ import {
   Legend,
 } from 'recharts';
 import { api } from '../api.js';
+import Spinner from '../components/Spinner.jsx';
 
 const STATUS_COLORS = {
   early: '#0ea5e9',
@@ -33,7 +34,7 @@ export default function Dashboard() {
   }, []);
 
   if (error) return <div className="alert alert-error">{error}</div>;
-  if (!stats) return <div className="muted">Loading dashboard…</div>;
+  if (!stats) return <div className="card"><Spinner label="Loading dashboard…" size="lg" variant="panel" /></div>;
 
   const statusData = stats.statusBreakdown.map((s) => ({ name: s.status, value: s.count }));
 

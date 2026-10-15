@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import Spinner from '../components/Spinner.jsx';
 
 function todayIso() {
   const d = new Date();
@@ -47,7 +48,7 @@ export default function Live() {
   }, [events, autoTried, navigate]);
 
   if (error) return <div className="alert alert-error">{error}</div>;
-  if (!events) return <div className="muted">Loading…</div>;
+  if (!events) return <div className="card"><Spinner label="Finding live events…" size="lg" variant="panel" /></div>;
 
   return (
     <div className="page">

@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
+import LoadingScreen from './components/LoadingScreen.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Students from './pages/Students.jsx';
@@ -19,7 +20,7 @@ import AuditLog from './pages/AuditLog.jsx';
 function Protected({ children }) {
   const { user, loading } = useAuth();
   const location = useLocation();
-  if (loading) return <div className="center-page">Loading…</div>;
+  if (loading) return <LoadingScreen />;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   return <Layout>{children}</Layout>;
 }

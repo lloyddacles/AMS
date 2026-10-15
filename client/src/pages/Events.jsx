@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = {
   name: '',
@@ -98,7 +99,7 @@ export default function Events() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {loading && <div className="muted">Loading…</div>}
+      {loading && <div className="card"><Spinner label="Loading events…" size="lg" variant="panel" /></div>}
 
       {!loading && events.length === 0 && (
         <div className="empty card">

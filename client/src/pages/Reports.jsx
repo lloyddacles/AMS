@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api, exportCsv } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 const SUMMARY_COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
@@ -184,7 +185,7 @@ export default function Reports() {
             </div>
           </div>
           {!overview ? (
-            <div className="muted">Loading…</div>
+            <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
             <>
             <div className="card table-card">
@@ -256,7 +257,7 @@ export default function Reports() {
       {view === 'matrix' && (
         <>
           {!matrix ? (
-            <div className="muted">Loading…</div>
+            <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
             <div className="card table-card scroll-x">
               <table className="table matrix">
@@ -322,7 +323,7 @@ export default function Reports() {
             </form>
           </div>
           {!atRisk ? (
-            <div className="muted">Loading…</div>
+            <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
             <div className="card table-card">
               <table className="table">

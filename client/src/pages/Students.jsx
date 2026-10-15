@@ -5,6 +5,7 @@ import { composeIdCard } from '../idCard.js';
 import Modal from '../components/Modal.jsx';
 import BulkAddStudents from '../components/BulkAddStudents.jsx';
 import StudentIdCard from '../components/StudentIdCard.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '' };
 
@@ -179,7 +180,7 @@ export default function Students() {
           </thead>
           <tbody>
             {loading && students.length === 0 && (
-              <tr><td colSpan={7} className="muted center">Loading…</td></tr>
+              <tr><td colSpan={7} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
             )}
             {!loading && students.length === 0 && (
               <tr><td colSpan={7} className="muted center">No students found.</td></tr>

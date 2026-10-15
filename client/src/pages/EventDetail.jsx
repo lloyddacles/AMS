@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { api, exportCsv } from '../api.js';
 import Modal from '../components/Modal.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 const STATUSES = ['present', 'late', 'excused', 'absent'];
 const statusClass = {
@@ -144,7 +145,7 @@ export default function EventDetail() {
   }
 
   if (error) return <div className="alert alert-error">{error}</div>;
-  if (!event) return <div className="muted">Loading…</div>;
+  if (!event) return <div className="card"><Spinner label="Loading event…" size="lg" variant="panel" /></div>;
 
   const attendedCount = attendance.filter((a) => ATTENDED.includes(a.classification)).length;
   const rate = event.totalStudents ? Math.round((attendedCount / event.totalStudents) * 100) : 0;

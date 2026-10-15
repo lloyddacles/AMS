@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import Spinner from '../components/Spinner.jsx';
 
 const ACTION_LABEL = {
   'attendance.mark': 'Marked attendance',
@@ -119,7 +120,7 @@ export default function AuditLog() {
             </tr>
           </thead>
           <tbody>
-            {loading && rows.length === 0 && <tr><td colSpan={4} className="muted center">Loading…</td></tr>}
+            {loading && rows.length === 0 && <tr><td colSpan={4} className="center"><Spinner label="Loading activity…" size="sm" variant="center" /></td></tr>}
             {!loading && rows.length === 0 && <tr><td colSpan={4} className="muted center">No activity found.</td></tr>}
             {rows.map((r) => (
               <tr key={r.id}>

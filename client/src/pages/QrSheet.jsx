@@ -4,6 +4,7 @@ import JSZip from 'jszip';
 import { api } from '../api.js';
 import { composeIdCard } from '../idCard.js';
 import StudentIdCard from '../components/StudentIdCard.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 function sanitize(value) {
   return String(value || '').trim().replace(/[^a-z0-9-]+/gi, '_').replace(/^_+|_+$/g, '');
@@ -131,7 +132,7 @@ export default function QrSheet() {
       </div>
 
       {error && <div className="alert alert-error no-print">{error}</div>}
-      {loading && <div className="muted no-print">Loading…</div>}
+      {loading && <div className="no-print"><Spinner label="Loading ID cards…" size="lg" variant="panel" /></div>}
 
       <div className="id-sheet" ref={gridRef}>
         {filtered.map((s) => (

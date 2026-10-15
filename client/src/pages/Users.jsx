@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Modal from '../components/Modal.jsx';
+import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { username: '', password: '', name: '', role: 'staff' };
 
@@ -109,7 +110,7 @@ export default function Users() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {loading && users.length === 0 && <div className="muted">Loading…</div>}
+      {loading && users.length === 0 && <div className="card"><Spinner label="Loading users…" size="lg" variant="panel" /></div>}
 
       {!loading && (
         <div className="card table-card">
