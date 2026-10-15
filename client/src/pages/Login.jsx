@@ -33,7 +33,7 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <span className="brand-mark lg"><img src="/logo.jpg" alt="AttendX logo" /></span>
+          <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
           <h1>AttendX</h1>
           <p>QR-based attendance monitoring and digital attendance records.</p>
         </div>

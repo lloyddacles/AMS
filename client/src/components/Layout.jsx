@@ -43,7 +43,7 @@ export default function Layout({ children }) {
     <div className="app-shell">
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="brand">
-          <span className="brand-mark"><img src="/logo.jpg" alt="AttendX logo" /></span>
+          <span className="brand-mark"><img src="/logo.png" alt="AttendX logo" /></span>
           <span className="brand-text">AttendX</span>
         </div>
         <nav className="nav">
