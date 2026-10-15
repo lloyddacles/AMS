@@ -1,9 +1,9 @@
-# Attendance Monitoring Web App
+# AttendX
 
-A web application for monitoring student attendance at school events using QR
-code check-in. Staff generate QR ID cards for students; students scan (or have
-their QR scanned) to record time-in and time-out, and staff can view, manage,
-and export attendance reports.
+AttendX: A QR-based attendance monitoring and digital attendance records system.
+Staff generate QR ID cards for students; students scan (or have their QR scanned)
+to record time-in and time-out, and staff can view, manage, and export
+attendance reports.
 
 ---
 

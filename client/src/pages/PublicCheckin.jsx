@@ -55,7 +55,7 @@ export default function PublicCheckin() {
       <div className="login-card">
         <LiveClock className="public-clock" />
         <div className="login-brand">
-          <span className="brand-mark lg">AX</span>
+          <span className="brand-mark lg"><img src="/logo.jpg" alt="AttendX logo" /></span>
           <h1>{event?.name || 'AttendX Check-in'}</h1>
           <p>
             {event?.eventDate}

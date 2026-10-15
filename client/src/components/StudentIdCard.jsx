@@ -6,8 +6,8 @@ export default function StudentIdCard({ student, qrSize = 320 }) {
   return (
     <div className="id-card">
       <div className="id-card__bar">
-        <span className="id-card__logo">AM</span>
-        <span className="id-card__org">Attendance Monitor</span>
+        <span className="id-card__logo">AX</span>
+        <span className="id-card__org">AttendX</span>
         <span className="id-card__tag">STUDENT PASS</span>
       </div>
       <div className="id-card__body">

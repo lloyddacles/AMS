@@ -75,11 +75,11 @@ export function composeIdCard(student, qrCanvas, dpi = 300) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.font = `800 ${2.2 * s}px ${FONT}`;
-  ctx.fillText('AM', logoX + logoSize / 2, logoY + logoSize / 2 + 0.1 * s);
+  ctx.fillText('AX', logoX + logoSize / 2, logoY + logoSize / 2 + 0.1 * s);
 
   ctx.textAlign = 'left';
   ctx.font = `700 ${2.7 * s}px ${FONT}`;
-  ctx.fillText('Attendance Monitor', logoX + logoSize + 1.5 * s, headerH / 2 + 0.1 * s);
+  ctx.fillText('AttendX', logoX + logoSize + 1.5 * s, headerH / 2 + 0.1 * s);
 
   ctx.textAlign = 'right';
   ctx.font = `600 ${1.9 * s}px ${FONT}`;
