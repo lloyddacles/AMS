@@ -168,6 +168,8 @@ async function doInit() {
   await executeMultiple('PRAGMA foreign_keys = ON;');
   await executeMultiple(SCHEMA);
   await ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('events', 'closed_at', 'closed_at TEXT');
+  await ensureColumn('events', 'report_summary', 'report_summary TEXT');
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
   await makeCheckinNullable();

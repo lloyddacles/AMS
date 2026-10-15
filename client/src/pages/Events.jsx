@@ -130,7 +130,10 @@ export default function Events() {
                 <span className="rate-label">{ev.attendanceCount}/{ev.totalStudents}</span>
               </div>
               <div className="event-card-actions">
-                <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}`}>Open</Link>
+                {ev.status === 'active' && (
+                  <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>
+                )}
+                <Link className={`btn btn-sm ${ev.status === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
                 <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
                 <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
               </div>

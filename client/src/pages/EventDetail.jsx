@@ -57,6 +57,7 @@ export default function EventDetail() {
   const [toast, setToast] = useState('');
   const [showQr, setShowQr] = useState(false);
   const [search, setSearch] = useState('');
+  const [busy, setBusy] = useState(false);
 
   async function load() {
     try {
@@ -104,6 +105,35 @@ export default function EventDetail() {
     setTimeout(() => setToast(''), 1800);
   }
 
+  async function closeEvent() {
+    if (!confirm(`Close "${event.name}" and consolidate attendance?\n\nEvery student without a check-in will be marked absent and the final report will be locked.`)) return;
+    setBusy(true);
+    try {
+      const updated = await api.closeEvent(id);
+      setEvent(updated);
+      flash('Event closed · attendance consolidated');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function reopenEvent() {
+    if (!confirm('Reopen this event? Auto-generated absents will be cleared so students can check in again.')) return;
+    setBusy(true);
+    try {
+      const updated = await api.reopenEvent(id);
+      setEvent(updated);
+      flash('Event reopened');
+      await load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!event) return <div className="muted">Loading…</div>;
 
@@ -132,11 +162,48 @@ export default function EventDetail() {
           </p>
         </div>
         <div className="head-actions">
-          <Link className="btn btn-primary" to={`/events/${id}/scan`}>Scan QR</Link>
-          <button className="btn" onClick={() => setShowQr(true)}>Check-in QR</button>
+          {event.status === 'active' ? (
+            <>
+              <Link className="btn btn-primary" to={`/events/${id}/scan`}>Scan QR</Link>
+              <button className="btn" onClick={() => setShowQr(true)}>Check-in QR</button>
+              <button className="btn btn-danger" onClick={closeEvent} disabled={busy}>
+                {busy ? 'Closing…' : 'Close Event'}
+              </button>
+            </>
+          ) : (
+            <button className="btn" onClick={reopenEvent} disabled={busy}>
+              {busy ? 'Reopening…' : 'Reopen Event'}
+            </button>
+          )}
           <button className="btn" onClick={() => exportCsv('event', id)}>Export CSV</button>
         </div>
       </div>
+
+      {event.status !== 'active' && (
+        <div className="alert alert-info">
+          This event is closed — check-in is turned off and attendance has been consolidated.
+        </div>
+      )}
+
+      {event.reportSummary && (
+        <div className="card consolidate-card">
+          <div className="card-head">
+            <h3>Consolidated Attendance</h3>
+            <span className="muted small">
+              Closed {event.closedAt ? new Date(String(event.closedAt).replace(' ', 'T') + 'Z').toLocaleString() : ''}
+            </span>
+          </div>
+          <div className="consolidate-grid">
+            <ConsolidateStat label="Attended" value={event.reportSummary.attended} />
+            <ConsolidateStat label="Early" value={event.reportSummary.early} />
+            <ConsolidateStat label="On-time" value={event.reportSummary.onTime} />
+            <ConsolidateStat label="Late" value={event.reportSummary.late} />
+            <ConsolidateStat label="Excused" value={event.reportSummary.excused} />
+            <ConsolidateStat label="Absent" value={event.reportSummary.absent} />
+            <ConsolidateStat label="Rate" value={`${event.reportSummary.rate}%`} />
+          </div>
+        </div>
+      )}
 
       <div className="stat-grid">
         <div className="stat-card accent-blue">
@@ -287,6 +354,15 @@ export default function EventDetail() {
 
       {showQr && <EventQrModal event={event} onClose={() => setShowQr(false)} />}
       {toast && <div className="toast">{toast}</div>}
+    </div>
+  );
+}
+
+function ConsolidateStat({ label, value }) {
+  return (
+    <div className="consolidate-stat">
+      <div className="consolidate-value">{value}</div>
+      <div className="consolidate-label">{label}</div>
     </div>
   );
 }

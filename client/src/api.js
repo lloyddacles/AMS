@@ -71,6 +71,8 @@ export const api = {
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: data }),
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
   regenerateEventCode: (id) => request(`/events/${id}/regenerate-code`, { method: 'POST' }),
+  closeEvent: (id) => request(`/events/${id}/close`, { method: 'POST' }),
+  reopenEvent: (id) => request(`/events/${id}/reopen`, { method: 'POST' }),
 
   getEventAttendance: (eventId) => request(`/attendance/event/${eventId}`),
   getTodayAttendance: () => request('/attendance/today'),

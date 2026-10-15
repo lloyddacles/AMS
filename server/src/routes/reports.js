@@ -29,7 +29,7 @@ const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, check
 
 function bucket(counts, cls) {
   if (cls === 'early') counts.early += 1;
-  else if (cls === 'on-time') counts.onTime += 1;
+  else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
   else if (cls === 'late') counts.late += 1;
   else if (cls === 'excused') counts.excused += 1;
   else counts.absent += 1;

@@ -7,6 +7,7 @@ import ChangePasswordModal from './ChangePasswordModal.jsx';
 
 const links = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
+  { to: '/live', label: 'Live Scan', icon: '◉' },
   { to: '/students', label: 'Students', icon: '◔' },
   { to: '/events', label: 'Events', icon: '★' },
   { to: '/reports', label: 'Reports', icon: '▤' },
