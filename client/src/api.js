@@ -86,8 +86,12 @@ export const api = {
 
   getReportOverview: (params) => request(`/reports/overview?${new URLSearchParams(params || {}).toString()}`),
   getReportMatrix: () => request('/reports/matrix'),
+  getAtRisk: (params) => request(`/reports/at-risk?${new URLSearchParams(params || {}).toString()}`),
 
   getDashboard: () => request('/dashboard/stats'),
+
+  getSettings: () => request('/settings'),
+  updateSettings: (data) => request('/settings', { method: 'PUT', body: data }),
 
   getUsers: () => request('/users'),
   createUser: (data) => request('/users', { method: 'POST', body: data }),
@@ -103,9 +107,12 @@ export const api = {
   publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),
 };
 
-export async function exportCsv(type, eventId) {
+export async function exportCsv(type, eventId, extra = {}) {
   const params = new URLSearchParams({ type });
   if (eventId) params.set('eventId', eventId);
+  for (const [key, value] of Object.entries(extra)) {
+    if (value !== undefined && value !== null && value !== '') params.set(key, value);
+  }
   const token = getToken();
   const res = await fetch(`${API_BASE}/reports/export?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },

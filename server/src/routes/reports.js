@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
+import { buildOverview, buildAtRisk } from '../services/reports.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -25,68 +26,18 @@ function toCsv(headers, rows) {
 }
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime';
-const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, checked_in_at AS checkedInAt';
-
-function bucket(counts, cls) {
-  if (cls === 'early') counts.early += 1;
-  else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
-  else if (cls === 'late') counts.late += 1;
-  else if (cls === 'excused') counts.excused += 1;
-  else counts.absent += 1;
-}
+const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
 
 // Per-student summary, classified early / on-time / late / absent.
 router.get('/overview', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  const like = `%${search}%`;
-  const events = await all(`SELECT ${EVENT_COLS} FROM events`);
-  const students = await all(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
-            course, year_level AS yearLevel
-     FROM students
-     WHERE (student_no LIKE ? OR first_name LIKE ? OR last_name LIKE ?)
-       AND (? = '' OR course = ?)
-     ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`,
-    [like, like, like, course, course]
-  );
-  const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
+  res.json(await buildOverview({ search, course }));
+});
 
-  const byStudent = new Map();
-  for (const r of records) {
-    if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, new Map());
-    byStudent.get(r.studentId).set(r.eventId, r);
-  }
-  const now = new Date();
-  const cutoffs = new Map(events.map((e) => [e.id, absentCutoff(e)]));
-
-  const totalEvents = events.length;
-  const rows = students.map((s) => {
-    const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
-    const recs = byStudent.get(s.id) || new Map();
-    for (const e of events) {
-      const record = recs.get(e.id);
-      if (record) {
-        bucket(counts, displayStatus(e, record));
-      } else {
-        const cutoff = cutoffs.get(e.id);
-        if (cutoff && now > cutoff) counts.absent += 1;
-      }
-    }
-    const attended = counts.early + counts.onTime + counts.late;
-    return {
-      id: s.id,
-      studentNo: s.studentNo,
-      firstName: s.firstName,
-      lastName: s.lastName,
-      course: s.course,
-      yearLevel: s.yearLevel,
-      ...counts,
-      attended,
-      rate: totalEvents ? Math.round((attended / totalEvents) * 100) : 0,
-    };
-  });
-
-  res.json({ totalEvents, students: rows });
+// Students below the configured attendance-rate threshold.
+router.get('/at-risk', async (req, res) => {
+  const { search = '', course = '' } = req.query;
+  res.json(await buildAtRisk({ search, course }));
 });
 
 // Event × student matrix of classifications.
@@ -106,14 +57,28 @@ router.get('/matrix', async (req, res) => {
 });
 
 router.get('/export', async (req, res) => {
-  const { type = 'students', eventId } = req.query;
+  const { type = 'students', eventId, search = '', course = '' } = req.query;
+
+  if (type === 'at-risk') {
+    const { threshold, minEvents, totalEvents, students } = await buildAtRisk({ search, course });
+    const headers = ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Attended', 'Absent', 'Excused', 'Rate %'];
+    const rows = students.map((s) => [
+      s.studentNo, s.firstName, s.lastName, s.course, s.yearLevel, s.attended, s.absent, s.excused, s.rate,
+    ]);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="at-risk-students.csv"');
+    res.setHeader('X-At-Risk-Threshold', String(threshold));
+    res.setHeader('X-At-Risk-Min-Events', String(minEvents));
+    res.setHeader('X-Total-Events', String(totalEvents));
+    return res.send(toCsv(headers, rows));
+  }
 
   if (type === 'event') {
     if (!eventId) return res.status(400).json({ error: 'eventId is required' });
     const event = await get(`SELECT ${EVENT_COLS} FROM events WHERE id = ?`, [eventId]);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const records = await all(
-      `SELECT ${RECORD_COLS}, method, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ?`,
+      `SELECT ${RECORD_COLS}, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ?`,
       [event.id]
     );
     const byStudent = new Map(records.map((r) => [r.studentId, r]));

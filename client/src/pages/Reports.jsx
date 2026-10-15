@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api, exportCsv } from '../api.js';
+import { useAuth } from '../auth.jsx';
 
 const SUMMARY_COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
@@ -16,11 +18,15 @@ const SUMMARY_COLUMNS = [
 const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function Reports() {
-  const [view, setView] = useState('summary');
+  const [params, setParams] = useSearchParams();
+  const { user } = useAuth();
+  const [view, setView] = useState(params.get('view') === 'at-risk' ? 'at-risk' : 'summary');
   const [search, setSearch] = useState('');
   const [course, setCourse] = useState('');
   const [overview, setOverview] = useState(null);
   const [matrix, setMatrix] = useState(null);
+  const [atRisk, setAtRisk] = useState(null);
+  const [thresholdInput, setThresholdInput] = useState('');
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [page, setPage] = useState(1);
@@ -41,6 +47,29 @@ export default function Reports() {
       api.getReportMatrix().then(setMatrix).catch((e) => setError(e.message));
     }
   }, [view, matrix]);
+
+  useEffect(() => {
+    if (view !== 'at-risk') return undefined;
+    const t = setTimeout(() => {
+      api
+        .getAtRisk({ search, course })
+        .then((d) => {
+          setAtRisk(d);
+          setThresholdInput(String(d.threshold));
+        })
+        .catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [view, search, course]);
+
+  useEffect(() => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      if (view === 'summary') next.delete('view');
+      else next.set('view', view);
+      return next;
+    }, { replace: true });
+  }, [view, setParams]);
 
   const courses = overview ? [...new Set(overview.students.map((s) => s.course).filter(Boolean))].sort() : [];
 
@@ -82,6 +111,30 @@ export default function Reports() {
     }
   }
 
+  async function exportAtRiskPdf() {
+    if (!atRisk) return;
+    try {
+      const { exportAtRiskPdf: render } = await import('../pdf.js');
+      render(atRisk.students, atRisk.threshold, atRisk.totalEvents);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function saveThreshold(e) {
+    e.preventDefault();
+    const value = Number(thresholdInput);
+    if (!Number.isFinite(value)) return;
+    try {
+      await api.updateSettings({ atRiskThreshold: value });
+      const d = await api.getAtRisk({ search, course });
+      setAtRisk(d);
+      setThresholdInput(String(d.threshold));
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -90,15 +143,25 @@ export default function Reports() {
           <p className="muted">Attendance summaries and per-event breakdowns.</p>
         </div>
         <div className="head-actions">
-          <button className="btn" onClick={exportPdf} disabled={!overview}>Export PDF</button>
-          <button className="btn" onClick={() => exportCsv('students')}>Export Summary CSV</button>
-          <button className="btn" onClick={() => exportCsv('matrix')}>Export Matrix CSV</button>
+          {view === 'at-risk' ? (
+            <>
+              <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>Export PDF</button>
+              <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course })}>Export CSV</button>
+            </>
+          ) : (
+            <>
+              <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
+              <button className="btn" onClick={() => exportCsv('students')}>Export Summary CSV</button>
+              <button className="btn" onClick={() => exportCsv('matrix')}>Export Matrix CSV</button>
+            </>
+          )}
         </div>
       </div>
 
       <div className="tabs">
         <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>Student Summary</button>
         <button className={view === 'matrix' ? 'active' : ''} onClick={() => setView('matrix')}>Event Matrix</button>
+        <button className={view === 'at-risk' ? 'active' : ''} onClick={() => setView('at-risk')}>At-Risk</button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -225,6 +288,87 @@ export default function Reports() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          )}
+        </>
+      )}
+
+      {view === 'at-risk' && (
+        <>
+          <div className="toolbar">
+            <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <select value={course} onChange={(e) => setCourse(e.target.value)}>
+              <option value="">All courses</option>
+              {courses.map((c) => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <form className="toolbar-right threshold-form" onSubmit={saveThreshold}>
+              <label>
+                Threshold %
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={thresholdInput}
+                  onChange={(e) => setThresholdInput(e.target.value)}
+                  disabled={user?.role !== 'admin'}
+                  title={user?.role !== 'admin' ? 'Admins only' : 'Students below this rate are flagged'}
+                />
+              </label>
+              {user?.role === 'admin' && (
+                <button className="btn btn-sm" type="submit" disabled={!atRisk || Number(thresholdInput) === atRisk.threshold}>
+                  Save
+                </button>
+              )}
+            </form>
+          </div>
+          {!atRisk ? (
+            <div className="muted">Loading…</div>
+          ) : (
+            <div className="card table-card">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Student No</th>
+                    <th>Name</th>
+                    <th>Course</th>
+                    <th>Year</th>
+                    <th className="num">Attended</th>
+                    <th className="num">Absent</th>
+                    <th className="num">Excused</th>
+                    <th>Rate</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {atRisk.students.length === 0 && (
+                    <tr>
+                      <td colSpan={8} className="muted center">
+                        No students below {atRisk.threshold}% attendance.
+                      </td>
+                    </tr>
+                  )}
+                  {atRisk.students.map((s) => (
+                    <tr key={s.id}>
+                      <td className="mono">{s.studentNo}</td>
+                      <td className="strong">{s.lastName}, {s.firstName}</td>
+                      <td>{s.course || '—'}</td>
+                      <td>{s.yearLevel || '—'}</td>
+                      <td className="num">{s.attended}</td>
+                      <td className="num">{s.absent}</td>
+                      <td className="num">{s.excused}</td>
+                      <td>
+                        <div className="rate-wrap">
+                          <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
+                          <span className="rate-label">{s.rate}%</span>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
+                {atRisk.students.length} at-risk student{atRisk.students.length === 1 ? '' : 's'} · below {atRisk.threshold}% ·
+                {' '}based on {atRisk.totalEvents} event{atRisk.totalEvents === 1 ? '' : 's'} total.
+              </div>
             </div>
           )}
         </>

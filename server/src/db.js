@@ -136,6 +136,12 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
   CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
   CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity);
+
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `;
 
 // Lightweight migrations for databases created before a column existed.

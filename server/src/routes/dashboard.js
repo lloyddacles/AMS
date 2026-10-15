@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus } from '../classify.js';
+import { buildAtRisk } from '../services/reports.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -16,7 +17,7 @@ router.get('/stats', async (req, res) => {
   ).c;
 
   const events = await all('SELECT id, event_date AS eventDate, start_time AS startTime, end_time AS endTime FROM events');
-  const records = await all('SELECT event_id AS eventId, status, checked_in_at AS checkedInAt FROM attendance');
+  const records = await all('SELECT event_id AS eventId, status, method, checked_in_at AS checkedInAt FROM attendance');
   const eventById = new Map(events.map((e) => [e.id, e]));
   const counts = { early: 0, 'on-time': 0, late: 0, absent: 0, excused: 0 };
   for (const r of records) {
@@ -53,6 +54,8 @@ router.get('/stats', async (req, res) => {
      FROM events e ORDER BY e.event_date ASC, e.id ASC LIMIT 8`
   );
 
+  const atRisk = await buildAtRisk({});
+
   res.json({
     totalStudents,
     totalEvents,
@@ -62,6 +65,12 @@ router.get('/stats', async (req, res) => {
     recentEvents,
     topAttendees,
     trend,
+    atRisk: {
+      threshold: atRisk.threshold,
+      minEvents: atRisk.minEvents,
+      count: atRisk.students.length,
+      top: atRisk.students.slice(0, 5),
+    },
   });
 });
 

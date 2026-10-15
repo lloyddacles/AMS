@@ -141,6 +141,42 @@ export default function Dashboard() {
           )}
         </div>
       </div>
+
+      <div className="card">
+        <div className="card-head">
+          <h3>
+            At-Risk Students
+            <span className="muted small"> — below {stats.atRisk.threshold}% attendance</span>
+          </h3>
+          <Link className="link" to="/reports?view=at-risk">View all</Link>
+        </div>
+        {stats.atRisk.count === 0 ? (
+          <p className="muted">
+            No students below {stats.atRisk.threshold}% attendance
+            {stats.totalEvents === 0 ? ' — add events to start tracking.' : '.'}
+          </p>
+        ) : (
+          <>
+            <p className="muted small">
+              {stats.atRisk.count} student{stats.atRisk.count === 1 ? '' : 's'} below {stats.atRisk.threshold}% attendance.
+            </p>
+            <ul className="list">
+              {stats.atRisk.top.map((s) => (
+                <li key={s.id} className="list-row">
+                  <div>
+                    <div className="strong">{s.lastName}, {s.firstName}</div>
+                    <div className="muted small">{s.studentNo} · {s.attended} attended · {s.absent} absent</div>
+                  </div>
+                  <div className="rate-wrap">
+                    <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
+                    <span className="rate-label">{s.rate}%</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
     </div>
   );
 }

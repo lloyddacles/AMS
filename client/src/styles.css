@@ -282,6 +282,15 @@ input:focus, select:focus, textarea:focus {
   padding: 0.4rem 0.5rem; border: 1px solid var(--border);
   border-radius: 8px; background: #fff; font: inherit; color: inherit;
 }
+.threshold-form {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  font-size: 0.8rem; color: var(--muted);
+}
+.threshold-form label { display: inline-flex; align-items: center; gap: 0.4rem; }
+.threshold-form input {
+  width: 72px; padding: 0.4rem 0.5rem; border: 1px solid var(--border);
+  border-radius: 8px; background: #fff; font: inherit; color: inherit;
+}
 .pagination {
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-top: 0.85rem;
@@ -319,6 +328,7 @@ input:focus, select:focus, textarea:focus {
 .rate-wrap { display: flex; align-items: center; gap: 0.5rem; min-width: 130px; }
 .rate-bar { flex: 1; height: 7px; background: #e2e8f0; border-radius: 999px; overflow: hidden; }
 .rate-bar span { display: block; height: 100%; background: linear-gradient(90deg, #22c55e, #16a34a); border-radius: 999px; }
+.rate-bar.danger span { background: linear-gradient(90deg, #f87171, #dc2626); }
 .rate-label { font-size: 0.78rem; font-weight: 700; color: #334155; min-width: 40px; text-align: right; }
 
 /* ---------- Events ---------- */

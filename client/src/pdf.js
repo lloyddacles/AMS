@@ -114,6 +114,44 @@ export function exportEventPdf(event, rows, summary) {
   doc.save(`attendance-${safe}-${event.eventDate}.pdf`);
 }
 
+export function exportAtRiskPdf(students, threshold, totalEvents) {
+  const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+  let y = header(
+    doc,
+    'At-Risk Students',
+    `Below ${threshold}% attendance  ·  ${students.length} student${students.length === 1 ? '' : 's'}  ·  ${totalEvents} event${totalEvents === 1 ? '' : 's'}`
+  );
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Student No', 'Name', 'Course', 'Year', 'Attended', 'Absent', 'Excused', 'Rate']],
+    body: students.map((s) => [
+      s.studentNo,
+      `${s.lastName}, ${s.firstName}`,
+      s.course || '—',
+      s.yearLevel || '—',
+      s.attended,
+      s.absent,
+      s.excused,
+      `${s.rate}%`,
+    ]),
+    theme: 'grid',
+    headStyles: { fillColor: [220, 38, 38], fontSize: 8 },
+    styles: { fontSize: 8, cellPadding: 1.4, halign: 'center' },
+    columnStyles: {
+      0: { halign: 'left' },
+      1: { halign: 'left' },
+      2: { halign: 'left' },
+      3: { halign: 'left' },
+    },
+    alternateRowStyles: { fillColor: [254, 242, 242] },
+    margin: { left: 14, right: 14 },
+  });
+
+  footer(doc);
+  doc.save('at-risk-students.pdf');
+}
+
 export function exportSummaryPdf(students, totalEvents) {
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
   let y = header(doc, 'Student Attendance Summary', `${totalEvents} event${totalEvents === 1 ? '' : 's'} total`);
