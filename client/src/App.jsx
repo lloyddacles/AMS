@@ -13,6 +13,8 @@ import Reports from './pages/Reports.jsx';
 import PublicCheckin from './pages/PublicCheckin.jsx';
 import About from './pages/About.jsx';
 import Profile from './pages/Profile.jsx';
+import Users from './pages/Users.jsx';
+import AuditLog from './pages/AuditLog.jsx';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -20,6 +22,12 @@ function Protected({ children }) {
   if (loading) return <div className="center-page">Loading…</div>;
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   return <Layout>{children}</Layout>;
+}
+
+function AdminOnly({ children }) {
+  const { user } = useAuth();
+  if (user && user.role !== 'admin') return <Navigate to="/" replace />;
+  return children;
 }
 
 export default function App() {
@@ -37,6 +45,8 @@ export default function App() {
       <Route path="/reports" element={<Protected><Reports /></Protected>} />
       <Route path="/about" element={<Protected><About /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
+      <Route path="/users" element={<Protected><AdminOnly><Users /></AdminOnly></Protected>} />
+      <Route path="/audit" element={<Protected><AdminOnly><AuditLog /></AdminOnly></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

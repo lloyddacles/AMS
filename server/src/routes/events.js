@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { get, all, run, batch } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
+import { logAudit } from '../services/audit.js';
 import { displayStatus } from '../classify.js';
 
 const router = Router();
@@ -121,7 +122,15 @@ router.post('/', async (req, res) => {
       requireStudentConfirm ? 1 : 0,
     ]
   );
-  res.status(201).json(await getEvent(info.lastInsertRowid));
+  const created = await getEvent(info.lastInsertRowid);
+  await logAudit({
+    user: req.user,
+    action: 'event.create',
+    entity: 'event',
+    entityId: created.id,
+    detail: created.name,
+  });
+  res.status(201).json(created);
 });
 
 router.put('/:id', async (req, res) => {
@@ -148,14 +157,30 @@ router.put('/:id', async (req, res) => {
       req.params.id,
     ]
   );
-  res.json(await getEvent(req.params.id));
+  const updated = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.update',
+    entity: 'event',
+    entityId: updated.id,
+    detail: updated.name,
+  });
+  res.json(updated);
 });
 
 router.post('/:id/regenerate-code', async (req, res) => {
   const existing = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   await run('UPDATE events SET checkin_code = ? WHERE id = ?', [newToken(), req.params.id]);
-  res.json(await getEvent(req.params.id));
+  const updated = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.regenerate-code',
+    entity: 'event',
+    entityId: updated.id,
+    detail: updated.name,
+  });
+  res.json(updated);
 });
 
 // Close the event and consolidate attendance: every student without a record is
@@ -164,7 +189,15 @@ router.post('/:id/close', async (req, res) => {
   const existing = await get('SELECT id, status FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   const summary = await consolidate(req.params.id);
-  res.json({ ...(await getEvent(req.params.id)), reportSummary: summary });
+  const event = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.close',
+    entity: 'event',
+    entityId: event.id,
+    detail: `${event.name} · attended ${summary.attended}/${summary.totalStudents} (${summary.rate}%)`,
+  });
+  res.json({ ...event, reportSummary: summary });
 });
 
 // Reopen a closed event so corrections can be made. Removes the auto-generated
@@ -174,12 +207,28 @@ router.post('/:id/reopen', async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   await run("DELETE FROM attendance WHERE event_id = ? AND method = 'auto' AND checked_in_at IS NULL", [req.params.id]);
   await run("UPDATE events SET status = 'active', closed_at = NULL, report_summary = NULL WHERE id = ?", [req.params.id]);
-  res.json(await getEvent(req.params.id));
+  const event = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.reopen',
+    entity: 'event',
+    entityId: event.id,
+    detail: event.name,
+  });
+  res.json(event);
 });
 
 router.delete('/:id', async (req, res) => {
+  const event = await getEvent(req.params.id);
   const info = await run('DELETE FROM events WHERE id = ?', [req.params.id]);
   if (!info.changes) return res.status(404).json({ error: 'Event not found' });
+  await logAudit({
+    user: req.user,
+    action: 'event.delete',
+    entity: 'event',
+    entityId: req.params.id,
+    detail: event?.name || null,
+  });
   res.json({ ok: true });
 });
 

@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
+import { logAudit } from '../services/audit.js';
 import {
   classifyByTime,
   displayStatus,
@@ -306,6 +307,13 @@ router.post('/', async (req, res) => {
   const student = await get('SELECT id FROM students WHERE id = ?', [studentId]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
   const { row, duplicate } = await markManual({ eventId, studentId, status, note, userId: req.user.id });
+  await logAudit({
+    user: req.user,
+    action: 'attendance.mark',
+    entity: 'attendance',
+    entityId: row.id,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}`,
+  });
   res.status(duplicate ? 200 : 201).json({ ...row, duplicate });
 });
 
@@ -313,18 +321,36 @@ router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM attendance WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
   const { status, note } = req.body || {};
+  const before = await getAttendanceRow(req.params.id);
   await run("UPDATE attendance SET status = ?, note = ?, method = 'manual' WHERE id = ?", [
     status ?? existing.status,
     note ?? existing.note,
     req.params.id,
   ]);
   const row = await getAttendanceRow(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'attendance.update',
+    entity: 'attendance',
+    entityId: row.id,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${before.status} → ${row.status}`,
+  });
   res.json(row);
 });
 
 router.delete('/:id', async (req, res) => {
+  const before = await getAttendanceRow(req.params.id);
   const info = await run('DELETE FROM attendance WHERE id = ?', [req.params.id]);
   if (!info.changes) return res.status(404).json({ error: 'Attendance record not found' });
+  if (before) {
+    await logAudit({
+      user: req.user,
+      action: 'attendance.delete',
+      entity: 'attendance',
+      entityId: req.params.id,
+      detail: `${before.studentNo} ${before.lastName}, ${before.firstName} · ${before.status}`,
+    });
+  }
   res.json({ ok: true });
 });
 

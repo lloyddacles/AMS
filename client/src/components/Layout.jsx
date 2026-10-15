@@ -11,6 +11,8 @@ const links = [
   { to: '/students', label: 'Students', icon: '◔' },
   { to: '/events', label: 'Events', icon: '★' },
   { to: '/reports', label: 'Reports', icon: '▤' },
+  { to: '/users', label: 'Staff', icon: '⚇', roles: ['admin'] },
+  { to: '/audit', label: 'Audit Log', icon: '☰', roles: ['admin'] },
   { to: '/about', label: 'About', icon: 'ⓘ' },
   { to: '/profile', label: 'Profile', icon: '☺' },
 ];
@@ -49,7 +51,9 @@ export default function Layout({ children }) {
           <span className="brand-text">AttendX</span>
         </div>
         <nav className="nav">
-          {links.map((l) => (
+          {links
+            .filter((l) => !l.roles || l.roles.includes(user?.role))
+            .map((l) => (
             <NavLink
               key={l.to}
               to={l.to}

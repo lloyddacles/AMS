@@ -10,6 +10,8 @@ import eventRoutes from './routes/events.js';
 import attendanceRoutes from './routes/attendance.js';
 import reportRoutes from './routes/reports.js';
 import dashboardRoutes from './routes/dashboard.js';
+import userRoutes from './routes/users.js';
+import auditRoutes from './routes/audit.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -37,6 +39,8 @@ app.use('/api/events', eventRoutes);
 app.use('/api/attendance', attendanceRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/audit', auditRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;

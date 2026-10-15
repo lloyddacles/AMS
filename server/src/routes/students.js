@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { batch, get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
+import { logAudit } from '../services/audit.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -50,6 +51,13 @@ router.post('/', async (req, res) => {
       [studentNo.trim(), firstName.trim(), lastName.trim(), email || null, course || null, yearLevel || null, section || null, newToken()]
     );
     const row = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [info.lastInsertRowid]);
+    await logAudit({
+      user: req.user,
+      action: 'student.create',
+      entity: 'student',
+      entityId: row.id,
+      detail: `${row.studentNo} ${row.lastName}, ${row.firstName}`,
+    });
     res.status(201).json(row);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -124,6 +132,13 @@ router.post('/bulk', async (req, res) => {
     await batch(statements, 'write');
   }
 
+  await logAudit({
+    user: req.user,
+    action: 'student.bulk-create',
+    entity: 'student',
+    detail: `Imported ${created.length} student(s), skipped ${skipped.length}`,
+  });
+
   res.status(201).json({ createdCount: created.length, skippedCount: skipped.length, created, skipped });
 });
 
@@ -153,6 +168,20 @@ router.put('/:id', async (req, res) => {
       ]
     );
     const row = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [req.params.id]);
+    const changes = [];
+    if (existing.student_no !== row.studentNo) changes.push(`student no ${existing.student_no} → ${row.studentNo}`);
+    if (existing.first_name !== row.firstName) changes.push(`first name ${existing.first_name} → ${row.firstName}`);
+    if (existing.last_name !== row.lastName) changes.push(`last name ${existing.last_name} → ${row.lastName}`);
+    if ((existing.course || '') !== (row.course || '')) changes.push(`course ${existing.course || '—'} → ${row.course || '—'}`);
+    if ((existing.year_level || '') !== (row.yearLevel || '')) changes.push(`year ${existing.year_level || '—'} → ${row.yearLevel || '—'}`);
+    if ((existing.section || '') !== (row.section || '')) changes.push(`section ${existing.section || '—'} → ${row.section || '—'}`);
+    await logAudit({
+      user: req.user,
+      action: 'student.update',
+      entity: 'student',
+      entityId: row.id,
+      detail: `${row.studentNo} ${row.lastName}, ${row.firstName}${changes.length ? ` · ${changes.join('; ')}` : ''}`,
+    });
     res.json(row);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -167,12 +196,27 @@ router.post('/:id/regenerate-qr', async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Student not found' });
   await run('UPDATE students SET qr_token = ? WHERE id = ?', [newToken(), req.params.id]);
   const row = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [req.params.id]);
+  await logAudit({
+    user: req.user,
+    action: 'student.regenerate-qr',
+    entity: 'student',
+    entityId: row.id,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName}`,
+  });
   res.json(row);
 });
 
 router.delete('/:id', async (req, res) => {
+  const student = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [req.params.id]);
   const info = await run('DELETE FROM students WHERE id = ?', [req.params.id]);
   if (!info.changes) return res.status(404).json({ error: 'Student not found' });
+  await logAudit({
+    user: req.user,
+    action: 'student.delete',
+    entity: 'student',
+    entityId: req.params.id,
+    detail: student ? `${student.studentNo} ${student.lastName}, ${student.firstName}` : null,
+  });
   res.json({ ok: true });
 });
 

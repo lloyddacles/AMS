@@ -74,6 +74,8 @@ const SCHEMA = `
     password_hash TEXT NOT NULL,
     name TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'admin',
+    avatar TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -119,6 +121,21 @@ const SCHEMA = `
 
   CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
   CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
+
+  CREATE TABLE IF NOT EXISTS audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    user_name TEXT,
+    action TEXT NOT NULL,
+    entity TEXT,
+    entity_id TEXT,
+    detail TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_log(created_at);
+  CREATE INDEX IF NOT EXISTS idx_audit_user ON audit_log(user_id);
+  CREATE INDEX IF NOT EXISTS idx_audit_entity ON audit_log(entity);
 `;
 
 // Lightweight migrations for databases created before a column existed.
@@ -173,6 +190,7 @@ async function doInit() {
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
   await ensureColumn('users', 'avatar', 'avatar TEXT');
+  await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);

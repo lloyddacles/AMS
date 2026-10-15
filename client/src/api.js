@@ -89,6 +89,15 @@ export const api = {
 
   getDashboard: () => request('/dashboard/stats'),
 
+  getUsers: () => request('/users'),
+  createUser: (data) => request('/users', { method: 'POST', body: data }),
+  updateUser: (id, data) => request(`/users/${id}`, { method: 'PUT', body: data }),
+  resetUserPassword: (id, password) => request(`/users/${id}/password`, { method: 'POST', body: { password } }),
+  deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
+
+  getAudit: (params) => request(`/audit?${new URLSearchParams(params || {}).toString()}`),
+  getAuditActors: () => request('/audit/actors'),
+
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
   publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),

@@ -72,6 +72,16 @@ export default function Reports() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   }
 
+  async function exportPdf() {
+    if (!overview) return;
+    try {
+      const { exportSummaryPdf } = await import('../pdf.js');
+      exportSummaryPdf(sortedStudents, overview.totalEvents);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -80,6 +90,7 @@ export default function Reports() {
           <p className="muted">Attendance summaries and per-event breakdowns.</p>
         </div>
         <div className="head-actions">
+          <button className="btn" onClick={exportPdf} disabled={!overview}>Export PDF</button>
           <button className="btn" onClick={() => exportCsv('students')}>Export Summary CSV</button>
           <button className="btn" onClick={() => exportCsv('matrix')}>Export Matrix CSV</button>
         </div>

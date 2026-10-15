@@ -105,6 +105,15 @@ export default function EventDetail() {
     setTimeout(() => setToast(''), 1800);
   }
 
+  async function exportPdf() {
+    try {
+      const { exportEventPdf } = await import('../pdf.js');
+      exportEventPdf(event, attendance, event.reportSummary);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   async function closeEvent() {
     if (!confirm(`Close "${event.name}" and consolidate attendance?\n\nEvery student without a check-in will be marked absent and the final report will be locked.`)) return;
     setBusy(true);
@@ -176,6 +185,7 @@ export default function EventDetail() {
             </button>
           )}
           <button className="btn" onClick={() => exportCsv('event', id)}>Export CSV</button>
+          <button className="btn" onClick={exportPdf}>Export PDF</button>
         </div>
       </div>
 
