@@ -43,8 +43,8 @@ export default function Layout({ children }) {
     <div className="app-shell">
       <aside className={`sidebar ${open ? 'open' : ''}`}>
         <div className="brand">
-          <span className="brand-mark">AM</span>
-          <span className="brand-text">Attendance Monitor</span>
+          <span className="brand-mark">AX</span>
+          <span className="brand-text">AttendX</span>
         </div>
         <nav className="nav">
           {links.map((l) => (
@@ -82,7 +82,7 @@ export default function Layout({ children }) {
           <button className="menu-toggle" onClick={() => setOpen((o) => !o)} aria-label="Toggle menu">
             ☰
           </button>
-          <span className="topbar-title">Attendance Monitoring System</span>
+          <span className="topbar-title">AttendX</span>
           <LiveClock className="topbar-clock" />
         </header>
         <main className="content">{children}</main>

@@ -33,9 +33,9 @@ export default function Login() {
     <div className="login-page">
       <div className="login-card">
         <div className="login-brand">
-          <span className="brand-mark lg">AM</span>
-          <h1>Attendance Monitor</h1>
-          <p>Track student attendance across every event.</p>
+          <span className="brand-mark lg">AX</span>
+          <h1>AttendX</h1>
+          <p>QR-based attendance monitoring and digital attendance records.</p>
         </div>
         <form onSubmit={handleSubmit} className="form">
           <label>

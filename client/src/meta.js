@@ -1,5 +1,5 @@
-export const APP_NAME = 'Attendance Monitoring System';
-export const APP_TAGLINE = 'QR-based student attendance monitoring for school events.';
+export const APP_NAME = 'AttendX';
+export const APP_TAGLINE = 'AttendX: A QR-based attendance monitoring and digital attendance records.';
 export const AUTHOR = 'Mr. Lloyd Christopher F. Dacles, MIS';
 export const IDE = 'OpenCode';
 
