@@ -141,7 +141,7 @@ export default function NotificationBell() {
                     <span className="notif-item-title">{n.title}</span>
                     <span className="notif-item-time">{timeAgo(n.createdAt)}</span>
                   </div>
-                  {n.body && <div className="notif-item-body">{n.body}</div>}
+                  <NotifBody n={n} />
                 </button>
               ))
             )}
@@ -150,4 +150,53 @@ export default function NotificationBell() {
       )}
     </div>
   );
+}
+
+function levelFor(risk) {
+  if (risk >= 75) return 'critical';
+  if (risk >= 50) return 'high';
+  if (risk >= 25) return 'moderate';
+  return 'low';
+}
+
+// Renders the body of a notification. At-risk alerts carry a structured payload
+// so they can be shown as a tidy summary instead of a wall of text.
+function NotifBody({ n }) {
+  const data = n.data;
+  if (data && data.kind === 'at-risk') {
+    return (
+      <div className="notif-risk">
+        <div className="notif-risk-top">
+          <span className="notif-risk-count">
+            {data.count} {data.count === 1 ? 'student' : 'students'} below {data.threshold}%
+          </span>
+          {data.averageRisk != null && (
+            <span className={`risk-pill risk-${levelFor(data.averageRisk)}`}>
+              avg {data.averageRisk}%
+            </span>
+          )}
+        </div>
+        {data.drivers?.length > 0 && (
+          <div className="notif-chips">
+            <span className="notif-chips-label">Main reasons:</span>
+            {data.drivers.map((d) => (
+              <span className="notif-chip" key={d}>{d}</span>
+            ))}
+          </div>
+        )}
+        {data.students?.length > 0 && (
+          <ul className="notif-students">
+            {data.students.map((s) => (
+              <li key={s.id}>
+                <span className="notif-student-name">{s.name}</span>
+                <span className={`risk-pill risk-${s.riskLevel}`}>{s.risk}%</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {data.more > 0 && <div className="notif-more">+{data.more} more</div>}
+      </div>
+    );
+  }
+  return n.body ? <div className="notif-item-body">{n.body}</div> : null;
 }

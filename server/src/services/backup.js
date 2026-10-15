@@ -10,7 +10,7 @@ const TABLES = {
   settings: ['key', 'value', 'updated_at'],
   scan_receipts: ['client_scan_id', 'attendance_id', 'action', 'created_at'],
   audit_log: ['id', 'user_id', 'user_name', 'action', 'entity', 'entity_id', 'detail', 'created_at'],
-  notifications: ['id', 'type', 'title', 'body', 'severity', 'audience', 'link', 'dedupe_key', 'created_at'],
+  notifications: ['id', 'type', 'title', 'body', 'severity', 'audience', 'link', 'data', 'dedupe_key', 'created_at'],
   notification_reads: ['notification_id', 'user_id', 'read_at'],
 };
 

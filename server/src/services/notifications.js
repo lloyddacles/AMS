@@ -16,29 +16,40 @@ export function audiencesFor(role) {
 }
 
 // Insert a notification. With a dedupe_key, repeated calls collapse to one row.
-// Returns true when a new row was written.
-export async function createNotification({ type, title, body = null, severity = 'info', audience = 'all', link = null, dedupeKey = null }) {
+// Returns true when a new row was written. `data` is an optional structured
+// payload (stored as JSON) that lets the UI render a friendlier layout.
+export async function createNotification({ type, title, body = null, severity = 'info', audience = 'all', link = null, dedupeKey = null, data = null }) {
+  const dataJson = data == null ? null : JSON.stringify(data);
   if (dedupeKey) {
     const info = await run(
-      `INSERT OR IGNORE INTO notifications (type, title, body, severity, audience, link, dedupe_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      [type, title, body, severity, audience, link, dedupeKey]
+      `INSERT OR IGNORE INTO notifications (type, title, body, severity, audience, link, data, dedupe_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [type, title, body, severity, audience, link, dataJson, dedupeKey]
     );
     return info.changes > 0;
   }
   await run(
-    `INSERT INTO notifications (type, title, body, severity, audience, link)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-    [type, title, body, severity, audience, link]
+    `INSERT INTO notifications (type, title, body, severity, audience, link, data)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [type, title, body, severity, audience, link, dataJson]
   );
   return true;
+}
+
+function parseData(value) {
+  if (!value) return null;
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
 }
 
 export async function listNotifications(user, { limit = 30, unreadOnly = false } = {}) {
   const aud = audiencesFor(user?.role);
   const placeholders = aud.map(() => '?').join(', ');
   const args = [user.id, ...aud];
-  let sql = `SELECT n.id, n.type, n.title, n.body, n.severity, n.audience, n.link,
+  let sql = `SELECT n.id, n.type, n.title, n.body, n.severity, n.audience, n.link, n.data,
                     n.created_at AS createdAt, (r.read_at IS NOT NULL) AS isRead
              FROM notifications n
              LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = ?
@@ -47,7 +58,7 @@ export async function listNotifications(user, { limit = 30, unreadOnly = false }
   sql += ' ORDER BY n.created_at DESC, n.id DESC LIMIT ?';
   args.push(limit);
   const rows = await all(sql, args);
-  return rows.map((r) => ({ ...r, isRead: Number(r.isRead) ? true : false }));
+  return rows.map((r) => ({ ...r, isRead: Number(r.isRead) ? true : false, data: parseData(r.data) }));
 }
 
 export async function unreadCount(user) {
@@ -138,8 +149,8 @@ function dateInTzOffset(days, base = new Date()) {
 }
 
 // One aggregated alert per day when students fall below the attendance
-// threshold. The body summarizes each non-compliant student's explainable risk
-// score (logistic model with exact SHAP) and the group's top risk drivers.
+// threshold. The body stays short and readable; the structured `data` payload
+// carries the explainable risk summary (scores, drivers) for the UI.
 export async function evaluateAtRisk() {
   const { threshold, students } = await buildAtRisk({});
   if (!students.length) return false;
@@ -160,24 +171,39 @@ export async function evaluateAtRisk() {
     .slice(0, 3)
     .map(([key]) => featureLabel(key));
 
-  const lines = [];
-  if (avg != null) lines.push(`Explainable risk (logistic SHAP) · average ${avg}%`);
-  if (topDrivers.length) lines.push(`Group drivers: ${topDrivers.join(', ')}`);
-  for (const s of scored.slice(0, 5)) {
-    const top = (s.drivers || [])[0];
-    lines.push(`${s.lastName}, ${s.firstName} — ${s.risk}% risk${top ? ` · top factor: ${top.label.toLowerCase()}` : ''}`);
-  }
-  const unscored = students.length - scored.length;
-  if (unscored > 0) lines.push(`+${unscored} more without a score`);
+  const count = students.length;
+  const noun = count === 1 ? 'student is' : 'students are';
+  const reasons = topDrivers.length ? ` Mainly due to ${topDrivers.join(', ').toLowerCase()}.` : '';
+  const body = `${count} ${noun} below ${threshold}% attendance${avg != null ? ` (avg risk ${avg}%)` : ''}.${reasons}`;
+
+  const data = {
+    kind: 'at-risk',
+    threshold,
+    count,
+    averageRisk: avg,
+    drivers: topDrivers,
+    students: scored
+      .slice(0, 5)
+      .sort((a, b) => b.risk - a.risk)
+      .map((s) => ({
+        id: s.id,
+        name: `${s.lastName}, ${s.firstName}`,
+        studentNo: s.studentNo,
+        risk: s.risk,
+        riskLevel: s.riskLevel,
+      })),
+    more: Math.max(0, scored.length - 5),
+  };
 
   return createNotification({
     type: 'at-risk',
-    title: `Attendance risk: ${students.length} student(s) below ${threshold}%`,
-    body: lines.join('\n'),
+    title: `Attendance risk: ${count} student${count === 1 ? '' : 's'} below ${threshold}%`,
+    body,
     severity: worst >= 75 ? 'critical' : 'warning',
     audience: 'all',
     link: '/reports',
     dedupeKey: `at-risk:${todayInTz()}`,
+    data,
   });
 }
 

@@ -167,6 +167,7 @@ const SCHEMA = `
     severity TEXT NOT NULL DEFAULT 'info',
     audience TEXT NOT NULL DEFAULT 'all',
     link TEXT,
+    data TEXT,
     dedupe_key TEXT UNIQUE,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -235,6 +236,7 @@ async function doInit() {
   await ensureColumn('users', 'avatar', 'avatar TEXT');
   await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
   await ensureColumn('users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('notifications', 'data', 'data TEXT');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);

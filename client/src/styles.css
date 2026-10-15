@@ -1001,6 +1001,26 @@ button.risk-pill { cursor: pointer; }
 
 .at-risk-right { display: flex; align-items: center; gap: 0.6rem; }
 
+/* ---------- Structured at-risk notification ---------- */
+.notif-risk { margin-top: 0.35rem; display: flex; flex-direction: column; gap: 0.4rem; }
+.notif-risk-top { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.notif-risk-count { font-size: 0.82rem; font-weight: 600; }
+.notif-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem; }
+.notif-chips-label { font-size: 0.74rem; color: var(--muted); }
+.notif-chip {
+  font-size: 0.72rem;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  background: #eef2f7;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+.notif-students { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; }
+.notif-students li { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.notif-student-name { font-size: 0.78rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.notif-students .risk-pill { font-size: 0.7rem; padding: 0.1rem 0.45rem; }
+.notif-more { font-size: 0.74rem; color: var(--muted); }
+
 @media (max-width: 640px) {
   .driver-row { grid-template-columns: 1fr auto; grid-auto-rows: auto; row-gap: 0.15rem; }
   .driver-bar { grid-column: 1 / -1; }
