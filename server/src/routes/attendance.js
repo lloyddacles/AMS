@@ -227,7 +227,12 @@ router.post('/lookup', async (req, res) => {
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const student = await get('SELECT * FROM students WHERE qr_token = ?', [resolveToken(qrToken)]);
+  const student = await get(
+    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
+            course, year_level AS yearLevel, section
+     FROM students WHERE qr_token = ?`,
+    [resolveToken(qrToken)]
+  );
   if (!student) return res.status(404).json({ error: 'Unrecognized QR code' });
 
   const existing = await get(
