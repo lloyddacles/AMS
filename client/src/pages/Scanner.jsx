@@ -123,6 +123,14 @@ export default function Scanner() {
     setCommitError('');
   }
 
+  useEffect(() => {
+    function onKey(e) {
+      if (e.key === 'Escape') cancel();
+    }
+    if (pending) document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [pending]);
+
   const mode = event?.requireStudentConfirm ? 'kiosk' : 'staff';
 
   return (
