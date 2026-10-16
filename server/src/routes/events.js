@@ -5,7 +5,7 @@ import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
 import { notifyEventOpened, notifyEventClosed, notifyEventReopened } from '../services/notifications.js';
-import { displayStatus } from '../classify.js';
+import { displayStatus, eventPhase } from '../classify.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -30,7 +30,7 @@ function parseEvent(row) {
       reportSummary = null;
     }
   }
-  return { ...row, reportSummary };
+  return { ...row, reportSummary, phase: eventPhase(row) };
 }
 
 function getEvent(id) {
@@ -103,10 +103,10 @@ router.get('/', async (req, res) => {
       `SELECT ${selectFields} FROM events e WHERE e.term_id = ? ORDER BY e.event_date DESC, e.id DESC`,
       [termId]
     );
-    return res.json(rows);
+    return res.json(rows.map(parseEvent));
   }
   const rows = await all(`SELECT ${selectFields} FROM events e ORDER BY e.event_date DESC, e.id DESC`);
-  res.json(rows);
+  res.json(rows.map(parseEvent));
 });
 
 router.get('/:id', async (req, res) => {

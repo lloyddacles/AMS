@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../api.js';
+import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import LiveClock from '../components/LiveClock.jsx';
 import Footer from '../components/Footer.jsx';
 
@@ -66,6 +67,9 @@ export default function PublicCheckin() {
         <div className="login-brand">
           <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
           <h1>{event?.name || 'AttendX Check-in'}</h1>
+          {event && phaseOf(event) === 'upcoming' && (
+            <p><span className={`pill ${EVENT_PHASES.upcoming.pill}`}>{EVENT_PHASES.upcoming.label}</span></p>
+          )}
           <p>
             {event?.eventDate}
             {event?.startTime ? ` · ${event.startTime}` : ''}

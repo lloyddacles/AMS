@@ -11,6 +11,7 @@ import {
   isAttendedStatus,
   todayInTz,
   parseUtc,
+  eventPhase,
 } from '../classify.js';
 
 const router = Router();
@@ -230,7 +231,7 @@ router.get('/public/:code', async (req, res) => {
     [req.params.code]
   );
   if (!event) return res.status(404).json({ error: 'Invalid or unknown check-in code' });
-  res.json(event);
+  res.json({ ...event, phase: eventPhase(event) });
 });
 
 router.post('/public/:code/checkin', async (req, res) => {

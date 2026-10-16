@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import Modal from '../components/Modal.jsx';
 import Spinner from '../components/Spinner.jsx';
 
@@ -135,10 +136,12 @@ export default function Events() {
       <div className="event-grid">
         {visible.map((ev) => {
           const rate = ev.totalStudents ? Math.round((ev.attendanceCount / ev.totalStudents) * 100) : 0;
+          const phase = phaseOf(ev);
+          const phaseMeta = EVENT_PHASES[phase] || EVENT_PHASES.active;
           return (
             <div key={ev.id} className="card event-card">
               <div className="event-card-top">
-                <span className={`pill ${ev.status === 'active' ? 'pill-green' : 'pill-gray'}`}>{ev.status}</span>
+                <span className={`pill ${phaseMeta.pill}`}>{phaseMeta.label}</span>
                 <span className="muted small">{ev.eventDate}{ev.startTime ? ` · ${ev.startTime}` : ''}</span>
               </div>
               <h3>{ev.name}</h3>
@@ -158,10 +161,10 @@ export default function Events() {
                 <span className="rate-label">{ev.attendanceCount}/{ev.totalStudents}</span>
               </div>
               <div className="event-card-actions">
-                {ev.status === 'active' && (
+                {phase === 'active' && (
                   <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>
                 )}
-                <Link className={`btn btn-sm ${ev.status === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
+                <Link className={`btn btn-sm ${phase === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
                 <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
                 <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
               </div>

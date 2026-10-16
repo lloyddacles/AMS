@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import { phaseOf } from '../eventStatus.js';
 import Spinner from '../components/Spinner.jsx';
 
 function todayIso() {
@@ -71,11 +72,17 @@ export default function Live() {
       <div className="live-grid">
         {events.map((ev) => {
           const isToday = ev.eventDate === todayIso();
+          const phase = phaseOf(ev);
           const rate = ev.totalStudents ? Math.round((ev.attendanceCount / ev.totalStudents) * 100) : 0;
+          const topPill = phase === 'upcoming'
+            ? { cls: 'pill-blue', label: 'Coming Soon' }
+            : isToday
+              ? { cls: 'pill-green', label: 'Happening today' }
+              : { cls: 'pill-blue', label: ev.eventDate };
           return (
-            <div key={ev.id} className={`card live-card ${isToday ? 'live-today' : ''}`}>
+            <div key={ev.id} className={`card live-card ${isToday && phase === 'active' ? 'live-today' : ''}`}>
               <div className="live-card-top">
-                <span className={`pill ${isToday ? 'pill-green' : 'pill-blue'}`}>{isToday ? 'Happening today' : ev.eventDate}</span>
+                <span className={`pill ${topPill.cls}`}>{topPill.label}</span>
                 <span className="muted small">{ev.startTime || '—'}{ev.endTime ? `–${ev.endTime}` : ''}</span>
               </div>
               <h3>{ev.name}</h3>

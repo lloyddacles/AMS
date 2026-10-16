@@ -124,6 +124,18 @@ export function displayStatus(event, record) {
   return 'on-time'; // legacy "present" without a recorded time
 }
 
+// Coarse lifecycle phase of an event for display:
+//   closed   – check-in has been turned off
+//   upcoming – status is active but the start time hasn't been reached yet
+//   active   – check-in is open (start time reached)
+export function eventPhase(event, now = new Date()) {
+  if (!event) return null;
+  if (event.status && event.status !== 'active') return 'closed';
+  const start = eventStart(event);
+  if (start && start.getTime() > now.getTime()) return 'upcoming';
+  return 'active';
+}
+
 export const CLASSIFY_LABEL = {
   early: 'Early',
   'on-time': 'On-time',

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { QRCodeCanvas } from 'qrcode.react';
 import { api, exportCsv } from '../api.js';
+import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import Modal from '../components/Modal.jsx';
 import Spinner from '../components/Spinner.jsx';
 
@@ -177,6 +178,8 @@ export default function EventDetail() {
 
   const attendedCount = attendance.filter((a) => ATTENDED.includes(a.classification)).length;
   const rate = event.totalStudents ? Math.round((attendedCount / event.totalStudents) * 100) : 0;
+  const phase = phaseOf(event);
+  const phaseMeta = EVENT_PHASES[phase] || EVENT_PHASES.active;
   const filteredStudents = students.filter((s) => {
     const q = search.toLowerCase();
     return (
@@ -192,7 +195,12 @@ export default function EventDetail() {
       <div className="page-head">
         <div>
           <Link to="/events" className="link back">← Events</Link>
-          <h2>{event.name}</h2>
+          <h2>
+            {event.name}
+            <span className={`pill ${phaseMeta.pill}`} style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>
+              {phaseMeta.label}
+            </span>
+          </h2>
           <p className="muted">
             {event.eventDate}
             {event.startTime ? ` · ${event.startTime}${event.endTime ? `–${event.endTime}` : ''}` : ''}
@@ -218,11 +226,16 @@ export default function EventDetail() {
         </div>
       </div>
 
-      {event.status !== 'active' && (
+      {event.status !== 'active' ? (
         <div className="alert alert-info">
           This event is closed — check-in is turned off and attendance has been consolidated.
         </div>
-      )}
+      ) : phase === 'upcoming' ? (
+        <div className="alert alert-info">
+          This event is coming soon — it starts{event.startTime ? ` at ${event.startTime}` : ''} on {event.eventDate}.
+          Check-ins made before it starts are recorded as <strong>Early</strong>.
+        </div>
+      ) : null}
 
       {event.reportSummary && (
         <div className="card consolidate-card">
