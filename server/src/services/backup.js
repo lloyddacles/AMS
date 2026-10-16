@@ -4,8 +4,10 @@ import { all, batch } from '../db.js';
 // than `SELECT *`) so imports stay stable even if column order changes.
 const TABLES = {
   users: ['id', 'username', 'password_hash', 'name', 'role', 'avatar', 'active', 'must_change_password', 'created_at'],
+  terms: ['id', 'name', 'start_date', 'end_date', 'is_current', 'created_at'],
+  schedules: ['id', 'term_id', 'name', 'description', 'location', 'weekdays', 'start_time', 'end_time', 'start_date', 'end_date', 'require_student_confirm', 'active', 'last_generated_date', 'created_at'],
   students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'created_at'],
-  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary'],
+  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id'],
   attendance: ['id', 'event_id', 'student_id', 'status', 'method', 'note', 'checked_in_at', 'checked_out_at', 'marked_by'],
   settings: ['key', 'value', 'updated_at'],
   scan_receipts: ['client_scan_id', 'attendance_id', 'action', 'created_at'],
@@ -15,8 +17,8 @@ const TABLES = {
 };
 
 // Delete children before parents; insert parents before children.
-const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance', 'scan_receipts', 'audit_log', 'settings', 'events', 'students', 'users'];
-const INSERT_ORDER = ['users', 'students', 'events', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
+const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance', 'scan_receipts', 'audit_log', 'settings', 'events', 'schedules', 'terms', 'students', 'users'];
+const INSERT_ORDER = ['users', 'terms', 'schedules', 'students', 'events', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
 
 export async function exportData() {
   const tables = {};

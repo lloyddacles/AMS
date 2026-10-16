@@ -74,7 +74,7 @@ export const api = {
   deleteStudent: (id) => request(`/students/${id}`, { method: 'DELETE' }),
   regenerateStudentQr: (id) => request(`/students/${id}/regenerate-qr`, { method: 'POST' }),
 
-  getEvents: () => request('/events'),
+  getEvents: (termId) => request(`/events${termId ? `?termId=${encodeURIComponent(termId)}` : ''}`),
   getEvent: (id) => request(`/events/${id}`),
   getScanPack: (id) => request(`/events/${id}/scan-pack`),
   createEvent: (data) => request('/events', { method: 'POST', body: data }),
@@ -104,6 +104,18 @@ export const api = {
   getStudentRisk: (id) => request(`/reports/risk/${id}`),
 
   getDashboard: () => request('/dashboard/stats'),
+
+  getTerms: () => request('/terms'),
+  createTerm: (data) => request('/terms', { method: 'POST', body: data }),
+  updateTerm: (id, data) => request(`/terms/${id}`, { method: 'PUT', body: data }),
+  setCurrentTerm: (id) => request(`/terms/${id}/current`, { method: 'POST' }),
+  deleteTerm: (id) => request(`/terms/${id}`, { method: 'DELETE' }),
+
+  getSchedules: () => request('/schedules'),
+  createSchedule: (data) => request('/schedules', { method: 'POST', body: data }),
+  updateSchedule: (id, data) => request(`/schedules/${id}`, { method: 'PUT', body: data }),
+  deleteSchedule: (id) => request(`/schedules/${id}`, { method: 'DELETE' }),
+  generateSchedule: (id) => request(`/schedules/${id}/generate`, { method: 'POST' }),
 
   getNotifications: (params) => request(`/notifications?${new URLSearchParams(params || {}).toString()}`),
   markNotificationRead: (id) => request(`/notifications/${id}/read`, { method: 'POST' }),

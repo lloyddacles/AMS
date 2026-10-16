@@ -131,6 +131,7 @@ button { font-family: inherit; }
 .page-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .page-head .muted { font-size: 0.9rem; }
 .head-actions { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.term-filter { padding: 0.5rem 0.7rem; border: 1px solid var(--border); border-radius: 9px; background: var(--surface); font-size: 0.85rem; }
 .back { font-size: 0.82rem; display: inline-block; margin-bottom: 0.25rem; }
 
 .card {
@@ -445,9 +446,21 @@ input:focus, select:focus, textarea:focus {
 .confirm-input input { max-width: 260px; font-size: 1rem; font-weight: 600; letter-spacing: 0.05em; }
 .confirm-actions { display: flex; gap: 0.5rem; justify-content: flex-end; }
 .alert-info { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+.alert-success { background: #ecfdf5; color: #15803d; border: 1px solid #bbf7d0; }
 .checkbox { flex-direction: row !important; align-items: center; gap: 0.55rem !important; font-weight: 500 !important; }
 .checkbox input { width: auto !important; }
 .checkbox span { font-size: 0.85rem; color: #334155; }
+
+/* ---------- Recurring schedule form ---------- */
+.field-label { display: block; font-size: 0.78rem; font-weight: 600; color: #334155; margin-bottom: 0.4rem; }
+.weekday-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.weekday-chip {
+  min-width: 48px; padding: 0.45rem 0.65rem; border-radius: 9px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.12s;
+}
+.weekday-chip:hover { border-color: #cbd5e1; background: #f8fafc; }
+.weekday-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
 
 /* ---------- Bulk add ---------- */
 .bulk-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.85rem 0 0.5rem; }

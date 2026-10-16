@@ -180,6 +180,32 @@ const SCHEMA = `
     read_at TEXT NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (notification_id, user_id)
   );
+
+  CREATE TABLE IF NOT EXISTS terms (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    is_current INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    term_id INTEGER REFERENCES terms(id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    description TEXT,
+    location TEXT,
+    weekdays TEXT NOT NULL,
+    start_time TEXT,
+    end_time TEXT,
+    start_date TEXT NOT NULL,
+    end_date TEXT NOT NULL,
+    require_student_confirm INTEGER NOT NULL DEFAULT 0,
+    active INTEGER NOT NULL DEFAULT 1,
+    last_generated_date TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `;
 
 // Lightweight migrations for databases created before a column existed.
@@ -237,9 +263,14 @@ async function doInit() {
   await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
   await ensureColumn('users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('notifications', 'data', 'data TEXT');
+  await ensureColumn('events', 'term_id', 'term_id INTEGER');
+  await ensureColumn('events', 'schedule_id', 'schedule_id INTEGER');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
     CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
+    CREATE INDEX IF NOT EXISTS idx_events_term ON events(term_id);
+    CREATE INDEX IF NOT EXISTS idx_events_schedule ON events(schedule_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
   `);
 }

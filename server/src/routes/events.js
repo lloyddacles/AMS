@@ -15,6 +15,8 @@ const selectFields = `e.id, e.name, e.description, e.location,
   e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime,
   e.checkin_code AS checkinCode, e.status, e.require_student_confirm AS requireStudentConfirm,
   e.closed_at AS closedAt, e.report_summary AS reportSummary, e.created_at AS createdAt,
+  e.term_id AS termId, e.schedule_id AS scheduleId,
+  (SELECT name FROM terms t WHERE t.id = e.term_id) AS termName,
   (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
   (SELECT COUNT(*) FROM students) AS totalStudents`;
 
@@ -95,6 +97,14 @@ async function consolidate(eventId) {
 }
 
 router.get('/', async (req, res) => {
+  const { termId } = req.query;
+  if (termId) {
+    const rows = await all(
+      `SELECT ${selectFields} FROM events e WHERE e.term_id = ? ORDER BY e.event_date DESC, e.id DESC`,
+      [termId]
+    );
+    return res.json(rows);
+  }
   const rows = await all(`SELECT ${selectFields} FROM events e ORDER BY e.event_date DESC, e.id DESC`);
   res.json(rows);
 });
@@ -126,13 +136,13 @@ router.get('/:id/scan-pack', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm } = req.body || {};
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, termId, scheduleId } = req.body || {};
   if (!name || !eventDate) {
     return res.status(400).json({ error: 'Event name and date are required' });
   }
   const info = await run(
-    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, term_id, schedule_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name.trim(),
       description || null,
@@ -143,6 +153,8 @@ router.post('/', async (req, res) => {
       newToken(),
       status || 'active',
       requireStudentConfirm ? 1 : 0,
+      termId || null,
+      scheduleId || null,
     ]
   );
   const created = await getEvent(info.lastInsertRowid);
@@ -160,7 +172,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm } = req.body || {};
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, termId, scheduleId } = req.body || {};
   const nextName = String(name ?? existing.name).trim();
   const nextDate = String(eventDate ?? existing.event_date).trim();
   if (!nextName || !nextDate) {
@@ -168,7 +180,8 @@ router.put('/:id', async (req, res) => {
   }
   await run(
     `UPDATE events SET name = ?, description = ?, location = ?, event_date = ?,
-      start_time = ?, end_time = ?, status = ?, require_student_confirm = ? WHERE id = ?`,
+      start_time = ?, end_time = ?, status = ?, require_student_confirm = ?,
+      term_id = ?, schedule_id = ? WHERE id = ?`,
     [
       nextName,
       description ?? existing.description,
@@ -178,6 +191,8 @@ router.put('/:id', async (req, res) => {
       endTime ?? existing.end_time,
       status ?? existing.status,
       requireStudentConfirm === undefined ? existing.require_student_confirm : (requireStudentConfirm ? 1 : 0),
+      termId === undefined ? existing.term_id : (termId || null),
+      scheduleId === undefined ? existing.schedule_id : (scheduleId || null),
       req.params.id,
     ]
   );
