@@ -98,7 +98,8 @@ export const api = {
   deleteAttendance: (id) => request(`/attendance/${id}`, { method: 'DELETE' }),
 
   getReportOverview: (params) => request(`/reports/overview?${new URLSearchParams(params || {}).toString()}`),
-  getReportMatrix: () => request('/reports/matrix'),
+  getReportMatrix: (params) => request(`/reports/matrix?${new URLSearchParams(params || {}).toString()}`),
+  getReportTrends: (params) => request(`/reports/trends?${new URLSearchParams(params || {}).toString()}`),
   getAtRisk: (params) => request(`/reports/at-risk?${new URLSearchParams(params || {}).toString()}`),
   getRisk: () => request('/reports/risk'),
   getStudentRisk: (id) => request(`/reports/risk/${id}`),

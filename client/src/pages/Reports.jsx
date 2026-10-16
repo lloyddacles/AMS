@@ -1,5 +1,8 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import {
+  ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend,
+} from 'recharts';
 import { api, exportCsv } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Spinner from '../components/Spinner.jsx';
@@ -32,12 +35,19 @@ const MARK_LABEL = Object.fromEntries(MARK_LEGEND.map((m) => [m.status, m.mark])
 export default function Reports() {
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
-  const [view, setView] = useState(params.get('view') === 'at-risk' ? 'at-risk' : 'summary');
+  const initialView = params.get('view');
+  const [view, setView] = useState(['at-risk', 'matrix', 'trends'].includes(initialView) ? initialView : 'summary');
   const [search, setSearch] = useState('');
   const [course, setCourse] = useState('');
+  const [from, setFrom] = useState(params.get('from') || '');
+  const [to, setTo] = useState(params.get('to') || '');
+  const [termId, setTermId] = useState(params.get('termId') || '');
+  const [terms, setTerms] = useState([]);
+  const [granularity, setGranularity] = useState('day');
   const [overview, setOverview] = useState(null);
   const [matrix, setMatrix] = useState(null);
   const [atRisk, setAtRisk] = useState(null);
+  const [trends, setTrends] = useState(null);
   const [thresholdInput, setThresholdInput] = useState('');
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -46,27 +56,38 @@ export default function Reports() {
   const [expandedRisk, setExpandedRisk] = useState(null);
   const [riskCache, setRiskCache] = useState({});
 
+  const rangeParams = { from, to, termId: termId || '' };
+
+  useEffect(() => {
+    api.getTerms().then(setTerms).catch(() => setTerms([]));
+  }, []);
+
   useEffect(() => {
     const t = setTimeout(() => {
       api
-        .getReportOverview({ search, course })
+        .getReportOverview({ search, course, ...rangeParams })
         .then(setOverview)
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [search, course]);
+  }, [search, course, from, to, termId]);
 
   useEffect(() => {
-    if (view === 'matrix' && !matrix) {
-      api.getReportMatrix().then(setMatrix).catch((e) => setError(e.message));
-    }
-  }, [view, matrix]);
+    if (view !== 'matrix') return undefined;
+    let alive = true;
+    setMatrix(null);
+    api
+      .getReportMatrix(rangeParams)
+      .then((d) => { if (alive) setMatrix(d); })
+      .catch((e) => setError(e.message));
+    return () => { alive = false; };
+  }, [view, from, to, termId]);
 
   useEffect(() => {
     if (view !== 'at-risk') return undefined;
     const t = setTimeout(() => {
       api
-        .getAtRisk({ search, course })
+        .getAtRisk({ search, course, ...rangeParams })
         .then((d) => {
           setAtRisk(d);
           setThresholdInput(String(d.threshold));
@@ -74,16 +95,30 @@ export default function Reports() {
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [view, search, course]);
+  }, [view, search, course, from, to, termId]);
+
+  useEffect(() => {
+    if (view !== 'trends') return undefined;
+    let alive = true;
+    setTrends(null);
+    api
+      .getReportTrends({ course, granularity, ...rangeParams })
+      .then((d) => { if (alive) setTrends(d); })
+      .catch((e) => setError(e.message));
+    return () => { alive = false; };
+  }, [view, course, granularity, from, to, termId]);
 
   useEffect(() => {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       if (view === 'summary') next.delete('view');
       else next.set('view', view);
+      if (from) next.set('from', from); else next.delete('from');
+      if (to) next.set('to', to); else next.delete('to');
+      if (termId) next.set('termId', termId); else next.delete('termId');
       return next;
     }, { replace: true });
-  }, [view, setParams]);
+  }, [view, from, to, termId, setParams]);
 
   const courses = overview ? [...new Set(overview.students.map((s) => s.course).filter(Boolean))].sort() : [];
 
@@ -109,7 +144,28 @@ export default function Reports() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, course, sort, pageSize, view]);
+  }, [search, course, from, to, termId, sort, pageSize, view]);
+
+  function quickRange(kind) {
+    const iso = (d) => d.toISOString().slice(0, 10);
+    if (kind === 'all') { setFrom(''); setTo(''); return; }
+    const today = new Date();
+    if (kind === '30') {
+      const start = new Date(today);
+      start.setUTCDate(start.getUTCDate() - 29);
+      setFrom(iso(start));
+      setTo(iso(today));
+    } else if (kind === 'month') {
+      const y = today.getUTCFullYear();
+      const m = today.getUTCMonth();
+      setFrom(iso(new Date(Date.UTC(y, m, 1))));
+      setTo(iso(new Date(Date.UTC(y, m + 1, 0))));
+    } else if (kind === 'year') {
+      const y = today.getUTCFullYear();
+      setFrom(`${y}-01-01`);
+      setTo(`${y}-12-31`);
+    }
+  }
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
@@ -141,11 +197,39 @@ export default function Reports() {
     if (!Number.isFinite(value)) return;
     try {
       await api.updateSettings({ atRiskThreshold: value });
-      const d = await api.getAtRisk({ search, course });
+      const d = await api.getAtRisk({ search, course, ...rangeParams });
       setAtRisk(d);
       setThresholdInput(String(d.threshold));
     } catch (err) {
       alert(err.message);
+    }
+  }
+
+  function exportTrendsCsv() {
+    if (!trends) return;
+    const header = ['Period', 'Events', 'Present', 'Early', 'On-time', 'Late', 'Excused', 'Absent', 'Rate %'];
+    const lines = [header.join(',')];
+    for (const p of trends.points) {
+      lines.push([p.label, p.events, p.present, p.early, p.onTime, p.late, p.excused, p.absent, p.rate].join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `attendance-trend-${granularity}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  }
+
+  function toggleRisk(student) {
+    setExpandedRisk((cur) => (cur === student.id ? null : student.id));
+    if (!riskCache[student.id]) {
+      api
+        .getStudentRisk(student.id)
+        .then((d) => setRiskCache((c) => ({ ...c, [student.id]: d })))
+        .catch(() => setRiskCache((c) => ({ ...c, [student.id]: { error: true } })));
     }
   }
 
@@ -160,13 +244,15 @@ export default function Reports() {
           {view === 'at-risk' ? (
             <>
               <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>Export PDF</button>
-              <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course })}>Export CSV</button>
+              <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
             </>
+          ) : view === 'trends' ? (
+            <button className="btn" onClick={exportTrendsCsv} disabled={!trends}>Export CSV</button>
           ) : (
             <>
               <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
-              <button className="btn" onClick={() => exportCsv('students')}>Export Summary CSV</button>
-              <button className="btn" onClick={() => exportCsv('matrix')}>Export Matrix CSV</button>
+              <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Export Summary CSV</button>
+              <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Export Matrix CSV</button>
             </>
           )}
         </div>
@@ -175,19 +261,68 @@ export default function Reports() {
       <div className="tabs">
         <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>Student Summary</button>
         <button className={view === 'matrix' ? 'active' : ''} onClick={() => setView('matrix')}>Event Matrix</button>
+        <button className={view === 'trends' ? 'active' : ''} onClick={() => setView('trends')}>Trends</button>
         <button className={view === 'at-risk' ? 'active' : ''} onClick={() => setView('at-risk')}>At-Risk</button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      {view === 'summary' && (
-        <>
-          <div className="toolbar">
+      <div className="toolbar report-filters">
+        {(view === 'summary' || view === 'at-risk') && (
+          <>
             <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select value={course} onChange={(e) => setCourse(e.target.value)}>
               <option value="">All courses</option>
               {courses.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
+          </>
+        )}
+        {view === 'trends' && (
+          <select value={course} onChange={(e) => setCourse(e.target.value)}>
+            <option value="">All courses</option>
+            {courses.map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        )}
+        <label className="date-field">
+          From
+          <input type="date" value={from} max={to || undefined} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label className="date-field">
+          To
+          <input type="date" value={to} min={from || undefined} onChange={(e) => setTo(e.target.value)} />
+        </label>
+        <select className="term-filter" value={termId} onChange={(e) => setTermId(e.target.value)}>
+          <option value="">All terms</option>
+          {terms.map((t) => <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>)}
+        </select>
+        {view === 'trends' && (
+          <select value={granularity} onChange={(e) => setGranularity(e.target.value)}>
+            <option value="day">Daily</option>
+            <option value="week">Weekly</option>
+            <option value="month">Monthly</option>
+            <option value="event">Per event</option>
+          </select>
+        )}
+        <div className="toolbar-right">
+          <button type="button" className="btn btn-sm" onClick={() => quickRange('all')}>All time</button>
+          <button type="button" className="btn btn-sm" onClick={() => quickRange('30')}>Last 30d</button>
+          <button type="button" className="btn btn-sm" onClick={() => quickRange('month')}>This month</button>
+          <button type="button" className="btn btn-sm" onClick={() => quickRange('year')}>This year</button>
+        </div>
+        {(from || to || termId) && (
+          <button
+            type="button"
+            className="btn btn-sm"
+            onClick={() => { setFrom(''); setTo(''); setTermId(''); }}
+          >
+            Clear filters
+          </button>
+        )}
+      </div>
+
+      {view === 'summary' && (
+        <>
+          <div className="toolbar">
             <div className="toolbar-right">
               <label className="page-size">
                 Rows
@@ -297,17 +432,7 @@ export default function Reports() {
                       <td className="sticky-col strong">{s.lastName}, {s.firstName}</td>
                       {matrix.events.map((e) => {
                         const status = matrix.records[`${e.id}:${s.id}`];
-  function toggleRisk(student) {
-    setExpandedRisk((cur) => (cur === student.id ? null : student.id));
-    if (!riskCache[student.id]) {
-      api
-        .getStudentRisk(student.id)
-        .then((d) => setRiskCache((c) => ({ ...c, [student.id]: d })))
-        .catch(() => setRiskCache((c) => ({ ...c, [student.id]: { error: true } })));
-    }
-  }
-
-  return (
+                        return (
                           <td key={e.id} className="cell-mark">
                             {status ? (
                               <span className={`mark mark-${status}`} title={status}>{MARK_LABEL[status] || status[0].toUpperCase()}</span>
@@ -327,14 +452,99 @@ export default function Reports() {
         </>
       )}
 
+      {view === 'trends' && (
+        <>
+          {!trends ? (
+            <div className="card"><Spinner label="Loading trends…" size="lg" variant="panel" /></div>
+          ) : (
+            <>
+              <div className="stat-grid">
+                <StatCard label="Events in range" value={trends.summary.events} accent="purple" />
+                <StatCard label="Present" value={trends.summary.present} accent="green" />
+                <StatCard label="Absent" value={trends.summary.absent} accent="amber" />
+                <StatCard label="Attendance rate" value={`${trends.summary.rate}%`} accent="blue" />
+              </div>
+              <div className="card">
+                <div className="card-head">
+                  <h3>Attendance rate over time</h3>
+                  <span className="muted small">
+                    {granularity === 'event' ? 'Per event' : `By ${granularity}`} · {trends.totalStudents} student{trends.totalStudents === 1 ? '' : 's'} in scope
+                  </span>
+                </div>
+                {trends.points.length === 0 ? (
+                  <p className="muted">No events in the selected range{termId ? ' and term' : ''}.</p>
+                ) : (
+                  <ResponsiveContainer width="100%" height={300}>
+                    <AreaChart data={trends.points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="rateFill" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 12 }} unit="%" />
+                      <Tooltip
+                        formatter={(value, name) => [
+                          name === 'rate' ? `${value}%` : value,
+                          name === 'rate' ? 'Rate' : name,
+                        ]}
+                      />
+                      <Legend />
+                      <Area type="monotone" dataKey="rate" stroke="#2563eb" strokeWidth={2} fill="url(#rateFill)" name="rate" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="card table-card">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>{granularity === 'event' ? 'Event' : 'Period'}</th>
+                      <th className="num">Events</th>
+                      <th className="num">Present</th>
+                      <th className="num">Early</th>
+                      <th className="num">On-time</th>
+                      <th className="num">Late</th>
+                      <th className="num">Excused</th>
+                      <th className="num">Absent</th>
+                      <th>Rate</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {trends.points.length === 0 && (
+                      <tr><td colSpan={9} className="muted center">No data for the selected range.</td></tr>
+                    )}
+                    {trends.points.map((p) => (
+                      <tr key={p.key}>
+                        <td className="strong">{p.label}</td>
+                        <td className="num">{p.events}</td>
+                        <td className="num">{p.present}</td>
+                        <td className="num">{p.early}</td>
+                        <td className="num">{p.onTime}</td>
+                        <td className="num">{p.late}</td>
+                        <td className="num">{p.excused}</td>
+                        <td className="num">{p.absent}</td>
+                        <td>
+                          <div className="rate-wrap">
+                            <div className="rate-bar"><span style={{ width: `${p.rate}%` }} /></div>
+                            <span className="rate-label">{p.rate}%</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
       {view === 'at-risk' && (
         <>
           <div className="toolbar">
-            <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
-            <select value={course} onChange={(e) => setCourse(e.target.value)}>
-              <option value="">All courses</option>
-              {courses.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
             <form className="toolbar-right threshold-form" onSubmit={saveThreshold}>
               <label>
                 Threshold %
@@ -437,6 +647,15 @@ export default function Reports() {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+function StatCard({ label, value, accent }) {
+  return (
+    <div className={`stat-card accent-${accent}`}>
+      <div className="stat-value">{value}</div>
+      <div className="stat-label">{label}</div>
     </div>
   );
 }

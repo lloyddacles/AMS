@@ -14,10 +14,47 @@ function bucket(counts, cls) {
   else counts.absent += 1;
 }
 
-// Per-student summary, classified early / on-time / late / absent.
-export async function buildOverview({ search = '', course = '' } = {}) {
+// Build a WHERE fragment (plus params) selecting events within an optional
+// date range and/or term. Filters are inclusive and independent.
+export function eventFilter({ from = '', to = '', termId = null } = {}) {
+  const clauses = [];
+  const params = [];
+  if (from) {
+    clauses.push('event_date >= ?');
+    params.push(from);
+  }
+  if (to) {
+    clauses.push('event_date <= ?');
+    params.push(to);
+  }
+  if (termId) {
+    clauses.push('term_id = ?');
+    params.push(termId);
+  }
+  return { sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
+}
+
+// Monday (YYYY-MM-DD) of the ISO week containing a YYYY-MM-DD date.
+function weekStart(dateStr) {
+  const d = new Date(`${dateStr}T00:00:00Z`);
+  if (Number.isNaN(d.getTime())) return dateStr;
+  const offset = (d.getUTCDay() + 6) % 7; // Monday = 0
+  d.setUTCDate(d.getUTCDate() - offset);
+  return d.toISOString().slice(0, 10);
+}
+
+function bucketKey(dateStr, granularity) {
+  if (granularity === 'month') return String(dateStr).slice(0, 7);
+  if (granularity === 'week') return weekStart(dateStr);
+  return dateStr;
+}
+
+// Per-student summary, classified early / on-time / late / absent, over an
+// optional date range and term.
+export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null } = {}) {
   const like = `%${search}%`;
-  const events = await all(`SELECT ${EVENT_COLS} FROM events`);
+  const ef = eventFilter({ from, to, termId });
+  const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const students = await all(
     `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
             course, year_level AS yearLevel
@@ -109,5 +146,114 @@ export async function buildAtRisk(filters = {}) {
     totalEvents,
     students: annotated,
     model: model ? { context: model.context } : null,
+  };
+}
+
+// Attendance trend over time. Produces one point per bucket (event / day /
+// week / month), each with status counts and an attendance rate computed over
+// decided slots (present + excused + absent) so future/open events don't drag
+// the line down.
+export async function buildTrends({ from = '', to = '', termId = null, course = '', granularity = 'day' } = {}) {
+  const ef = eventFilter({ from, to, termId });
+  const events = await all(
+    `SELECT ${EVENT_COLS} FROM events${ef.sql} ORDER BY event_date, start_time`,
+    ef.params
+  );
+
+  const students = await all(
+    `SELECT id FROM students WHERE (? = '' OR course = ?)`,
+    [course, course]
+  );
+  const studentIds = new Set(students.map((s) => s.id));
+  const totalStudents = studentIds.size;
+
+  let records = [];
+  if (events.length) {
+    const placeholders = events.map(() => '?').join(',');
+    records = await all(
+      `SELECT ${RECORD_COLS} FROM attendance WHERE event_id IN (${placeholders})`,
+      events.map((e) => e.id)
+    );
+  }
+  const byEvent = new Map();
+  for (const r of records) {
+    if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, []);
+    byEvent.get(r.eventId).push(r);
+  }
+
+  const now = new Date();
+  const buckets = new Map();
+  const order = [];
+  let sumPresent = 0;
+  let sumExcused = 0;
+  let sumAbsent = 0;
+
+  for (const e of events) {
+    const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
+    let recorded = 0;
+    for (const r of byEvent.get(e.id) || []) {
+      if (!studentIds.has(r.studentId)) continue;
+      bucket(counts, displayStatus(e, r));
+      recorded += 1;
+    }
+    const cutoff = absentCutoff(e);
+    const decided = cutoff ? now > cutoff : false;
+    if (decided) counts.absent += Math.max(0, totalStudents - recorded);
+
+    const present = counts.early + counts.onTime + counts.late;
+    const key = granularity === 'event' ? String(e.id) : bucketKey(e.eventDate, granularity);
+    if (!buckets.has(key)) {
+      buckets.set(key, {
+        key,
+        label: granularity === 'event' ? e.name : key,
+        date: e.eventDate,
+        events: 0,
+        present: 0,
+        early: 0,
+        onTime: 0,
+        late: 0,
+        excused: 0,
+        absent: 0,
+        students: totalStudents,
+      });
+      order.push(key);
+    }
+    const b = buckets.get(key);
+    b.events += 1;
+    b.present += present;
+    b.early += counts.early;
+    b.onTime += counts.onTime;
+    b.late += counts.late;
+    b.excused += counts.excused;
+    b.absent += counts.absent;
+    sumPresent += present;
+    sumExcused += counts.excused;
+    sumAbsent += counts.absent;
+  }
+
+  const points = order.map((key) => {
+    const b = buckets.get(key);
+    const decided = b.present + b.excused + b.absent;
+    return { ...b, decided, rate: decided ? Math.round((b.present / decided) * 100) : 0 };
+  });
+
+  const decidedTotal = sumPresent + sumExcused + sumAbsent;
+  return {
+    from: from || null,
+    to: to || null,
+    termId: termId || null,
+    course: course || null,
+    granularity,
+    totalStudents,
+    points,
+    summary: {
+      events: events.length,
+      present: sumPresent,
+      excused: sumExcused,
+      absent: sumAbsent,
+      decided: decidedTotal,
+      rate: decidedTotal ? Math.round((sumPresent / decidedTotal) * 100) : 0,
+      totalStudents,
+    },
   };
 }

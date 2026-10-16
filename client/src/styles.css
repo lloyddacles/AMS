@@ -292,6 +292,15 @@ input:focus, select:focus, textarea:focus {
   width: 72px; padding: 0.4rem 0.5rem; border: 1px solid var(--border);
   border-radius: 8px; background: #fff; font: inherit; color: inherit;
 }
+.report-filters { margin-bottom: 0.85rem; }
+.date-field {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  font-size: 0.8rem; color: var(--muted);
+}
+.date-field input {
+  padding: 0.4rem 0.5rem; border: 1px solid var(--border);
+  border-radius: 8px; background: #fff; font: inherit; color: inherit;
+}
 .pagination {
   display: flex; align-items: center; justify-content: space-between;
   gap: 1rem; flex-wrap: wrap; margin-top: 0.85rem;

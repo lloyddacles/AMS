@@ -2,11 +2,19 @@ import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
-import { buildOverview, buildAtRisk } from '../services/reports.js';
+import { buildOverview, buildAtRisk, buildTrends, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
 
 const router = Router();
 router.use(requireAuth);
+
+function rangeFilters(query) {
+  return {
+    from: query.from || '',
+    to: query.to || '',
+    termId: query.termId ? Number(query.termId) : null,
+  };
+}
 
 function csvEscape(value) {
   let str = value === null || value === undefined ? '' : String(value);
@@ -32,18 +40,26 @@ const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, metho
 // Per-student summary, classified early / on-time / late / absent.
 router.get('/overview', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await buildOverview({ search, course }));
+  res.json(await buildOverview({ search, course, ...rangeFilters(req.query) }));
 });
 
 // Students below the configured attendance-rate threshold.
 router.get('/at-risk', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await buildAtRisk({ search, course }));
+  res.json(await buildAtRisk({ search, course, ...rangeFilters(req.query) }));
+});
+
+// Time-series attendance trend (one point per event / day / week / month).
+router.get('/trends', async (req, res) => {
+  const { course = '', granularity = 'day' } = req.query;
+  const g = ['event', 'day', 'week', 'month'].includes(granularity) ? granularity : 'day';
+  res.json(await buildTrends({ course, granularity: g, ...rangeFilters(req.query) }));
 });
 
 // Event × student matrix of classifications.
 router.get('/matrix', async (req, res) => {
-  const events = await all(`SELECT ${EVENT_COLS} FROM events`);
+  const ef = eventFilter(rangeFilters(req.query));
+  const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const students = await all(
     'SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
   );
@@ -77,9 +93,10 @@ router.get('/risk/:studentId', async (req, res) => {
 
 router.get('/export', async (req, res) => {
   const { type = 'students', eventId, search = '', course = '' } = req.query;
+  const range = rangeFilters(req.query);
 
   if (type === 'at-risk') {
-    const { threshold, minEvents, totalEvents, students } = await buildAtRisk({ search, course });
+    const { threshold, minEvents, totalEvents, students } = await buildAtRisk({ search, course, ...range });
     const headers = ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Attended', 'Absent', 'Excused', 'Rate %'];
     const rows = students.map((s) => [
       s.studentNo, s.firstName, s.lastName, s.course, s.yearLevel, s.attended, s.absent, s.excused, s.rate,
@@ -123,7 +140,8 @@ router.get('/export', async (req, res) => {
   }
 
   if (type === 'matrix') {
-    const events = await all(`SELECT ${EVENT_COLS} FROM events`);
+    const ef = eventFilter(range);
+    const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
     const students = await all(
       'SELECT id, student_no, first_name, last_name FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
     );
@@ -147,14 +165,27 @@ router.get('/export', async (req, res) => {
     return res.send(csv);
   }
 
-  // default: per-student summary
-  const totalEvents = (await get('SELECT COUNT(*) AS c FROM events')).c;
-  const rows = await all(
-    `SELECT s.student_no, s.first_name, s.last_name, s.course, s.year_level,
-            SUM(CASE WHEN a.status IN ('early','on-time','late','present') THEN 1 ELSE 0 END) AS attended
-     FROM students s LEFT JOIN attendance a ON a.student_id = s.id
-     GROUP BY s.id ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`
-  );
+  // default: per-student summary (within the selected date range / term)
+  const ef = eventFilter(range);
+  const eventIds = (await all(`SELECT id FROM events${ef.sql}`, ef.params)).map((e) => e.id);
+  const totalEvents = eventIds.length;
+  let rows;
+  if (totalEvents === 0) {
+    rows = await all(
+      `SELECT student_no, first_name, last_name, course, year_level, 0 AS attended
+       FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
+    );
+  } else {
+    const placeholders = eventIds.map(() => '?').join(',');
+    rows = await all(
+      `SELECT s.student_no, s.first_name, s.last_name, s.course, s.year_level,
+              SUM(CASE WHEN a.status IN ('early','on-time','late','present') THEN 1 ELSE 0 END) AS attended
+       FROM students s LEFT JOIN attendance a
+         ON a.student_id = s.id AND a.event_id IN (${placeholders})
+       GROUP BY s.id ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+      eventIds
+    );
+  }
   const csv = toCsv(
     ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Events Attended', 'Total Events', 'Rate %'],
     rows.map((r) => [
