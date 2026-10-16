@@ -19,6 +19,16 @@ const SUMMARY_COLUMNS = [
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+const MARK_LEGEND = [
+  { status: 'early', label: 'Early', mark: 'E' },
+  { status: 'on-time', label: 'On-time', mark: 'O' },
+  { status: 'present', label: 'Present', mark: 'P' },
+  { status: 'late', label: 'Late', mark: 'L' },
+  { status: 'excused', label: 'Excused', mark: 'X' },
+  { status: 'absent', label: 'Absent', mark: 'A' },
+];
+const MARK_LABEL = Object.fromEntries(MARK_LEGEND.map((m) => [m.status, m.mark]));
+
 export default function Reports() {
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
@@ -262,7 +272,16 @@ export default function Reports() {
           {!matrix ? (
             <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
-            <div className="card table-card scroll-x">
+            <div className="card table-card">
+              <div className="cell-legend">
+                {MARK_LEGEND.map((m) => (
+                  <span className="cell-legend-item" key={m.status}>
+                    <span className={`mark mark-${m.status}`}>{m.mark}</span>
+                    {m.label}
+                  </span>
+                ))}
+              </div>
+              <div className="scroll-x">
               <table className="table matrix">
                 <thead>
                   <tr>
@@ -291,7 +310,7 @@ export default function Reports() {
   return (
                           <td key={e.id} className="cell-mark">
                             {status ? (
-                              <span className={`mark mark-${status}`} title={status}>{status[0].toUpperCase()}</span>
+                              <span className={`mark mark-${status}`} title={status}>{MARK_LABEL[status] || status[0].toUpperCase()}</span>
                             ) : (
                               <span className="mark mark-absent" title="absent">A</span>
                             )}
@@ -302,6 +321,7 @@ export default function Reports() {
                   ))}
                 </tbody>
               </table>
+              </div>
             </div>
           )}
         </>

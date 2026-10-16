@@ -307,6 +307,7 @@ input:focus, select:focus, textarea:focus {
 .pill-amber { background: #fef3c7; color: #b45309; }
 .pill-red { background: #fee2e2; color: #b91c1c; }
 .pill-blue { background: #dbeafe; color: #1d4ed8; }
+.pill-cyan { background: #cffafe; color: #0e7490; }
 .pill-gray { background: #f1f5f9; color: #475569; }
 .pill-purple { background: #ede9fe; color: #6d28d9; }
 
@@ -482,12 +483,19 @@ input:focus, select:focus, textarea:focus {
 .table.matrix tbody tr:hover .sticky-col { background: #f8fafc; }
 .cell-mark { text-align: center; }
 .mark { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; font-size: 0.72rem; font-weight: 800; }
-.mark-present { background: #dcfce7; color: #15803d; }
-.mark-early { background: #e0f2fe; color: #0369a1; }
+.mark-present { background: #dbeafe; color: #1d4ed8; }
+.mark-early { background: #cffafe; color: #0e7490; }
 .mark-on-time { background: #dcfce7; color: #15803d; }
 .mark-late { background: #fef3c7; color: #b45309; }
-.mark-excused { background: #dbeafe; color: #1d4ed8; }
+.mark-excused { background: #ede9fe; color: #6d28d9; }
 .mark-absent { background: #fee2e2; color: #b91c1c; }
+
+.cell-legend {
+  display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.75rem 1rem 0.9rem;
+  border-bottom: 1px solid var(--border);
+}
+.cell-legend-item { display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.76rem; color: var(--muted); }
+.cell-legend-item .mark { width: 22px; height: 22px; font-size: 0.72rem; }
 
 /* ---------- Login / public ---------- */
 .login-page, .public-page {

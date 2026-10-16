@@ -23,6 +23,22 @@ const ACTION_LABELS = {
   'already-complete': 'already completed',
 };
 
+const STATUS_PILL = {
+  early: 'pill-cyan',
+  'on-time': 'pill-green',
+  present: 'pill-blue',
+  late: 'pill-amber',
+  absent: 'pill-red',
+};
+
+const STATUS_LABEL = {
+  early: 'Early',
+  'on-time': 'On-time',
+  present: 'Present',
+  late: 'Late',
+  absent: 'Absent',
+};
+
 // Same token extraction the server does, so QR URLs and bare tokens both work.
 function resolveToken(raw) {
   let token = String(raw || '').trim();
@@ -401,8 +417,8 @@ export default function Scanner() {
             </div>
             <div className="action-line">
               {pendingScan.nextAction === 'time-in' && (
-                <span className={`pill ${pendingScan.plannedStatus === 'late' ? 'pill-amber' : pendingScan.plannedStatus === 'early' ? 'pill-blue' : pendingScan.plannedStatus === 'absent' ? 'pill-red' : 'pill-green'}`}>
-                  Time In · {({ early: 'Early', 'on-time': 'On-time', late: 'Late', absent: 'Absent', present: 'Present' })[pendingScan.plannedStatus] || 'Present'}
+                <span className={`pill ${STATUS_PILL[pendingScan.plannedStatus] || 'pill-green'}`}>
+                  Time In · {STATUS_LABEL[pendingScan.plannedStatus] || 'Present'}
                 </span>
               )}
               {pendingScan.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}

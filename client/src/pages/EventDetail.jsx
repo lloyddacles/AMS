@@ -7,11 +7,11 @@ import Spinner from '../components/Spinner.jsx';
 
 const STATUSES = ['present', 'late', 'excused', 'absent'];
 const statusClass = {
-  early: 'pill-blue',
+  early: 'pill-cyan',
   'on-time': 'pill-green',
-  present: 'pill-green',
+  present: 'pill-blue',
   late: 'pill-amber',
-  excused: 'pill-blue',
+  excused: 'pill-purple',
   absent: 'pill-red',
 };
 const statusLabel = {
@@ -21,6 +21,14 @@ const statusLabel = {
   late: 'Late',
   excused: 'Excused',
   absent: 'Absent',
+};
+const statusShort = {
+  early: 'E',
+  'on-time': 'O',
+  present: 'P',
+  late: 'L',
+  excused: 'X',
+  absent: 'A',
 };
 const ATTENDED = ['early', 'on-time', 'present', 'late'];
 const ALL_STATUSES = ['early', 'on-time', 'present', 'late', 'excused', 'absent'];
@@ -311,7 +319,7 @@ export default function EventDetail() {
                             onClick={() => setStatus({ id: a.studentId, firstName: a.firstName, lastName: a.lastName }, st)}
                             title={statusLabel[st] || st}
                           >
-                            {statusLabel[st]?.[0] || st[0].toUpperCase()}
+                            {statusShort[st] || st[0].toUpperCase()}
                           </button>
                         ))}
                         <button className="seg-btn" onClick={() => setStatus({ id: a.studentId }, 'none')} title="Clear">
@@ -365,7 +373,7 @@ export default function EventDetail() {
                           className={`seg-btn ${current === st ? 'active' : ''}`}
                           onClick={() => setStatus(s, st)}
                         >
-                          {statusLabel[st]?.[0] || st[0].toUpperCase()}
+                          {statusShort[st] || st[0].toUpperCase()}
                         </button>
                       ))}
                       <button

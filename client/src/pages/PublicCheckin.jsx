@@ -4,6 +4,15 @@ import { api } from '../api.js';
 import LiveClock from '../components/LiveClock.jsx';
 import Footer from '../components/Footer.jsx';
 
+const STATUS_PILL = {
+  early: 'pill-cyan',
+  'on-time': 'pill-green',
+  present: 'pill-blue',
+  late: 'pill-amber',
+  excused: 'pill-purple',
+  absent: 'pill-red',
+};
+
 export default function PublicCheckin() {
   const { code } = useParams();
   const [event, setEvent] = useState(null);
@@ -73,7 +82,7 @@ export default function PublicCheckin() {
             <p className="strong">{done.lastName}, {done.firstName}</p>
             <p className="muted">
               {done.studentNo} ·{' '}
-              <span className={`pill ${done.status === 'late' ? 'pill-amber' : 'pill-green'}`}>{done.status}</span>
+              <span className={`pill ${STATUS_PILL[done.status] || 'pill-green'}`}>{done.status}</span>
             </p>
             {done.action === 'time-out' && done.checkedInAt && (
               <p className="muted small">Time in: {new Date(done.checkedInAt + 'Z').toLocaleTimeString()}</p>

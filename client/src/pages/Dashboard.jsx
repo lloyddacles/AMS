@@ -17,11 +17,11 @@ import { api } from '../api.js';
 import Spinner from '../components/Spinner.jsx';
 
 const STATUS_COLORS = {
-  early: '#0ea5e9',
+  early: '#06b6d4',
   'on-time': '#16a34a',
-  present: '#16a34a',
+  present: '#2563eb',
   late: '#f59e0b',
-  excused: '#3b82f6',
+  excused: '#7c3aed',
   absent: '#ef4444',
 };
 
