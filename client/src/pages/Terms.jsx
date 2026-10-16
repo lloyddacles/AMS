@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
 import Spinner from '../components/Spinner.jsx';
 
-const emptyForm = { name: '', startDate: '', endDate: '', isCurrent: false };
+const emptyForm = { name: '', startDate: '', endDate: '', minAttendance: 80, isCurrent: false };
 
 export default function Terms() {
   const [terms, setTerms] = useState([]);
@@ -38,7 +38,7 @@ export default function Terms() {
 
   function openEdit(t) {
     setEditing(t);
-    setForm({ name: t.name, startDate: t.startDate, endDate: t.endDate, isCurrent: !!Number(t.isCurrent) });
+    setForm({ name: t.name, startDate: t.startDate, endDate: t.endDate, minAttendance: t.minAttendance ?? 80, isCurrent: !!Number(t.isCurrent) });
     setFormError('');
   }
 
@@ -47,8 +47,9 @@ export default function Terms() {
     setSaving(true);
     setFormError('');
     try {
-      if (editing?.id) await api.updateTerm(editing.id, form);
-      else await api.createTerm(form);
+      const payload = { ...form, minAttendance: Number(form.minAttendance) || 80 };
+      if (editing?.id) await api.updateTerm(editing.id, payload);
+      else await api.createTerm(payload);
       setEditing(null);
       await load();
     } catch (err) {
@@ -101,23 +102,25 @@ export default function Terms() {
         <div className="card table-card">
           <table className="table">
             <thead>
-              <tr>
-                <th>Term</th>
-                <th>Dates</th>
-                <th>Events</th>
-                <th>Schedules</th>
-                <th>Status</th>
+            <tr>
+              <th>Term</th>
+              <th>Dates</th>
+              <th>Min %</th>
+              <th>Events</th>
+              <th>Schedules</th>
+              <th>Status</th>
                 <th className="right">Actions</th>
               </tr>
             </thead>
             <tbody>
               {terms.map((t) => (
                 <tr key={t.id}>
-                  <td className="strong">
-                    {t.name}
-                    {Number(t.isCurrent) === 1 && <span className="pill pill-green" style={{ marginLeft: '0.5rem' }}>current</span>}
+                  <td>
+                    <div className="strong">{t.name}</div>
+                    <div className="muted small">{t.isCurrent ? 'Current term' : ''}</div>
                   </td>
                   <td className="mono">{t.startDate} → {t.endDate}</td>
+                  <td className="mono">{t.minAttendance ?? 80}%</td>
                   <td>{t.eventCount}</td>
                   <td>{t.scheduleCount}</td>
                   <td>
@@ -161,6 +164,10 @@ export default function Terms() {
             <label>
               End date *
               <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+            </label>
+            <label>
+              Minimum attendance %
+              <input type="number" min="0" max="100" value={form.minAttendance} onChange={(e) => setForm({ ...form, minAttendance: e.target.value })} />
             </label>
             <label className="checkbox span-2">
               <input type="checkbox" checked={form.isCurrent} onChange={(e) => setForm({ ...form, isCurrent: e.target.checked })} />

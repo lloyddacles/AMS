@@ -1,5 +1,5 @@
 import { get, all, run } from '../db.js';
-import { buildAtRisk } from './reports.js';
+import { buildAtRisk, buildCompliance } from './reports.js';
 import { featureLabel } from './risk.js';
 import { todayInTz, eventStart, eventEnd } from '../classify.js';
 
@@ -207,6 +207,49 @@ export async function evaluateAtRisk() {
   });
 }
 
+// Alert once a day when students fall below their current term's minimum
+// attendance percentage. Carries a structured payload for a tidy summary.
+export async function evaluateCompliance() {
+  const term = await get(
+    'SELECT id, name, min_attendance AS minAttendance FROM terms WHERE is_current = 1 LIMIT 1'
+  );
+  if (!term) return false;
+
+  const { minimum, totalStudents, below, totalEvents, students } = await buildCompliance({ termId: term.id });
+  if (!below) return false;
+
+  const noun = below === 1 ? 'student is' : 'students are';
+  const body = `${below} of ${totalStudents} ${noun} below ${minimum}% for ${term.name} (${totalEvents} event${totalEvents === 1 ? '' : 's'}).`;
+  const data = {
+    kind: 'compliance',
+    termId: term.id,
+    termName: term.name,
+    minimum,
+    count: below,
+    totalStudents,
+    totalEvents,
+    students: students.slice(0, 5).map((s) => ({
+      id: s.id,
+      name: `${s.lastName}, ${s.firstName}`,
+      studentNo: s.studentNo,
+      rate: s.rate,
+      needed: s.needed,
+    })),
+    more: Math.max(0, below - 5),
+  };
+
+  return createNotification({
+    type: 'compliance',
+    title: `Below minimum: ${below} student${below === 1 ? '' : 's'} under ${minimum}%`,
+    body,
+    severity: below >= totalStudents / 2 ? 'critical' : 'warning',
+    audience: 'all',
+    link: '/reports?view=compliance',
+    dedupeKey: `compliance:${term.id}:${todayInTz()}`,
+    data,
+  });
+}
+
 // Alert once per active event when very few students have checked in after it starts.
 export async function evaluateLowCheckins() {
   const date = todayInTz();
@@ -311,10 +354,12 @@ export async function runBackgroundChecks() {
   }
   if (Date.now() - lastAtRiskRun >= AT_RISK_INTERVAL_MS) {
     lastAtRiskRun = Date.now();
-    try {
-      await evaluateAtRisk();
-    } catch (err) {
-      console.error('notification check failed:', err);
+    for (const fn of [evaluateAtRisk, evaluateCompliance]) {
+      try {
+        await fn();
+      } catch (err) {
+        console.error('notification check failed:', err);
+      }
     }
   }
 }

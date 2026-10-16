@@ -102,6 +102,7 @@ export const api = {
   getReportMatrix: (params) => request(`/reports/matrix?${new URLSearchParams(params || {}).toString()}`),
   getReportTrends: (params) => request(`/reports/trends?${new URLSearchParams(params || {}).toString()}`),
   getAtRisk: (params) => request(`/reports/at-risk?${new URLSearchParams(params || {}).toString()}`),
+  getReportCompliance: (params) => request(`/reports/compliance?${new URLSearchParams(params || {}).toString()}`),
   getRisk: () => request('/reports/risk'),
   getStudentRisk: (id) => request(`/reports/risk/${id}`),
 

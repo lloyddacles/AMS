@@ -36,7 +36,7 @@ export default function Reports() {
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
   const initialView = params.get('view');
-  const [view, setView] = useState(['at-risk', 'matrix', 'trends'].includes(initialView) ? initialView : 'summary');
+  const [view, setView] = useState(['at-risk', 'matrix', 'trends', 'compliance'].includes(initialView) ? initialView : 'summary');
   const [search, setSearch] = useState('');
   const [course, setCourse] = useState('');
   const [from, setFrom] = useState(params.get('from') || '');
@@ -48,6 +48,7 @@ export default function Reports() {
   const [matrix, setMatrix] = useState(null);
   const [atRisk, setAtRisk] = useState(null);
   const [trends, setTrends] = useState(null);
+  const [compliance, setCompliance] = useState(null);
   const [thresholdInput, setThresholdInput] = useState('');
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -92,6 +93,17 @@ export default function Reports() {
           setAtRisk(d);
           setThresholdInput(String(d.threshold));
         })
+        .catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [view, search, course, from, to, termId]);
+
+  useEffect(() => {
+    if (view !== 'compliance') return undefined;
+    const t = setTimeout(() => {
+      api
+        .getReportCompliance({ search, course, ...rangeParams })
+        .then(setCompliance)
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
@@ -248,6 +260,8 @@ export default function Reports() {
             </>
           ) : view === 'trends' ? (
             <button className="btn" onClick={exportTrendsCsv} disabled={!trends}>Export CSV</button>
+          ) : view === 'compliance' ? (
+            <button className="btn" onClick={() => exportCsv('compliance', null, { search, course, ...rangeParams })} disabled={!compliance}>Export CSV</button>
           ) : (
             <>
               <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
@@ -263,12 +277,13 @@ export default function Reports() {
         <button className={view === 'matrix' ? 'active' : ''} onClick={() => setView('matrix')}>Event Matrix</button>
         <button className={view === 'trends' ? 'active' : ''} onClick={() => setView('trends')}>Trends</button>
         <button className={view === 'at-risk' ? 'active' : ''} onClick={() => setView('at-risk')}>At-Risk</button>
+        <button className={view === 'compliance' ? 'active' : ''} onClick={() => setView('compliance')}>Compliance</button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="toolbar report-filters">
-        {(view === 'summary' || view === 'at-risk') && (
+        {(view === 'summary' || view === 'at-risk' || view === 'compliance') && (
           <>
             <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select value={course} onChange={(e) => setCourse(e.target.value)}>
@@ -644,6 +659,69 @@ export default function Reports() {
                 {' '}Risk is an explainable logistic score (exact SHAP) — tap a score to see drivers.
               </div>
             </div>
+          )}
+        </>
+      )}
+
+      {view === 'compliance' && (
+        <>
+          {!compliance ? (
+            <div className="card"><Spinner label="Loading compliance…" size="lg" variant="panel" /></div>
+          ) : (
+            <>
+              <div className="stat-grid">
+                <StatCard label={compliance.termName ? `Minimum — ${compliance.termName}` : 'Minimum'} value={`${compliance.minimum}%`} accent="purple" />
+                <StatCard label="Non-compliant" value={compliance.below} accent="amber" />
+                <StatCard label="Total students" value={compliance.totalStudents} accent="blue" />
+                <StatCard label="Events in range" value={compliance.totalEvents} accent="green" />
+              </div>
+              <div className="card table-card">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Student No</th>
+                      <th>Name</th>
+                      <th>Course</th>
+                      <th>Year</th>
+                      <th className="num">Attended</th>
+                      <th className="num">Absent</th>
+                      <th className="num">Excused</th>
+                      <th>Rate</th>
+                      <th className="num">Needed</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {!compliance.eligible && (
+                      <tr><td colSpan={9} className="muted center">No events in the selected range{termId ? ' for this term' : ''}.</td></tr>
+                    )}
+                    {compliance.eligible && compliance.students.length === 0 && (
+                      <tr><td colSpan={9} className="muted center">All students meet or exceed {compliance.minimum}% attendance.</td></tr>
+                    )}
+                    {compliance.students.map((s) => (
+                      <tr key={s.id}>
+                        <td className="mono">{s.studentNo}</td>
+                        <td className="strong">{s.lastName}, {s.firstName}</td>
+                        <td>{s.course || '—'}</td>
+                        <td>{s.yearLevel || '—'}</td>
+                        <td className="num">{s.attended}</td>
+                        <td className="num">{s.absent}</td>
+                        <td className="num">{s.excused}</td>
+                        <td>
+                          <div className="rate-wrap">
+                            <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
+                            <span className="rate-label">{s.rate}%</span>
+                          </div>
+                        </td>
+                        <td className="num">{s.needed}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
+                  {compliance.below} below {compliance.minimum}% · {compliance.compliantCount} compliant · based on {compliance.totalEvents} event{compliance.totalEvents === 1 ? '' : 's'} total.
+                </div>
+              </div>
+            </>
           )}
         </>
       )}

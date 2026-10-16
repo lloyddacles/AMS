@@ -198,5 +198,27 @@ function NotifBody({ n }) {
       </div>
     );
   }
+  if (data && data.kind === 'compliance') {
+    return (
+      <div className="notif-risk">
+        <div className="notif-risk-top">
+          <span className="notif-risk-count">
+            {data.count} / {data.totalStudents} below {data.minimum}% {data.termName ? `— ${data.termName}` : ''}
+          </span>
+        </div>
+        {data.students?.length > 0 && (
+          <ul className="notif-students">
+            {data.students.map((s) => (
+              <li key={s.id}>
+                <span className="notif-student-name">{s.name}</span>
+                <span className="muted">{s.rate}% ({s.needed} more)</span>
+              </li>
+            ))}
+          </ul>
+        )}
+        {data.more > 0 && <div className="notif-more">+{data.more} more</div>}
+      </div>
+    );
+  }
   return n.body ? <div className="notif-item-body">{n.body}</div> : null;
 }

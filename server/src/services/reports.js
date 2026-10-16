@@ -1,4 +1,4 @@
-import { all } from '../db.js';
+import { all, get } from '../db.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { getSettings } from './settings.js';
 import { buildRiskModel } from './risk.js';
@@ -146,6 +146,55 @@ export async function buildAtRisk(filters = {}) {
     totalEvents,
     students: annotated,
     model: model ? { context: model.context } : null,
+  };
+}
+
+// Resolve the attendance minimum used for compliance: the selected term's
+// configured minimum, the current term's minimum, or the global at-risk
+// threshold when no term applies.
+export async function resolveComplianceTarget({ termId = null } = {}) {
+  const cols = 'id, name, min_attendance AS minAttendance, is_current AS isCurrent';
+  let term = null;
+  if (termId) {
+    term = await get(`SELECT ${cols} FROM terms WHERE id = ?`, [termId]);
+  } else {
+    term = await get(`SELECT ${cols} FROM terms WHERE is_current = 1 LIMIT 1`);
+  }
+  if (term) return { termId: term.id, termName: term.name, minimum: term.minAttendance };
+  const settings = await getSettings();
+  return { termId: null, termName: null, minimum: settings.atRiskThreshold };
+}
+
+// Students who fall below their term's minimum attendance percentage. Each row
+// is annotated with how many more attendances they need to reach the minimum.
+export async function buildCompliance({ search = '', course = '', termId = null, from = '', to = '' } = {}) {
+  const target = await resolveComplianceTarget({ termId });
+  const { totalEvents, students } = await buildOverview({ search, course, termId, from, to });
+  const minimum = target.minimum;
+  const eligible = totalEvents > 0;
+  const neededFor = (min) => Math.max(0, Math.ceil((min / 100) * totalEvents));
+  const list = eligible
+    ? students
+        .filter((s) => s.rate < minimum)
+        .map((s) => ({ ...s, needed: Math.max(0, neededFor(minimum) - s.attended) }))
+        .sort(
+          (a, b) =>
+            a.rate - b.rate ||
+            String(a.lastName || '').localeCompare(String(b.lastName || '')) ||
+            String(a.firstName || '').localeCompare(String(b.firstName || ''))
+        )
+    : [];
+
+  return {
+    termId: target.termId,
+    termName: target.termName,
+    minimum,
+    totalEvents,
+    totalStudents: students.length,
+    eligible,
+    below: list.length,
+    compliantCount: students.length - list.length,
+    students: list,
   };
 }
 

@@ -186,6 +186,7 @@ const SCHEMA = `
     name TEXT NOT NULL,
     start_date TEXT NOT NULL,
     end_date TEXT NOT NULL,
+    min_attendance INTEGER NOT NULL DEFAULT 80,
     is_current INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -265,6 +266,7 @@ async function doInit() {
   await ensureColumn('notifications', 'data', 'data TEXT');
   await ensureColumn('events', 'term_id', 'term_id INTEGER');
   await ensureColumn('events', 'schedule_id', 'schedule_id INTEGER');
+  await ensureColumn('terms', 'min_attendance', 'min_attendance INTEGER NOT NULL DEFAULT 80');
   await makeCheckinNullable();
   await executeMultiple(`
     CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);

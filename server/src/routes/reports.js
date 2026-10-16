@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
-import { buildOverview, buildAtRisk, buildTrends, eventFilter } from '../services/reports.js';
+import { buildOverview, buildAtRisk, buildTrends, buildCompliance, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
 
 const router = Router();
@@ -47,6 +47,12 @@ router.get('/overview', async (req, res) => {
 router.get('/at-risk', async (req, res) => {
   const { search = '', course = '' } = req.query;
   res.json(await buildAtRisk({ search, course, ...rangeFilters(req.query) }));
+});
+
+// Students below their term's minimum attendance percentage (compliance).
+router.get('/compliance', async (req, res) => {
+  const { search = '', course = '' } = req.query;
+  res.json(await buildCompliance({ search, course, ...rangeFilters(req.query) }));
 });
 
 // Time-series attendance trend (one point per event / day / week / month).
@@ -105,6 +111,20 @@ router.get('/export', async (req, res) => {
     res.setHeader('Content-Disposition', 'attachment; filename="at-risk-students.csv"');
     res.setHeader('X-At-Risk-Threshold', String(threshold));
     res.setHeader('X-At-Risk-Min-Events', String(minEvents));
+    res.setHeader('X-Total-Events', String(totalEvents));
+    return res.send(toCsv(headers, rows));
+  }
+
+  if (type === 'compliance') {
+    const { termName, minimum, totalEvents, students } = await buildCompliance({ search, course, ...range });
+    const headers = ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Attended', 'Absent', 'Excused', 'Rate %', 'Needed'];
+    const rows = students.map((s) => [
+      s.studentNo, s.firstName, s.lastName, s.course, s.yearLevel, s.attended, s.absent, s.excused, s.rate, s.needed,
+    ]);
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="compliance-students.csv"');
+    res.setHeader('X-Compliance-Minimum', String(minimum));
+    res.setHeader('X-Compliance-Term', termName || '');
     res.setHeader('X-Total-Events', String(totalEvents));
     return res.send(toCsv(headers, rows));
   }

@@ -7,7 +7,7 @@ const router = Router();
 router.use(requireAuth);
 
 const selectFields = `t.id, t.name, t.start_date AS startDate, t.end_date AS endDate,
-  t.is_current AS isCurrent, t.created_at AS createdAt,
+  t.min_attendance AS minAttendance, t.is_current AS isCurrent, t.created_at AS createdAt,
   (SELECT COUNT(*) FROM events e WHERE e.term_id = t.id) AS eventCount,
   (SELECT COUNT(*) FROM schedules s WHERE s.term_id = t.id) AS scheduleCount`;
 
@@ -24,7 +24,13 @@ function validate(body, existing) {
     return { error: 'Dates must be in YYYY-MM-DD format' };
   }
   if (endDate < startDate) return { error: 'End date must be on or after the start date' };
-  return { name, startDate, endDate };
+
+  const rawMin = body.minAttendance ?? existing?.minAttendance ?? 80;
+  const minAttendance = Number(rawMin);
+  if (!Number.isFinite(minAttendance) || minAttendance < 0 || minAttendance > 100) {
+    return { error: 'Minimum attendance must be between 0 and 100' };
+  }
+  return { name, startDate, endDate, minAttendance: Math.round(minAttendance) };
 }
 
 router.get('/', async (req, res) => {
@@ -43,8 +49,8 @@ router.post('/', requireRole('admin'), async (req, res) => {
   if (parsed.error) return res.status(400).json({ error: parsed.error });
   const isCurrent = req.body?.isCurrent ? 1 : 0;
   const info = await run(
-    'INSERT INTO terms (name, start_date, end_date, is_current) VALUES (?, ?, ?, ?)',
-    [parsed.name, parsed.startDate, parsed.endDate, isCurrent]
+    'INSERT INTO terms (name, start_date, end_date, min_attendance, is_current) VALUES (?, ?, ?, ?, ?)',
+    [parsed.name, parsed.startDate, parsed.endDate, parsed.minAttendance, isCurrent]
   );
   if (isCurrent) {
     await run('UPDATE terms SET is_current = 0 WHERE id != ?', [info.lastInsertRowid]);
@@ -55,7 +61,7 @@ router.post('/', requireRole('admin'), async (req, res) => {
     action: 'term.create',
     entity: 'term',
     entityId: created.id,
-    detail: `${created.name} (${created.startDate} → ${created.endDate})`,
+    detail: `${created.name} (${created.startDate} → ${created.endDate}) · min ${created.minAttendance}%`,
   });
   res.status(201).json(created);
 });
@@ -65,10 +71,11 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Term not found' });
   const parsed = validate(req.body || {}, existing);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
-  await run('UPDATE terms SET name = ?, start_date = ?, end_date = ? WHERE id = ?', [
+  await run('UPDATE terms SET name = ?, start_date = ?, end_date = ?, min_attendance = ? WHERE id = ?', [
     parsed.name,
     parsed.startDate,
     parsed.endDate,
+    parsed.minAttendance,
     req.params.id,
   ]);
   if (req.body?.isCurrent) {
@@ -80,7 +87,7 @@ router.put('/:id', requireRole('admin'), async (req, res) => {
     action: 'term.update',
     entity: 'term',
     entityId: updated.id,
-    detail: `${updated.name} (${updated.startDate} → ${updated.endDate})`,
+    detail: `${updated.name} (${updated.startDate} → ${updated.endDate}) · min ${updated.minAttendance}%`,
   });
   res.json(updated);
 });
