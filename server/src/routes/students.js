@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { batch, get, all, run } from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
 
@@ -67,9 +67,12 @@ router.post('/', async (req, res) => {
   }
 });
 
-// Bulk create. Accepts { students: [{...}] } and reports created vs skipped rows.
+// Bulk create / update. Accepts { students: [{...}], updateExisting: bool }.
+// With updateExisting, rows whose student number already exists are updated in
+// place (keeping their QR token); otherwise they are skipped. Reports every row.
 router.post('/bulk', async (req, res) => {
   const rows = Array.isArray(req.body?.students) ? req.body.students : null;
+  const updateExisting = req.body?.updateExisting === true;
   if (!rows) return res.status(400).json({ error: 'Expected an array of students' });
   if (rows.length === 0) return res.status(400).json({ error: 'No students to import' });
   if (rows.length > 1000) return res.status(400).json({ error: 'Please import at most 1000 students at a time' });
@@ -105,19 +108,29 @@ router.post('/bulk', async (req, res) => {
   });
 
   // Find which candidate student numbers already exist (chunked to respect parameter limits).
-  const existingSet = new Set();
+  const existingByNo = new Map();
   for (const group of chunk(candidates.map((c) => c.studentNo), 400)) {
     if (!group.length) continue;
     const placeholders = group.map(() => '?').join(',');
-    const found = await all(`SELECT student_no FROM students WHERE student_no IN (${placeholders})`, group);
-    for (const r of found) existingSet.add(r.student_no);
+    const found = await all(`SELECT id, student_no FROM students WHERE student_no IN (${placeholders})`, group);
+    for (const r of found) existingByNo.set(r.student_no, r.id);
   }
 
   const created = [];
+  const updated = [];
   const statements = [];
   for (const c of candidates) {
-    if (existingSet.has(c.studentNo)) {
-      skipped.push({ line: c.line, studentNo: c.studentNo, reason: 'Student number already exists' });
+    if (existingByNo.has(c.studentNo)) {
+      if (!updateExisting) {
+        skipped.push({ line: c.line, studentNo: c.studentNo, reason: 'Student number already exists' });
+        continue;
+      }
+      statements.push({
+        sql: `UPDATE students SET first_name = ?, last_name = ?, email = ?, course = ?, year_level = ?, section = ?
+              WHERE id = ?`,
+        args: [c.firstName, c.lastName, c.email, c.course, c.yearLevel, c.section, existingByNo.get(c.studentNo)],
+      });
+      updated.push(c.studentNo);
       continue;
     }
     statements.push({
@@ -134,12 +147,19 @@ router.post('/bulk', async (req, res) => {
 
   await logAudit({
     user: req.user,
-    action: 'student.bulk-create',
+    action: 'student.bulk-import',
     entity: 'student',
-    detail: `Imported ${created.length} student(s), skipped ${skipped.length}`,
+    detail: `Imported ${created.length} new, updated ${updated.length}, skipped ${skipped.length}`,
   });
 
-  res.status(201).json({ createdCount: created.length, skippedCount: skipped.length, created, skipped });
+  res.status(201).json({
+    createdCount: created.length,
+    updatedCount: updated.length,
+    skippedCount: skipped.length,
+    created,
+    updated,
+    skipped,
+  });
 });
 
 router.put('/:id', async (req, res) => {
@@ -189,6 +209,47 @@ router.put('/:id', async (req, res) => {
     }
     throw err;
   }
+});
+
+// Bulk QR regeneration. Body: { ids: number[] } to regenerate a selection, or
+// { all: true } to regenerate every student. Admin-only (reissuing codes
+// invalidates previously printed ID cards). Existing attendance is untouched.
+router.post('/regenerate-qr', requireRole('admin'), async (req, res) => {
+  const regenerateAll = req.body?.all === true;
+  const rawIds = Array.isArray(req.body?.ids) ? req.body.ids : [];
+  const ids = [...new Set(rawIds.map((v) => Number(v)).filter((n) => Number.isInteger(n) && n > 0))];
+
+  if (!regenerateAll && ids.length === 0) {
+    return res.status(400).json({ error: 'Provide student ids or set all: true' });
+  }
+
+  let targets;
+  if (regenerateAll) {
+    targets = await all('SELECT id FROM students');
+  } else {
+    if (ids.length > 5000) return res.status(400).json({ error: 'Too many students in one request (max 5000)' });
+    const placeholders = ids.map(() => '?').join(',');
+    targets = await all(`SELECT id FROM students WHERE id IN (${placeholders})`, ids);
+  }
+
+  if (targets.length === 0) {
+    return res.status(404).json({ error: 'No matching students found' });
+  }
+
+  const statements = targets.map((t) => ({
+    sql: 'UPDATE students SET qr_token = ? WHERE id = ?',
+    args: [newToken(), t.id],
+  }));
+  await batch(statements, 'write');
+
+  await logAudit({
+    user: req.user,
+    action: 'student.bulk-regenerate-qr',
+    entity: 'student',
+    detail: regenerateAll ? `Regenerated QR for all ${targets.length} student(s)` : `Regenerated QR for ${targets.length} student(s)`,
+  });
+
+  res.json({ count: targets.length, ids: targets.map((t) => t.id) });
 });
 
 router.post('/:id/regenerate-qr', async (req, res) => {

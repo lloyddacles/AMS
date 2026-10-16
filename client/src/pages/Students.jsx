@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { composeIdCard } from '../idCard.js';
 import Modal from '../components/Modal.jsx';
 import BulkAddStudents from '../components/BulkAddStudents.jsx';
@@ -21,6 +22,8 @@ const COLUMNS = [
 const PAGE_SIZES = [10, 25, 50, 100];
 
 export default function Students() {
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,6 +34,8 @@ export default function Students() {
   const [qrStudent, setQrStudent] = useState(null);
   const [formError, setFormError] = useState('');
   const [bulkOpen, setBulkOpen] = useState(false);
+  const [selected, setSelected] = useState(() => new Set());
+  const [regenBusy, setRegenBusy] = useState(false);
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
@@ -52,6 +57,36 @@ export default function Students() {
     () => sorted.slice((currentPage - 1) * pageSize, currentPage * pageSize),
     [sorted, currentPage, pageSize]
   );
+
+  const pageIds = pageRows.map((s) => s.id);
+  const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+
+  function toggleSelect(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSelectPage() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allPageSelected) pageIds.forEach((id) => next.delete(id));
+      else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const ids = new Set(students.map((s) => s.id));
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [students]);
 
   useEffect(() => {
     setPage(1);
@@ -125,6 +160,39 @@ export default function Students() {
     }
   }
 
+  async function regenerateSelected() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Regenerate QR codes for ${ids.length} selected student(s)?\n\nTheir previously printed ID cards will stop working.`)) return;
+    setRegenBusy(true);
+    try {
+      const res = await api.regenerateStudentQrBulk({ ids });
+      setSelected(new Set());
+      await load();
+      alert(`Regenerated QR codes for ${res.count} student(s).`);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setRegenBusy(false);
+    }
+  }
+
+  async function regenerateAll() {
+    if (!confirm('Regenerate QR codes for ALL students?\n\nEvery previously printed ID card will stop working.')) return;
+    if (!confirm('This cannot be undone. Continue?')) return;
+    setRegenBusy(true);
+    try {
+      const res = await api.regenerateStudentQrBulk({ all: true });
+      setSelected(new Set());
+      await load();
+      alert(`Regenerated QR codes for ${res.count} student(s).`);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setRegenBusy(false);
+    }
+  }
+
   return (
     <div className="page">
       <div className="page-head">
@@ -135,6 +203,11 @@ export default function Students() {
         <div className="head-actions">
           <Link className="btn" to="/students/qr-sheet">Print ID Cards</Link>
           <button className="btn" onClick={() => setBulkOpen(true)}>Bulk Add</button>
+          {isAdmin && (
+            <button className="btn" onClick={regenerateAll} disabled={regenBusy || students.length === 0}>
+              {regenBusy ? 'Working…' : 'Regenerate All QR'}
+            </button>
+          )}
           <button className="btn btn-primary" onClick={openCreate}>+ Add Student</button>
         </div>
       </div>
@@ -147,6 +220,15 @@ export default function Students() {
           onChange={(e) => setSearch(e.target.value)}
         />
         <div className="toolbar-right">
+          {isAdmin && selected.size > 0 && (
+            <div className="sel-actions">
+              <span className="muted small">{selected.size} selected</span>
+              <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
+                {regenBusy ? 'Working…' : 'Regenerate QR'}
+              </button>
+              <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+          )}
           <label className="page-size">
             Rows
             <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
@@ -162,6 +244,16 @@ export default function Students() {
         <table className="table">
           <thead>
             <tr>
+              {isAdmin && (
+                <th className="check-col">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all on this page"
+                    checked={allPageSelected}
+                    onChange={toggleSelectPage}
+                  />
+                </th>
+              )}
               {COLUMNS.map((c) => (
                 <th key={c.key}>
                   <button
@@ -180,13 +272,18 @@ export default function Students() {
           </thead>
           <tbody>
             {loading && students.length === 0 && (
-              <tr><td colSpan={7} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
+              <tr><td colSpan={isAdmin ? 8 : 7} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
             )}
             {!loading && students.length === 0 && (
-              <tr><td colSpan={7} className="muted center">No students found.</td></tr>
+              <tr><td colSpan={isAdmin ? 8 : 7} className="muted center">No students found.</td></tr>
             )}
             {pageRows.map((s) => (
-              <tr key={s.id}>
+              <tr key={s.id} className={selected.has(s.id) ? 'row-selected' : ''}>
+                {isAdmin && (
+                  <td className="check-col">
+                    <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
+                  </td>
+                )}
                 <td className="mono">{s.studentNo}</td>
                 <td className="strong">{s.lastName}, {s.firstName}</td>
                 <td>{s.course || '—'}</td>

@@ -77,6 +77,7 @@ function parseText(text) {
 export default function BulkAddStudents({ onClose, onDone }) {
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  const [updateExisting, setUpdateExisting] = useState(false);
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
   const fileRef = useRef(null);
@@ -107,7 +108,7 @@ export default function BulkAddStudents({ onClose, onDone }) {
     setBusy(true);
     setError('');
     try {
-      const res = await api.bulkCreateStudents(rows);
+      const res = await api.bulkCreateStudents(rows, updateExisting);
       setResult(res);
       onDone?.();
     } catch (e) {
@@ -129,6 +130,12 @@ export default function BulkAddStudents({ onClose, onDone }) {
             <span className="bulk-num">{result.createdCount}</span>
             <span>imported</span>
           </div>
+          {(result.updatedCount > 0 || updateExisting) && (
+            <div className={`bulk-stat ${result.updatedCount ? 'info' : ''}`}>
+              <span className="bulk-num">{result.updatedCount || 0}</span>
+              <span>updated</span>
+            </div>
+          )}
           <div className={`bulk-stat ${result.skippedCount ? 'warn' : ''}`}>
             <span className="bulk-num">{result.skippedCount}</span>
             <span>skipped</span>
@@ -170,6 +177,13 @@ export default function BulkAddStudents({ onClose, onDone }) {
         Paste rows or upload a CSV. Columns: <strong>Student No, First Name, Last Name, Email, Course, Year Level, Section</strong>.
         A header row is optional; extra columns are ignored.
       </p>
+      <label className="bulk-update-toggle">
+        <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
+        <span>
+          Update existing students
+          <span className="muted small"> — rows matching an existing student number overwrite that student instead of being skipped (QR codes are kept).</span>
+        </span>
+      </label>
       <div className="bulk-toolbar">
         <button className="btn btn-sm" onClick={() => fileRef.current?.click()}>Upload CSV</button>
         <input ref={fileRef} type="file" accept=".csv,text/csv,text/plain" hidden onChange={handleFile} />

@@ -497,7 +497,25 @@ input:focus, select:focus, textarea:focus {
 }
 .bulk-stat.ok { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; }
 .bulk-stat.warn { background: #fffbeb; border-color: #fde68a; color: #b45309; }
+.bulk-stat.info { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; }
 .bulk-num { font-size: 1.6rem; font-weight: 800; color: var(--text); }
+.bulk-update-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: #f8fafc;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+.bulk-update-toggle input { margin-top: 0.2rem; }
+.sel-actions { display: flex; align-items: center; gap: 0.5rem; }
+.check-col { width: 36px; text-align: center; }
+.check-col input { width: 15px; height: 15px; cursor: pointer; }
+.table tbody tr.row-selected { background: #eff6ff; }
 
 /* ---------- Matrix ---------- */
 .matrix th.rot { white-space: nowrap; font-size: 0.7rem; }

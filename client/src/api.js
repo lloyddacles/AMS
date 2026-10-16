@@ -69,10 +69,11 @@ export const api = {
 
   getStudents: (search) => request(`/students${search ? `?search=${encodeURIComponent(search)}` : ''}`),
   createStudent: (data) => request('/students', { method: 'POST', body: data }),
-  bulkCreateStudents: (students) => request('/students/bulk', { method: 'POST', body: { students } }),
+  bulkCreateStudents: (students, updateExisting = false) => request('/students/bulk', { method: 'POST', body: { students, updateExisting } }),
   updateStudent: (id, data) => request(`/students/${id}`, { method: 'PUT', body: data }),
   deleteStudent: (id) => request(`/students/${id}`, { method: 'DELETE' }),
   regenerateStudentQr: (id) => request(`/students/${id}/regenerate-qr`, { method: 'POST' }),
+  regenerateStudentQrBulk: (payload) => request('/students/regenerate-qr', { method: 'POST', body: payload }),
 
   getEvents: (termId) => request(`/events${termId ? `?termId=${encodeURIComponent(termId)}` : ''}`),
   getEvent: (id) => request(`/events/${id}`),
