@@ -390,6 +390,14 @@ input:focus, select:focus, textarea:focus {
   cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
 }
 .tabs button.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab-count {
+  display: inline-block; min-width: 1.4rem; padding: 0 0.3rem; margin-left: 0.35rem;
+  border-radius: 999px; background: #f1f5f9; color: var(--muted);
+  font-size: 0.7rem; font-weight: 700; text-align: center;
+}
+.tabs button.active .tab-count { background: #dbeafe; color: var(--primary); }
+.event-card.archived { background: #f8fafc; }
+.event-card.archived h3 { color: var(--muted); }
 
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
 .seg-btn {

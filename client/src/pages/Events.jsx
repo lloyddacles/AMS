@@ -19,6 +19,8 @@ const emptyForm = {
 
 export default function Events() {
   const [events, setEvents] = useState([]);
+  const [archivedEvents, setArchivedEvents] = useState([]);
+  const [view, setView] = useState('events');
   const [terms, setTerms] = useState([]);
   const [termFilter, setTermFilter] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,8 +33,13 @@ export default function Events() {
   async function load() {
     setLoading(true);
     try {
-      const [evs, tms] = await Promise.all([api.getEvents(), api.getTerms()]);
+      const [evs, archs, tms] = await Promise.all([
+        api.getEvents(),
+        api.getEvents(undefined, { archived: 1 }),
+        api.getTerms(),
+      ]);
       setEvents(evs);
+      setArchivedEvents(archs);
       setTerms(tms);
       setError('');
     } catch (e) {
@@ -48,6 +55,7 @@ export default function Events() {
 
   function openCreate() {
     setEditing({});
+    setView('events');
     const current = terms.find((t) => Number(t.isCurrent) === 1);
     setForm({ ...emptyForm, termId: current ? String(current.id) : '' });
     setFormError('');
@@ -96,16 +104,37 @@ export default function Events() {
     }
   }
 
-  const visible = termFilter ? events.filter((e) => String(e.termId) === termFilter) : events;
+  async function archive(ev) {
+    if (!confirm(`Archive "${ev.name}"?\n\nIt moves to the Archived section. Attendance and reports keep it.`)) return;
+    try {
+      await api.archiveEvent(ev.id);
+      await load();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  async function unarchive(ev) {
+    try {
+      await api.unarchiveEvent(ev.id);
+      await load();
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
+  const list = view === 'archived' ? archivedEvents : events;
+  const visible = termFilter ? list.filter((e) => String(e.termId) === termFilter) : list;
 
   return (
     <div className="page">
       <div className="page-head">
         <div>
-          <h2>Events</h2>
+          <h2>{view === 'archived' ? 'Archived Events' : 'Events'}</h2>
           <p className="muted">
             {visible.length} event{visible.length === 1 ? '' : 's'}
             {termFilter ? ` in ${terms.find((t) => String(t.id) === termFilter)?.name || 'term'}` : ''}
+            {view === 'archived' ? ' · closed and filed away' : ''}
           </p>
         </div>
         <div className="head-actions">
@@ -121,15 +150,32 @@ export default function Events() {
         </div>
       </div>
 
+      <div className="tabs">
+        <button className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>
+          Events <span className="tab-count">{events.length}</span>
+        </button>
+        <button className={view === 'archived' ? 'active' : ''} onClick={() => setView('archived')}>
+          Archived <span className="tab-count">{archivedEvents.length}</span>
+        </button>
+      </div>
+
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading && <div className="card"><Spinner label="Loading events…" size="lg" variant="panel" /></div>}
 
-      {!loading && visible.length === 0 && (
+      {!loading && visible.length === 0 && view === 'events' && (
         <div className="empty card">
           <h3>No events{termFilter ? ' for this term' : ' yet'}</h3>
           <p className="muted">Create an event, or set up a recurring schedule to generate them automatically.</p>
           <button className="btn btn-primary" onClick={openCreate}>+ Add Event</button>
+        </div>
+      )}
+
+      {!loading && visible.length === 0 && view === 'archived' && (
+        <div className="empty card">
+          <h3>Nothing archived{termFilter ? ' for this term' : ''}</h3>
+          <p className="muted">Close an event, then archive it to keep the main list tidy. Archived events keep their attendance and still appear in reports.</p>
+          <button className="btn" onClick={() => setView('events')}>Back to events</button>
         </div>
       )}
 
@@ -138,10 +184,15 @@ export default function Events() {
           const rate = ev.totalStudents ? Math.round((ev.attendanceCount / ev.totalStudents) * 100) : 0;
           const phase = phaseOf(ev);
           const phaseMeta = EVENT_PHASES[phase] || EVENT_PHASES.active;
+          const isArchived = view === 'archived';
           return (
-            <div key={ev.id} className="card event-card">
+            <div key={ev.id} className={`card event-card${isArchived ? ' archived' : ''}`}>
               <div className="event-card-top">
-                <span className={`pill ${phaseMeta.pill}`}>{phaseMeta.label}</span>
+                {isArchived ? (
+                  <span className="pill pill-gray">Archived</span>
+                ) : (
+                  <span className={`pill ${phaseMeta.pill}`}>{phaseMeta.label}</span>
+                )}
                 <span className="muted small">{ev.eventDate}{ev.startTime ? ` · ${ev.startTime}` : ''}</span>
               </div>
               <h3>{ev.name}</h3>
@@ -161,12 +212,26 @@ export default function Events() {
                 <span className="rate-label">{ev.attendanceCount}/{ev.totalStudents}</span>
               </div>
               <div className="event-card-actions">
-                {phase === 'active' && (
-                  <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>
+                {isArchived ? (
+                  <>
+                    <Link className="btn btn-sm" to={`/events/${ev.id}`}>Open</Link>
+                    <button className="btn btn-sm" onClick={() => unarchive(ev)}>Unarchive</button>
+                    <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
+                  </>
+                ) : (
+                  <>
+                    {phase === 'active' && (
+                      <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>
+                    )}
+                    <Link className={`btn btn-sm ${phase === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
+                    <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
+                    {ev.status === 'closed' && (
+                      <button className="btn btn-sm" onClick={() => archive(ev)} title="Move to the Archived section">Archive</button>
+                    )}
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
+                  </>
                 )}
-                <Link className={`btn btn-sm ${phase === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
-                <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
-                <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
               </div>
             </div>
           );

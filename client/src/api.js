@@ -75,8 +75,16 @@ export const api = {
   regenerateStudentQr: (id) => request(`/students/${id}/regenerate-qr`, { method: 'POST' }),
   regenerateStudentQrBulk: (payload) => request('/students/regenerate-qr', { method: 'POST', body: payload }),
 
-  getEvents: (termId) => request(`/events${termId ? `?termId=${encodeURIComponent(termId)}` : ''}`),
+  getEvents: (termId, opts = {}) => {
+    const params = new URLSearchParams();
+    if (termId) params.set('termId', termId);
+    if (opts.archived !== undefined && opts.archived !== null) params.set('archived', String(opts.archived));
+    const qs = params.toString();
+    return request(`/events${qs ? `?${qs}` : ''}`);
+  },
   getEvent: (id) => request(`/events/${id}`),
+  archiveEvent: (id) => request(`/events/${id}/archive`, { method: 'POST' }),
+  unarchiveEvent: (id) => request(`/events/${id}/unarchive`, { method: 'POST' }),
   getScanPack: (id) => request(`/events/${id}/scan-pack`),
   createEvent: (data) => request('/events', { method: 'POST', body: data }),
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: data }),

@@ -103,6 +103,8 @@ const SCHEMA = `
     end_time TEXT,
     checkin_code TEXT NOT NULL UNIQUE,
     status TEXT NOT NULL DEFAULT 'active',
+    archived INTEGER NOT NULL DEFAULT 0,
+    archived_at TEXT,
     require_student_confirm INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -266,6 +268,8 @@ async function doInit() {
   await ensureColumn('notifications', 'data', 'data TEXT');
   await ensureColumn('events', 'term_id', 'term_id INTEGER');
   await ensureColumn('events', 'schedule_id', 'schedule_id INTEGER');
+  await ensureColumn('events', 'archived', 'archived INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('events', 'archived_at', 'archived_at TEXT');
   await ensureColumn('terms', 'min_attendance', 'min_attendance INTEGER NOT NULL DEFAULT 80');
   await makeCheckinNullable();
   await executeMultiple(`

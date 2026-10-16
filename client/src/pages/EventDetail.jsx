@@ -173,6 +173,33 @@ export default function EventDetail() {
     }
   }
 
+  async function archiveEvent() {
+    if (!confirm(`Archive "${event.name}"?\n\nIt moves to the Archived section of the Events page. Attendance and reports keep it.`)) return;
+    setBusy(true);
+    try {
+      const updated = await api.archiveEvent(id);
+      setEvent(updated);
+      flash('Event archived');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function unarchiveEvent() {
+    setBusy(true);
+    try {
+      const updated = await api.unarchiveEvent(id);
+      setEvent(updated);
+      flash('Event unarchived · back in the main list');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!event) return <div className="card"><Spinner label="Loading event…" size="lg" variant="panel" /></div>;
 
@@ -200,6 +227,11 @@ export default function EventDetail() {
             <span className={`pill ${phaseMeta.pill}`} style={{ marginLeft: '0.6rem', verticalAlign: 'middle' }}>
               {phaseMeta.label}
             </span>
+            {Number(event.archived) ? (
+              <span className="pill pill-gray" style={{ marginLeft: '0.4rem', verticalAlign: 'middle' }}>
+                Archived
+              </span>
+            ) : null}
           </h2>
           <p className="muted">
             {event.eventDate}
@@ -217,9 +249,20 @@ export default function EventDetail() {
               </button>
             </>
           ) : (
-            <button className="btn" onClick={reopenEvent} disabled={busy}>
-              {busy ? 'Reopening…' : 'Reopen Event'}
-            </button>
+            <>
+              <button className="btn" onClick={reopenEvent} disabled={busy}>
+                {busy ? 'Reopening…' : 'Reopen Event'}
+              </button>
+              {Number(event.archived) ? (
+                <button className="btn" onClick={unarchiveEvent} disabled={busy} title="Move back into the main Events list">
+                  Unarchive
+                </button>
+              ) : (
+                <button className="btn" onClick={archiveEvent} disabled={busy} title="Move to the Archived section">
+                  Archive
+                </button>
+              )}
+            </>
           )}
           <button className="btn" onClick={() => exportCsv('event', id)}>Export CSV</button>
           <button className="btn" onClick={exportPdf}>Export PDF</button>
@@ -229,6 +272,9 @@ export default function EventDetail() {
       {event.status !== 'active' ? (
         <div className="alert alert-info">
           This event is closed — check-in is turned off and attendance has been consolidated.
+          {Number(event.archived)
+            ? ' It is archived, so it lives in the Archived section of the Events page (it still counts in reports).'
+            : ''}
         </div>
       ) : phase === 'upcoming' ? (
         <div className="alert alert-info">

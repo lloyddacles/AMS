@@ -16,6 +16,7 @@ const selectFields = `e.id, e.name, e.description, e.location,
   e.checkin_code AS checkinCode, e.status, e.require_student_confirm AS requireStudentConfirm,
   e.closed_at AS closedAt, e.report_summary AS reportSummary, e.created_at AS createdAt,
   e.term_id AS termId, e.schedule_id AS scheduleId,
+  e.archived AS archived, e.archived_at AS archivedAt,
   (SELECT name FROM terms t WHERE t.id = e.term_id) AS termName,
   (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
   (SELECT COUNT(*) FROM students) AS totalStudents`;
@@ -30,7 +31,7 @@ function parseEvent(row) {
       reportSummary = null;
     }
   }
-  return { ...row, reportSummary, phase: eventPhase(row) };
+  return { ...row, archived: Number(row.archived) ? 1 : 0, reportSummary, phase: eventPhase(row) };
 }
 
 function getEvent(id) {
@@ -96,16 +97,27 @@ async function consolidate(eventId) {
   return summary;
 }
 
+// List events. By default archived events are hidden so the main section stays
+// focused on current work; pass ?archived=1 for the archive, ?archived=all for both.
 router.get('/', async (req, res) => {
-  const { termId } = req.query;
+  const { termId, archived } = req.query;
+  const clauses = [];
+  const params = [];
   if (termId) {
-    const rows = await all(
-      `SELECT ${selectFields} FROM events e WHERE e.term_id = ? ORDER BY e.event_date DESC, e.id DESC`,
-      [termId]
-    );
-    return res.json(rows.map(parseEvent));
+    clauses.push('e.term_id = ?');
+    params.push(termId);
   }
-  const rows = await all(`SELECT ${selectFields} FROM events e ORDER BY e.event_date DESC, e.id DESC`);
+  const archivedView = archived === '1' || archived === 'true';
+  const archivedAll = archived === 'all';
+  if (!archivedAll) {
+    clauses.push('e.archived = ?');
+    params.push(archivedView ? 1 : 0);
+  }
+  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const rows = await all(
+    `SELECT ${selectFields} FROM events e${where} ORDER BY e.event_date DESC, e.id DESC`,
+    params
+  );
   res.json(rows.map(parseEvent));
 });
 
@@ -178,10 +190,15 @@ router.put('/:id', async (req, res) => {
   if (!nextName || !nextDate) {
     return res.status(400).json({ error: 'Event name and date are required' });
   }
+  // An active event must always be visible in the main list, so reopening via
+  // the edit form pulls it out of the archive automatically.
+  const nextStatus = status ?? existing.status;
+  const nextArchived = nextStatus === 'active' ? 0 : (Number(existing.archived) ? 1 : 0);
+  const nextArchivedAt = nextArchived ? existing.archived_at : null;
   await run(
     `UPDATE events SET name = ?, description = ?, location = ?, event_date = ?,
-      start_time = ?, end_time = ?, status = ?, require_student_confirm = ?,
-      term_id = ?, schedule_id = ? WHERE id = ?`,
+      start_time = ?, end_time = ?, status = ?, archived = ?, archived_at = ?,
+      require_student_confirm = ?, term_id = ?, schedule_id = ? WHERE id = ?`,
     [
       nextName,
       description ?? existing.description,
@@ -189,7 +206,9 @@ router.put('/:id', async (req, res) => {
       nextDate,
       startTime ?? existing.start_time,
       endTime ?? existing.end_time,
-      status ?? existing.status,
+      nextStatus,
+      nextArchived,
+      nextArchivedAt,
       requireStudentConfirm === undefined ? existing.require_student_confirm : (requireStudentConfirm ? 1 : 0),
       termId === undefined ? existing.term_id : (termId || null),
       scheduleId === undefined ? existing.schedule_id : (scheduleId || null),
@@ -246,7 +265,7 @@ router.post('/:id/reopen', async (req, res) => {
   const existing = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   await run("DELETE FROM attendance WHERE event_id = ? AND method = 'auto' AND checked_in_at IS NULL", [req.params.id]);
-  await run("UPDATE events SET status = 'active', closed_at = NULL, report_summary = NULL WHERE id = ?", [req.params.id]);
+  await run("UPDATE events SET status = 'active', closed_at = NULL, report_summary = NULL, archived = 0, archived_at = NULL WHERE id = ?", [req.params.id]);
   const event = await getEvent(req.params.id);
   await logAudit({
     user: req.user,
@@ -256,6 +275,44 @@ router.post('/:id/reopen', async (req, res) => {
     detail: event.name,
   });
   await notifyEventReopened(event).catch(() => {});
+  res.json(event);
+});
+
+// Archive a closed event: it leaves the main list and lives in the Archived
+// section instead. Attendance history is untouched, so reports still include it.
+router.post('/:id/archive', async (req, res) => {
+  const existing = await get('SELECT id, name, status, archived FROM events WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Event not found' });
+  if (Number(existing.archived)) return res.status(400).json({ error: 'Event is already archived' });
+  if (existing.status !== 'closed') {
+    return res.status(400).json({ error: 'Only closed events can be archived' });
+  }
+  await run('UPDATE events SET archived = 1, archived_at = ? WHERE id = ?', [nowUtc(), req.params.id]);
+  const event = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.archive',
+    entity: 'event',
+    entityId: event.id,
+    detail: event.name,
+  });
+  res.json(event);
+});
+
+// Move an archived event back into the main list.
+router.post('/:id/unarchive', async (req, res) => {
+  const existing = await get('SELECT id, name, archived FROM events WHERE id = ?', [req.params.id]);
+  if (!existing) return res.status(404).json({ error: 'Event not found' });
+  if (!Number(existing.archived)) return res.status(400).json({ error: 'Event is not archived' });
+  await run('UPDATE events SET archived = 0, archived_at = NULL WHERE id = ?', [req.params.id]);
+  const event = await getEvent(req.params.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.unarchive',
+    entity: 'event',
+    entityId: event.id,
+    detail: event.name,
+  });
   res.json(event);
 });
 

@@ -7,7 +7,7 @@ const TABLES = {
   terms: ['id', 'name', 'start_date', 'end_date', 'min_attendance', 'is_current', 'created_at'],
   schedules: ['id', 'term_id', 'name', 'description', 'location', 'weekdays', 'start_time', 'end_time', 'start_date', 'end_date', 'require_student_confirm', 'active', 'last_generated_date', 'created_at'],
   students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'created_at'],
-  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id'],
+  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'archived', 'archived_at', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id'],
   attendance: ['id', 'event_id', 'student_id', 'status', 'method', 'note', 'checked_in_at', 'checked_out_at', 'marked_by'],
   settings: ['key', 'value', 'updated_at'],
   scan_receipts: ['client_scan_id', 'attendance_id', 'action', 'created_at'],
@@ -53,14 +53,19 @@ export async function importData(payload) {
     }
     const cols = TABLES[name];
     counts[name] = rows.length;
-    const placeholders = cols.map(() => '?').join(', ');
     for (const row of rows) {
       if (!row || typeof row !== 'object') {
         return { ok: false, status: 400, error: `Invalid row in "${name}"` };
       }
+      // Columns the backup doesn't carry are omitted so SQLite applies the
+      // column default (keeps older backup files importable).
+      const present = cols.filter((c) => row[c] !== undefined);
+      const placeholders = present.map(() => '?').join(', ');
       statements.push({
-        sql: `INSERT INTO ${name} (${cols.join(', ')}) VALUES (${placeholders})`,
-        args: cols.map((c) => (row[c] === undefined ? null : row[c])),
+        sql: present.length
+          ? `INSERT INTO ${name} (${present.join(', ')}) VALUES (${placeholders})`
+          : `INSERT INTO ${name} DEFAULT VALUES`,
+        args: present.map((c) => row[c]),
       });
     }
   }
