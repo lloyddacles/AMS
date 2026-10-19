@@ -10,6 +10,7 @@ import {
   exclusionsByEvent,
   excludeStudents,
   includeStudents,
+  setOnlyAttendees,
   clearExclusions,
   attendeeList,
   attendeeStats,
@@ -147,30 +148,37 @@ router.get('/:id/attendees', async (req, res) => {
   res.json(await attendeeList(event.id));
 });
 
+// Validate a request's studentIds: non-empty, deduped, all real students.
+async function parseStudentIds(studentIds) {
+  if (!Array.isArray(studentIds) || !studentIds.length) {
+    return { error: 'studentIds must be a non-empty array' };
+  }
+  if (studentIds.length > 5000) {
+    return { error: 'Too many students in one request (max 5000)' };
+  }
+  const ids = [...new Set(studentIds.map((n) => Number(n)))];
+  if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
+    return { error: 'studentIds must be a non-empty array of student ids' };
+  }
+  const found = await get(
+    `SELECT COUNT(*) AS c FROM students WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ids
+  );
+  if (found.c !== ids.length) return { error: 'One or more studentIds do not exist' };
+  return { ids };
+}
+
 // Add or remove students from the attendee list. Removing also drops any
 // check-in they already made for this event.
 router.post('/:id/attendees', async (req, res) => {
   const { studentIds, attending = true } = req.body || {};
   const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  if (!Array.isArray(studentIds) || !studentIds.length) {
-    return res.status(400).json({ error: 'studentIds must be a non-empty array' });
-  }
-  if (studentIds.length > 5000) {
-    return res.status(400).json({ error: 'Too many students in one request (max 5000)' });
-  }
-  const ids = [...new Set(studentIds.map((n) => Number(n)))];
-  if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
-    return res.status(400).json({ error: 'studentIds must be a non-empty array of student ids' });
-  }
-  const found = await get(
-    `SELECT COUNT(*) AS c FROM students WHERE id IN (${ids.map(() => '?').join(',')})`,
-    ids
-  );
-  if (found.c !== ids.length) return res.status(400).json({ error: 'One or more studentIds do not exist' });
+  const parsed = await parseStudentIds(studentIds);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
   const changed = attending
-    ? await includeStudents({ eventId: event.id, studentIds: ids })
-    : await excludeStudents({ eventId: event.id, studentIds: ids, userId: req.user.id });
+    ? await includeStudents({ eventId: event.id, studentIds: parsed.ids })
+    : await excludeStudents({ eventId: event.id, studentIds: parsed.ids, userId: req.user.id });
   const list = await attendeeList(event.id);
   await logAudit({
     user: req.user,
@@ -180,6 +188,30 @@ router.post('/:id/attendees', async (req, res) => {
     detail: `${attending ? 'Added' : 'Removed'} ${changed} · ${list.attending}/${list.totalStudents} attending`,
   });
   res.json({ ...list, changed });
+});
+
+// Keep only the listed students on the attendee list; everyone else is removed.
+router.post('/:id/attendees/only', async (req, res) => {
+  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const parsed = await parseStudentIds(req.body?.studentIds);
+  if (parsed.error) return res.status(400).json({ error: parsed.error });
+  const { added, removed } = await setOnlyAttendees({
+    eventId: event.id,
+    studentIds: parsed.ids,
+    userId: req.user.id,
+  });
+  const list = await attendeeList(event.id);
+  if (added || removed) {
+    await logAudit({
+      user: req.user,
+      action: 'event.attendees',
+      entity: 'event',
+      entityId: event.id,
+      detail: `Only selected · +${added} −${removed} · ${list.attending}/${list.totalStudents} attending`,
+    });
+  }
+  res.json({ ...list, changed: added + removed, added, removed });
 });
 
 // Everyone attends again (clears all exclusions for the event).

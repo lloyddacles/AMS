@@ -86,6 +86,7 @@ export const api = {
   getEventAttendees: (id) => request(`/events/${id}/attendees`),
   setEventAttendees: (id, { studentIds, attending }) =>
     request(`/events/${id}/attendees`, { method: 'POST', body: { studentIds, attending } }),
+  setEventAttendeesOnly: (id, studentIds) => request(`/events/${id}/attendees/only`, { method: 'POST', body: { studentIds } }),
   resetEventAttendees: (id) => request(`/events/${id}/attendees/reset`, { method: 'POST' }),
   archiveEvent: (id) => request(`/events/${id}/archive`, { method: 'POST' }),
   unarchiveEvent: (id) => request(`/events/${id}/unarchive`, { method: 'POST' }),

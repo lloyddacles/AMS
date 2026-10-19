@@ -248,6 +248,29 @@ export default function EventDetail() {
     }
   }
 
+  // "Only selected attend": exactly the ticked students stay on the list.
+  async function onlyTheseAttend() {
+    const keep = [...attendeeSel];
+    if (!keep.length) return;
+    const others = rosterTotal - keep.length;
+    const ok = confirm(
+      `Only ${keep.length === 1 ? 'this student' : `these ${keep.length} students`} will attend "${event.name}"?\n\n` +
+        `Everyone else (${Math.max(0, others)}) is removed — their check-ins for this event are deleted. ` +
+        `Ticked students currently off the list are added back without their old check-in.`
+    );
+    if (!ok) return;
+    setBusy(true);
+    try {
+      const res = await api.setEventAttendeesOnly(id, keep);
+      await load();
+      flash(`Only selected kept · +${res.added} −${res.removed} · ${res.attending}/${res.totalStudents} attending`);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function toggleAttendee(studentId) {
     setAttendeeSel((prev) => {
       const next = new Set(prev);
@@ -590,6 +613,14 @@ export default function EventDetail() {
                 onClick={() => updateAttendees(selOffList, true)}
               >
                 Add selected ({selOffList.length})
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={busy || attendeeSel.size === 0}
+                onClick={onlyTheseAttend}
+                title="Keep only the ticked students — everyone else is removed from this event"
+              >
+                Only selected attend ({attendeeSel.size})
               </button>
               <button className="btn btn-sm btn-danger" disabled={busy || excludedCount === 0} onClick={restoreAllAttendees}>
                 Restore all attendees

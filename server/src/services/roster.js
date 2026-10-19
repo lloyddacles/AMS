@@ -83,6 +83,27 @@ export async function includeStudents({ eventId, studentIds = [] }) {
   return info.changes || 0;
 }
 
+// Keep exactly these students on the list: the selected ones are put back on
+// and everyone else is removed (their check-in for the event is deleted).
+// Done in bulk statements so large cohorts stay fast. Returns how many were
+// added back and how many were newly removed.
+export async function setOnlyAttendees({ eventId, studentIds = [], userId = null }) {
+  const ids = [...new Set(studentIds.map(Number).filter(Number.isFinite))];
+  if (!ids.length) return { added: 0, removed: 0 };
+  const keep = ids.map(() => '?').join(',');
+  const added = await run(
+    `DELETE FROM event_exclusions WHERE event_id = ? AND student_id IN (${keep})`,
+    [eventId, ...ids]
+  );
+  const removed = await run(
+    `INSERT OR IGNORE INTO event_exclusions (event_id, student_id, excluded_by)
+     SELECT ?, id, ? FROM students WHERE id NOT IN (${keep})`,
+    [eventId, userId, ...ids]
+  );
+  await run(`DELETE FROM attendance WHERE event_id = ? AND student_id NOT IN (${keep})`, [eventId, ...ids]);
+  return { added: added.changes || 0, removed: removed.changes || 0 };
+}
+
 // Everyone attends again.
 export async function clearExclusions(eventId) {
   const info = await run('DELETE FROM event_exclusions WHERE event_id = ?', [eventId]);
