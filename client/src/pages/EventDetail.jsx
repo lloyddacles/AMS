@@ -62,21 +62,31 @@ export default function EventDetail() {
   const [event, setEvent] = useState(null);
   const [attendance, setAttendance] = useState([]);
   const [students, setStudents] = useState([]);
+  const [attendees, setAttendees] = useState(null);
   const [tab, setTab] = useState('list');
   const [error, setError] = useState('');
   const [toast, setToast] = useState('');
   const [showQr, setShowQr] = useState(false);
   const [search, setSearch] = useState('');
+  const [attendeeSearch, setAttendeeSearch] = useState('');
+  const [attendeeSel, setAttendeeSel] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [excuseFor, setExcuseFor] = useState(null);
   const [excuseReason, setExcuseReason] = useState('');
 
   async function load() {
     try {
-      const [ev, att, studs] = await Promise.all([api.getEvent(id), api.getEventAttendance(id), api.getStudents()]);
+      const [ev, att, studs, list] = await Promise.all([
+        api.getEvent(id),
+        api.getEventAttendance(id),
+        api.getStudents(),
+        api.getEventAttendees(id),
+      ]);
       setEvent(ev);
       setAttendance(att);
       setStudents(studs);
+      setAttendees(list);
+      setAttendeeSel(new Set());
     } catch (e) {
       setError(e.message);
     }
@@ -200,6 +210,65 @@ export default function EventDetail() {
     }
   }
 
+  // Attendee list: removing students also deletes their check-in for this event.
+  async function updateAttendees(studentIds, attending) {
+    if (!studentIds.length) return;
+    if (!attending) {
+      const who = studentIds.length === 1 ? 'this student' : `these ${studentIds.length} students`;
+      const ok = confirm(
+        `Remove ${who} from "${event.name}"?\n\nAny check-in they have for this event is deleted, and the event stops counting for them in reports.`
+      );
+      if (!ok) return;
+    }
+    setBusy(true);
+    try {
+      const res = await api.setEventAttendees(id, { studentIds, attending });
+      await load();
+      flash(
+        `${res.changed} ${res.changed === 1 ? 'student' : 'students'} ${attending ? 'added to' : 'removed from'} the event · ${res.attending}/${res.totalStudents} attending`
+      );
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function restoreAllAttendees() {
+    if (!confirm(`Put every student back on "${event.name}"?\n\nAll removals for this event are cleared.`)) return;
+    setBusy(true);
+    try {
+      const res = await api.resetEventAttendees(id);
+      await load();
+      flash(res.changed ? `All students restored · ${res.attending}/${res.totalStudents} attending` : 'Everyone already attends this event');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function toggleAttendee(studentId) {
+    setAttendeeSel((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  }
+
+  function toggleAttendeeShown(rows) {
+    setAttendeeSel((prev) => {
+      const next = new Set(prev);
+      const allShown = rows.length > 0 && rows.every((r) => prev.has(r.studentId));
+      for (const r of rows) {
+        if (allShown) next.delete(r.studentId);
+        else next.add(r.studentId);
+      }
+      return next;
+    });
+  }
+
   if (error) return <div className="alert alert-error">{error}</div>;
   if (!event) return <div className="card"><Spinner label="Loading event…" size="lg" variant="panel" /></div>;
 
@@ -216,6 +285,27 @@ export default function EventDetail() {
       s.studentNo.toLowerCase().includes(q)
     );
   });
+
+  // Attendee list state: "attending" rows are everyone on the list; the rest are off it.
+  const attendeeRows = attendees?.students || [];
+  const rosterTotal = attendees ? attendees.totalStudents : event.totalStudents;
+  const attendingCount = attendeeRows.filter((s) => s.attending).length;
+  const excludedCount = attendees?.excludedCount || 0;
+  const offListIds = new Set(attendeeRows.filter((s) => !s.attending).map((s) => s.studentId));
+  const filteredAttendance = attendance.filter((a) => a.attending !== false);
+  const filteredAttendeeRows = attendeeRows.filter((s) => {
+    const q = attendeeSearch.toLowerCase();
+    return (
+      !q ||
+      s.firstName.toLowerCase().includes(q) ||
+      s.lastName.toLowerCase().includes(q) ||
+      s.studentNo.toLowerCase().includes(q)
+    );
+  });
+  const selOffList = [...attendeeSel].filter((sid) => offListIds.has(sid));
+  const selOnList = [...attendeeSel].filter((sid) => !offListIds.has(sid));
+  const allShownSelected =
+    filteredAttendeeRows.length > 0 && filteredAttendeeRows.every((r) => attendeeSel.has(r.studentId));
 
   return (
     <div className="page">
@@ -309,8 +399,8 @@ export default function EventDetail() {
           <div className="stat-label">Checked in</div>
         </div>
         <div className="stat-card accent-purple">
-          <div className="stat-value">{event.totalStudents}</div>
-          <div className="stat-label">Total students</div>
+          <div className="stat-value">{rosterTotal}</div>
+          <div className="stat-label">Attendees</div>
         </div>
         <div className="stat-card accent-green">
           <div className="stat-value">{rate}%</div>
@@ -323,8 +413,13 @@ export default function EventDetail() {
       </div>
 
       <div className="tabs">
-        <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>Attendance ({attendedCount}/{attendance.length})</button>
+        <button className={tab === 'list' ? 'active' : ''} onClick={() => setTab('list')}>
+          Attendance ({attendedCount}/{filteredAttendance.length})
+        </button>
         <button className={tab === 'mark' ? 'active' : ''} onClick={() => setTab('mark')}>Mark Attendance</button>
+        <button className={tab === 'attendees' ? 'active' : ''} onClick={() => setTab('attendees')}>
+          Attendees ({attendingCount}/{rosterTotal})
+        </button>
       </div>
 
       {tab === 'list' && (
@@ -343,10 +438,10 @@ export default function EventDetail() {
               </tr>
             </thead>
             <tbody>
-              {attendance.length === 0 && (
-                <tr><td colSpan={8} className="muted center">No students yet.</td></tr>
+              {filteredAttendance.length === 0 && (
+                <tr><td colSpan={8} className="muted center">No students on the attendee list yet.</td></tr>
               )}
-              {attendance.map((a) => (
+              {filteredAttendance.map((a) => (
                 <tr key={a.id ?? `s${a.studentId}`}>
                   <td className="mono">{a.studentNo}</td>
                   <td className="strong">{a.lastName}, {a.firstName}</td>
@@ -422,7 +517,18 @@ export default function EventDetail() {
                   return (
                     <tr key={s.id}>
                       <td className="mono">{s.studentNo}</td>
-                      <td className="strong">{s.lastName}, {s.firstName}</td>
+                      <td className="strong">
+                        {s.lastName}, {s.firstName}
+                        {offListIds.has(s.id) && (
+                          <span
+                            className="pill pill-gray"
+                            style={{ marginLeft: '0.5rem', verticalAlign: 'middle' }}
+                            title="Not on the attendee list — marking them here adds them back"
+                          >
+                            Off list
+                          </span>
+                        )}
+                      </td>
                       <td>{s.course || '—'}</td>
                       <td className="right">
                     <div className="seg">
@@ -447,6 +553,113 @@ export default function EventDetail() {
                     </tr>
                   );
                 })}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      {tab === 'attendees' && (
+        <>
+          <div className="alert alert-info">
+            {attendees?.mode === 'all'
+              ? 'Everyone attends this event (the default). Removing a student switches this event to a custom list; adding the last one back restores the default.'
+              : `Custom attendee list — ${attendingCount} attending${excludedCount ? `, ${excludedCount} off the list` : ''} of ${rosterTotal} students.`}
+            {excludedCount > 0
+              ? ' Students off the list cannot check in, are not marked absent, and the event does not count for them in reports.'
+              : ''}
+          </div>
+          <div className="toolbar">
+            <input
+              className="search"
+              placeholder="Search students…"
+              value={attendeeSearch}
+              onChange={(e) => setAttendeeSearch(e.target.value)}
+            />
+            <div className="toolbar-actions">
+              <button
+                className="btn btn-sm"
+                disabled={busy || selOnList.length === 0}
+                onClick={() => updateAttendees(selOnList, false)}
+              >
+                Remove selected ({selOnList.length})
+              </button>
+              <button
+                className="btn btn-sm"
+                disabled={busy || selOffList.length === 0}
+                onClick={() => updateAttendees(selOffList, true)}
+              >
+                Add selected ({selOffList.length})
+              </button>
+              <button className="btn btn-sm btn-danger" disabled={busy || excludedCount === 0} onClick={restoreAllAttendees}>
+                Restore all attendees
+              </button>
+            </div>
+          </div>
+          <div className="card table-card">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th className="w-check">
+                    <input
+                      type="checkbox"
+                      checked={allShownSelected}
+                      onChange={() => toggleAttendeeShown(filteredAttendeeRows)}
+                      aria-label="Select all shown"
+                    />
+                  </th>
+                  <th>Student No</th>
+                  <th>Name</th>
+                  <th>Course</th>
+                  <th>Status</th>
+                  <th className="right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filteredAttendeeRows.length === 0 && (
+                  <tr><td colSpan={6} className="muted center">No students match.</td></tr>
+                )}
+                {filteredAttendeeRows.map((s) => (
+                  <tr key={s.studentId} className={s.attending ? '' : 'row-off'}>
+                    <td>
+                      <input
+                        type="checkbox"
+                        checked={attendeeSel.has(s.studentId)}
+                        onChange={() => toggleAttendee(s.studentId)}
+                        aria-label={`Select ${s.firstName} ${s.lastName}`}
+                      />
+                    </td>
+                    <td className="mono">{s.studentNo}</td>
+                    <td className="strong">{s.lastName}, {s.firstName}</td>
+                    <td>{s.course || '—'}</td>
+                    <td>
+                      {s.attending ? (
+                        <span className="pill pill-green">Attending</span>
+                      ) : (
+                        <span className="pill pill-gray">Not attending</span>
+                      )}
+                    </td>
+                    <td className="right">
+                      {s.attending ? (
+                        <button
+                          className="btn btn-sm"
+                          disabled={busy}
+                          onClick={() => updateAttendees([s.studentId], false)}
+                        >
+                          Remove
+                        </button>
+                      ) : (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          disabled={busy}
+                          onClick={() => updateAttendees([s.studentId], true)}
+                        >
+                          Add
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>

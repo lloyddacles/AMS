@@ -2,6 +2,7 @@ import { all, get } from '../db.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { getSettings } from './settings.js';
 import { buildRiskModel } from './risk.js';
+import { exclusionsByEvent } from './roster.js';
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
@@ -65,6 +66,7 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
     [like, like, like, course, course]
   );
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
+  const excluded = await exclusionsByEvent(events.map((e) => e.id));
 
   const byStudent = new Map();
   for (const r of records) {
@@ -78,7 +80,13 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
   const rows = students.map((s) => {
     const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
     const recs = byStudent.get(s.id) || new Map();
+    // Events this student is actually on the attendee list for — the real
+    // denominator for their rate, needed count and risk features.
+    let expected = 0;
     for (const e of events) {
+      const out = excluded.get(e.id);
+      if (out && out.has(s.id)) continue;
+      expected += 1;
       const record = recs.get(e.id);
       if (record) {
         bucket(counts, displayStatus(e, record));
@@ -97,7 +105,9 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
       yearLevel: s.yearLevel,
       ...counts,
       attended,
-      rate: totalEvents ? Math.round((attended / totalEvents) * 100) : 0,
+      expected,
+      excludedEvents: totalEvents - expected,
+      rate: expected ? Math.round((attended / expected) * 100) : 0,
     };
   });
 
@@ -115,7 +125,8 @@ export async function buildAtRisk(filters = {}) {
   const eligible = totalEvents >= minEvents;
   const list = eligible
     ? students
-        .filter((s) => s.rate < threshold)
+        // A student off every event's attendee list has no rate to judge.
+        .filter((s) => s.expected > 0 && s.rate < threshold)
         .sort(
           (a, b) =>
             a.rate - b.rate ||
@@ -172,11 +183,11 @@ export async function buildCompliance({ search = '', course = '', termId = null,
   const { totalEvents, students } = await buildOverview({ search, course, termId, from, to });
   const minimum = target.minimum;
   const eligible = totalEvents > 0;
-  const neededFor = (min) => Math.max(0, Math.ceil((min / 100) * totalEvents));
   const list = eligible
     ? students
-        .filter((s) => s.rate < minimum)
-        .map((s) => ({ ...s, needed: Math.max(0, neededFor(minimum) - s.attended) }))
+        // Each student needs the minimum across the events they actually attend.
+        .filter((s) => s.expected > 0 && s.rate < minimum)
+        .map((s) => ({ ...s, needed: Math.max(0, Math.ceil((minimum / 100) * s.expected) - s.attended) }))
         .sort(
           (a, b) =>
             a.rate - b.rate ||
@@ -215,6 +226,7 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
   );
   const studentIds = new Set(students.map((s) => s.id));
   const totalStudents = studentIds.size;
+  const excluded = await exclusionsByEvent(events.map((e) => e.id));
 
   let records = [];
   if (events.length) {
@@ -239,15 +251,22 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
 
   for (const e of events) {
     const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
+    const out = excluded.get(e.id);
+    // Attendee list for this event (everyone in scope minus the excluded).
+    let roster = totalStudents;
+    if (out) {
+      for (const sid of out) if (studentIds.has(sid)) roster -= 1;
+    }
     let recorded = 0;
     for (const r of byEvent.get(e.id) || []) {
       if (!studentIds.has(r.studentId)) continue;
+      if (out && out.has(r.studentId)) continue;
       bucket(counts, displayStatus(e, r));
       recorded += 1;
     }
     const cutoff = absentCutoff(e);
     const decided = cutoff ? now > cutoff : false;
-    if (decided) counts.absent += Math.max(0, totalStudents - recorded);
+    if (decided) counts.absent += Math.max(0, roster - recorded);
 
     const present = counts.early + counts.onTime + counts.late;
     const key = granularity === 'event' ? String(e.id) : bucketKey(e.eventDate, granularity);

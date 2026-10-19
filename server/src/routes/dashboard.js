@@ -8,13 +8,16 @@ const router = Router();
 router.use(requireAuth);
 
 const ATTENDED_SQL = "('early','on-time','late','present')";
+// Students off an event's attendee list never count towards its numbers.
+const ON_LIST_SQL = `NOT EXISTS (SELECT 1 FROM event_exclusions x WHERE x.event_id = a.event_id AND x.student_id = a.student_id)`;
 
 router.get('/stats', async (req, res) => {
   const totalStudents = (await get('SELECT COUNT(*) AS c FROM students')).c;
   const totalEvents = (await get('SELECT COUNT(*) AS c FROM events')).c;
   const totalRecords = (
-    await get(`SELECT COUNT(*) AS c FROM attendance WHERE status IN ${ATTENDED_SQL}`)
+    await get(`SELECT COUNT(*) AS c FROM attendance a WHERE a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}`)
   ).c;
+  const totalExclusions = (await get('SELECT COUNT(*) AS c FROM event_exclusions')).c;
 
   const events = await all('SELECT id, event_date AS eventDate, start_time AS startTime, end_time AS endTime FROM events');
   const records = await all('SELECT event_id AS eventId, status, method, checked_in_at AS checkedInAt FROM attendance');
@@ -31,8 +34,8 @@ router.get('/stats', async (req, res) => {
   const recentEvents = (
     await all(
       `SELECT e.id, e.name, e.event_date AS eventDate,
-              (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL}) AS attended,
-              (SELECT COUNT(*) FROM students) AS totalStudents
+              (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended,
+              (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS totalStudents
        FROM events e ORDER BY e.event_date DESC, e.id DESC LIMIT 5`
     )
   ).map((e) => ({
@@ -50,17 +53,20 @@ router.get('/stats', async (req, res) => {
 
   const trend = await all(
     `SELECT substr(e.event_date, 6) AS label, e.name,
-            (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL}) AS attended
+            (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended
      FROM events e ORDER BY e.event_date ASC, e.id ASC LIMIT 8`
   );
 
   const atRisk = await buildAtRisk({});
 
+  // Every student × event slot except the ones taken off an attendee list.
+  const expectedSlots = Math.max(0, totalStudents * totalEvents - totalExclusions);
+
   res.json({
     totalStudents,
     totalEvents,
     totalRecords,
-    overallRate: totalStudents && totalEvents ? Math.round((totalRecords / (totalStudents * totalEvents)) * 100) : 0,
+    overallRate: expectedSlots ? Math.round((totalRecords / expectedSlots) * 100) : 0,
     statusBreakdown,
     recentEvents,
     topAttendees,

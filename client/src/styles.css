@@ -537,6 +537,14 @@ input:focus, select:focus, textarea:focus {
 .mark-late { background: #fef3c7; color: #b45309; }
 .mark-excused { background: #ede9fe; color: #6d28d9; }
 .mark-absent { background: #fee2e2; color: #b91c1c; }
+.mark-none { background: #f1f5f9; color: #94a3b8; }
+
+/* ---------- Attendee list ---------- */
+.row-off td { background: #fafafa; color: var(--muted); }
+.row-off .strong { color: var(--muted); }
+.toolbar-actions { display: inline-flex; gap: 0.5rem; flex-wrap: wrap; margin-left: auto; }
+.table .w-check { width: 36px; text-align: center; }
+.table .w-check input { margin: 0; vertical-align: middle; }
 
 .cell-legend {
   display: flex; flex-wrap: wrap; gap: 0.5rem 1rem; padding: 0.75rem 1rem 0.9rem;

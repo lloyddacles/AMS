@@ -88,7 +88,12 @@ export default function Scanner() {
   function indexPack(pack) {
     const tokenMap = {};
     for (const s of pack.students || []) tokenMap[s.qrToken] = s;
-    return { ...pack, tokenMap };
+    return {
+      ...pack,
+      tokenMap,
+      // Attendee list: students off it must not be scannable offline either.
+      excludedSet: new Set(pack.excludedStudentIds || []),
+    };
   }
 
   async function loadToday() {
@@ -206,6 +211,12 @@ export default function Scanner() {
           ? 'Unrecognized QR code (offline).'
           : 'Offline and no cached data for this event yet.'
       );
+      beepError();
+      return;
+    }
+
+    if (pack.excludedSet?.has(student.id)) {
+      setNotice('Not on the attendee list for this event (offline).');
       beepError();
       return;
     }

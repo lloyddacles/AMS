@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
+import { isExcluded, exclusionsByEvent, includeStudents } from '../services/roster.js';
 import {
   classifyByTime,
   displayStatus,
@@ -177,11 +178,18 @@ async function applyScan({ eventId, studentId, method, userId, event, scannedAt,
   return { row, action };
 }
 
+// Students off the event's attendee list cannot check in anywhere (live scan,
+// offline sync and the public kiosk all hit this or the checks below).
+const OFF_LIST_ERROR = 'Not on the attendee list for this event';
+
 // Resolve a scanned token to a student, returning an error string when it does
-// not match anything (shared by the live and batch scan endpoints).
+// not match anything or the student does not attend this event (shared by the
+// live, lookup and batch scan endpoints).
+
 async function resolveScanTarget(event, qrToken, confirmValue) {
   const student = await get('SELECT * FROM students WHERE qr_token = ?', [resolveToken(qrToken)]);
   if (!student) return { error: 'Unrecognized QR code' };
+  if (await isExcluded(event.id, student.id)) return { error: OFF_LIST_ERROR };
   if (event.require_student_confirm || confirmValue !== undefined) {
     if (!studentNoMatches(confirmValue, student.student_no)) {
       return { error: 'Student number confirmation did not match this QR code' };
@@ -242,6 +250,9 @@ router.post('/public/:code/checkin', async (req, res) => {
   if (!studentNo) return res.status(400).json({ error: 'Student number is required' });
   const student = await get('SELECT * FROM students WHERE student_no = ?', [String(studentNo).trim()]);
   if (!student) return res.status(404).json({ error: 'Student number not found. Please contact the organizer.' });
+  if (await isExcluded(event.id, student.id)) {
+    return res.status(400).json({ error: 'You are not on the attendee list for this event. Please contact the organizer.' });
+  }
   const result = await applyScan({ eventId: event.id, studentId: student.id, method: 'self-qr', event });
   if (result.blocked) return res.status(400).json({ error: result.message });
   res.status(result.action === 'time-in' ? 201 : 200).json({ ...result.row, action: result.action });
@@ -271,9 +282,30 @@ router.get('/event/:eventId', async (req, res) => {
   );
   const cutoff = absentCutoff(event);
   const windowPassed = cutoff ? new Date() > cutoff : false;
+  const excluded = (await exclusionsByEvent([event.id])).get(event.id) || new Set();
   const rows = students.map((s) => {
+    if (excluded.has(s.studentId)) {
+      return {
+        id: null,
+        eventId: event.id,
+        studentId: s.studentId,
+        status: null,
+        method: null,
+        note: null,
+        checkedInAt: null,
+        checkedOutAt: null,
+        studentNo: s.studentNo,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        course: s.course,
+        yearLevel: s.yearLevel,
+        section: s.section,
+        attending: false,
+        classification: null,
+      };
+    }
     const r = byStudent.get(s.studentId);
-    if (r) return { ...r, classification: displayStatus(event, r) };
+    if (r) return { ...r, attending: true, classification: displayStatus(event, r) };
     return {
       id: null,
       eventId: event.id,
@@ -289,6 +321,7 @@ router.get('/event/:eventId', async (req, res) => {
       course: s.course,
       yearLevel: s.yearLevel,
       section: s.section,
+      attending: true,
       classification: windowPassed ? 'absent' : null,
     };
   });
@@ -309,6 +342,7 @@ router.post('/lookup', async (req, res) => {
     [resolveToken(qrToken)]
   );
   if (!student) return res.status(404).json({ error: 'Unrecognized QR code' });
+  if (await isExcluded(event.id, student.id)) return res.status(400).json({ error: OFF_LIST_ERROR });
 
   const existing = await get(
     'SELECT * FROM attendance WHERE event_id = ? AND student_id = ?',
@@ -451,13 +485,19 @@ router.post('/', async (req, res) => {
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const student = await get('SELECT id FROM students WHERE id = ?', [studentId]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
+  // Marking a student by hand puts them back on the attendee list.
+  let readded = false;
+  if (await isExcluded(event.id, studentId)) {
+    await includeStudents({ eventId: event.id, studentIds: [studentId] });
+    readded = true;
+  }
   const { row, duplicate } = await markManual({ eventId, studentId, status, note, userId: req.user.id });
   await logAudit({
     user: req.user,
     action: 'attendance.mark',
     entity: 'attendance',
     entityId: row.id,
-    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}${note ? ` · ${note}` : ''}`,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}${note ? ` · ${note}` : ''}${readded ? ' · added to attendee list' : ''}`,
   });
   res.status(duplicate ? 200 : 201).json({ ...row, duplicate });
 });

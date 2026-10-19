@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { buildOverview, buildAtRisk, buildTrends, buildCompliance, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
+import { exclusionsByEvent, exclusionCountsByStudent } from '../services/roster.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -36,6 +37,17 @@ function toCsv(headers, rows) {
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
+
+// "eventId:studentId" keys for students who are off an event's attendee list,
+// so the matrix can render them as not attending instead of absent.
+async function excludedKeysFor(eventIds) {
+  const map = await exclusionsByEvent(eventIds);
+  const keys = {};
+  for (const [eventId, set] of map) {
+    for (const sid of set) keys[`${eventId}:${sid}`] = true;
+  }
+  return keys;
+}
 
 // Per-student summary, classified early / on-time / late / absent.
 router.get('/overview', async (req, res) => {
@@ -76,7 +88,7 @@ router.get('/matrix', async (req, res) => {
     const cls = displayStatus(eventById.get(r.eventId), r);
     if (cls) map[`${r.eventId}:${r.studentId}`] = cls;
   }
-  res.json({ events, students, records: map });
+  res.json({ events, students, records: map, excluded: await excludedKeysFor(events.map((e) => e.id)) });
 });
 
 // Explainable attendance risk for every student (logistic model + exact SHAP),
@@ -143,11 +155,17 @@ router.get('/export', async (req, res) => {
     );
     const cutoff = absentCutoff(event);
     const windowPassed = cutoff ? new Date() > cutoff : false;
+    const out = (await exclusionsByEvent([event.id])).get(event.id) || new Set();
     const rows = students.map((s) => {
       const r = byStudent.get(s.id);
+      const classification = out.has(s.id)
+        ? 'n/a'
+        : r
+          ? displayStatus(event, r)
+          : (windowPassed ? 'absent' : '');
       return [
         s.student_no, s.first_name, s.last_name, s.course, s.year_level,
-        r ? displayStatus(event, r) : (windowPassed ? 'absent' : ''),
+        classification,
         r?.method || '',
         isoUtc(r?.checkedInAt),
         isoUtc(r?.checkedOutAt),
@@ -172,12 +190,13 @@ router.get('/export', async (req, res) => {
       const cls = displayStatus(eventById.get(r.eventId), r);
       if (cls) map[`${r.eventId}:${r.studentId}`] = cls;
     }
+    const excluded = await excludedKeysFor(events.map((e) => e.id));
     const headers = ['Student No', 'First Name', 'Last Name', ...events.map((e) => e.name)];
     const csv = toCsv(
       headers,
       students.map((s) => [
         s.student_no, s.first_name, s.last_name,
-        ...events.map((e) => map[`${e.id}:${s.id}`] || 'absent'),
+        ...events.map((e) => (excluded[`${e.id}:${s.id}`] ? 'n/a' : map[`${e.id}:${s.id}`] || 'absent')),
       ])
     );
     res.setHeader('Content-Type', 'text/csv');
@@ -192,13 +211,13 @@ router.get('/export', async (req, res) => {
   let rows;
   if (totalEvents === 0) {
     rows = await all(
-      `SELECT student_no, first_name, last_name, course, year_level, 0 AS attended
+      `SELECT id, student_no, first_name, last_name, course, year_level, 0 AS attended
        FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
     );
   } else {
     const placeholders = eventIds.map(() => '?').join(',');
     rows = await all(
-      `SELECT s.student_no, s.first_name, s.last_name, s.course, s.year_level,
+      `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level,
               SUM(CASE WHEN a.status IN ('early','on-time','late','present') THEN 1 ELSE 0 END) AS attended
        FROM students s LEFT JOIN attendance a
          ON a.student_id = s.id AND a.event_id IN (${placeholders})
@@ -206,13 +225,18 @@ router.get('/export', async (req, res) => {
       eventIds
     );
   }
+  // Each student's denominator is the events they are on the attendee list for.
+  const excludedCounts = await exclusionCountsByStudent(eventIds);
   const csv = toCsv(
     ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Events Attended', 'Total Events', 'Rate %'],
-    rows.map((r) => [
-      r.student_no, r.first_name, r.last_name, r.course, r.year_level,
-      r.attended, totalEvents,
-      totalEvents ? Math.round((Number(r.attended) / totalEvents) * 100) : 0,
-    ])
+    rows.map((r) => {
+      const expected = Math.max(0, totalEvents - (excludedCounts.get(r.id) || 0));
+      return [
+        r.student_no, r.first_name, r.last_name, r.course, r.year_level,
+        r.attended, expected,
+        expected ? Math.round((Number(r.attended) / expected) * 100) : 0,
+      ];
+    })
   );
   res.setHeader('Content-Type', 'text/csv');
   res.setHeader('Content-Disposition', 'attachment; filename="student-attendance-summary.csv"');

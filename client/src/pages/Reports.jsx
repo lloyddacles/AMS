@@ -29,6 +29,7 @@ const MARK_LEGEND = [
   { status: 'late', label: 'Late', mark: 'L' },
   { status: 'excused', label: 'Excused', mark: 'X' },
   { status: 'absent', label: 'Absent', mark: 'A' },
+  { status: 'none', label: 'Not on list', mark: '—' },
 ];
 const MARK_LABEL = Object.fromEntries(MARK_LEGEND.map((m) => [m.status, m.mark]));
 
@@ -446,10 +447,14 @@ export default function Reports() {
                     <tr key={s.id}>
                       <td className="sticky-col strong">{s.lastName}, {s.firstName}</td>
                       {matrix.events.map((e) => {
-                        const status = matrix.records[`${e.id}:${s.id}`];
+                        const key = `${e.id}:${s.id}`;
+                        const offList = matrix.excluded?.[key];
+                        const status = matrix.records[key];
                         return (
                           <td key={e.id} className="cell-mark">
-                            {status ? (
+                            {offList ? (
+                              <span className="mark mark-none" title="Not on the attendee list for this event">—</span>
+                            ) : status ? (
                               <span className={`mark mark-${status}`} title={status}>{MARK_LABEL[status] || status[0].toUpperCase()}</span>
                             ) : (
                               <span className="mark mark-absent" title="absent">A</span>

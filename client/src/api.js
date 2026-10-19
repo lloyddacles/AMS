@@ -83,6 +83,10 @@ export const api = {
     return request(`/events${qs ? `?${qs}` : ''}`);
   },
   getEvent: (id) => request(`/events/${id}`),
+  getEventAttendees: (id) => request(`/events/${id}/attendees`),
+  setEventAttendees: (id, { studentIds, attending }) =>
+    request(`/events/${id}/attendees`, { method: 'POST', body: { studentIds, attending } }),
+  resetEventAttendees: (id) => request(`/events/${id}/attendees/reset`, { method: 'POST' }),
   archiveEvent: (id) => request(`/events/${id}/archive`, { method: 'POST' }),
   unarchiveEvent: (id) => request(`/events/${id}/unarchive`, { method: 'POST' }),
   getScanPack: (id) => request(`/events/${id}/scan-pack`),

@@ -132,6 +132,18 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_attendance_event ON attendance(event_id);
   CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
 
+  -- Per-event attendee list: a row here means the student does NOT attend the
+  -- event. No rows for an event = everyone attends (the default).
+  CREATE TABLE IF NOT EXISTS event_exclusions (
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    excluded_at TEXT NOT NULL DEFAULT (datetime('now')),
+    excluded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (event_id, student_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_exclusions_event ON event_exclusions(event_id);
+  CREATE INDEX IF NOT EXISTS idx_exclusions_student ON event_exclusions(student_id);
+
   CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,

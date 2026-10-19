@@ -259,8 +259,8 @@ export async function evaluateLowCheckins() {
     [date]
   );
   if (!events.length) return false;
-  const total = (await get('SELECT COUNT(*) AS c FROM students')).c;
-  if (!total) return false;
+  const hasStudents = (await get('SELECT COUNT(*) AS c FROM students')).c;
+  if (!hasStudents) return false;
   const now = new Date();
   let created = false;
   for (const e of events) {
@@ -269,8 +269,18 @@ export async function evaluateLowCheckins() {
     if (!start) continue;
     const sinceMin = (now.getTime() - start.getTime()) / 60000;
     if (sinceMin < LOW_CHECKIN_GRACE_MIN) continue;
-    const end = eventEnd(e);
+    // Only events that actually have an end can be "over"; a missing end time
+    // makes eventEnd() resolve to midnight, which would always skip here.
+    const end = e.endTime ? eventEnd(e) : null;
     if (end && now > end) continue;
+    // Attendee list size for this event (everyone minus the excluded).
+    const total = (
+      await get(
+        `SELECT (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions WHERE event_id = ?) AS c`,
+        [e.id]
+      )
+    ).c;
+    if (!total) continue;
     const attended = (
       await get(
         `SELECT COUNT(*) AS c FROM attendance WHERE event_id = ? AND status IN ('early','on-time','late','present')`,
@@ -301,30 +311,42 @@ export async function generateDailySummary() {
   if (existing) return false;
   const events = await all('SELECT id, name, report_summary AS reportSummary FROM events WHERE event_date = ?', [day]);
   if (!events.length) return false;
-  const totalStudents = (await get('SELECT COUNT(*) AS c FROM students')).c;
+  if (!(await get('SELECT COUNT(*) AS c FROM students')).c) return false;
   let attended = 0;
+  let expected = 0;
   const lines = [];
   for (const e of events) {
-    let a;
+    let summary = null;
     if (e.reportSummary) {
       try {
-        a = JSON.parse(e.reportSummary).attended;
+        summary = JSON.parse(e.reportSummary);
       } catch {
-        a = undefined;
+        summary = null;
       }
     }
-    if (a === undefined) {
-      a = (
-        await get(
-          `SELECT COUNT(*) AS c FROM attendance WHERE event_id = ? AND status IN ('early','on-time','late','present')`,
-          [e.id]
-        )
-      ).c;
-    }
+    // Attendee list for the event: the closed summary's numbers when available,
+    // otherwise the live roster size.
+    const roster = summary && Number.isFinite(summary.totalStudents)
+      ? summary.totalStudents
+      : (
+          await get(
+            `SELECT (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions WHERE event_id = ?) AS c`,
+            [e.id]
+          )
+        ).c;
+    const a = summary && Number.isFinite(summary.attended)
+      ? summary.attended
+      : (
+          await get(
+            `SELECT COUNT(*) AS c FROM attendance WHERE event_id = ? AND status IN ('early','on-time','late','present')`,
+            [e.id]
+          )
+        ).c;
     attended += a;
-    lines.push(`${e.name}: ${a}/${totalStudents}`);
+    expected += roster;
+    lines.push(`${e.name}: ${a}/${roster}`);
   }
-  const total = events.length * totalStudents;
+  const total = expected;
   const rate = total ? Math.round((attended / total) * 100) : 0;
   const body = `${events.length} event(s) · attended ${attended}/${total} (${rate}%)\n${lines.slice(0, 5).join('\n')}`;
   return createNotification({

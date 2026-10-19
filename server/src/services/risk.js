@@ -1,5 +1,6 @@
 import { all } from '../db.js';
 import { displayStatus, absentCutoff, isAttendedStatus, todayInTz } from '../classify.js';
+import { exclusionsByEvent } from './roster.js';
 
 // Transparent attendance-risk model.
 //
@@ -96,6 +97,7 @@ export async function buildRiskModel() {
     recByStudent.get(r.studentId).set(r.eventId, r);
   }
   const cutoffs = new Map(events.map((e) => [e.id, absentCutoff(e)]));
+  const excluded = await exclusionsByEvent();
   const now = new Date();
   const today = todayInTz();
 
@@ -115,6 +117,9 @@ export async function buildRiskModel() {
     let lastAttendedDate = null;
     const seq = [];
     for (const e of events) {
+      // Off this event's attendee list: it is not part of the student's record.
+      const out = excluded.get(e.id);
+      if (out && out.has(s.id)) continue;
       const cls = classify(e, recs.get(e.id));
       seq.push(cls);
       if (cls === 'excused') excused += 1;
@@ -124,7 +129,7 @@ export async function buildRiskModel() {
         lastAttendedDate = e.event_date;
       } else if (cls === 'absent') absent += 1;
     }
-    const total = events.length;
+    const total = seq.length;
     const recent = seq.slice(-Math.min(RECENT_WINDOW, total));
     const recentMiss = recent.filter((c) => c === 'absent').length;
     let streak = 0;

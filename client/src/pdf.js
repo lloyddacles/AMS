@@ -97,7 +97,7 @@ export function exportEventPdf(event, rows, summary) {
       r.studentNo,
       `${r.lastName}, ${r.firstName}`,
       r.course || '—',
-      classificationLabel(r.classification),
+      r.attending === false ? 'Not attending' : classificationLabel(r.classification),
       r.method || '—',
       fmtTime(r.checkedInAt),
       fmtTime(r.checkedOutAt),

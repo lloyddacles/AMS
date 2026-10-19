@@ -6,6 +6,14 @@ import { logAudit } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
 import { notifyEventOpened, notifyEventClosed, notifyEventReopened } from '../services/notifications.js';
 import { displayStatus, eventPhase } from '../classify.js';
+import {
+  exclusionsByEvent,
+  excludeStudents,
+  includeStudents,
+  clearExclusions,
+  attendeeList,
+  attendeeStats,
+} from '../services/roster.js';
 import { config } from '../config.js';
 
 const router = Router();
@@ -19,7 +27,7 @@ const selectFields = `e.id, e.name, e.description, e.location,
   e.archived AS archived, e.archived_at AS archivedAt,
   (SELECT name FROM terms t WHERE t.id = e.term_id) AS termName,
   (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
-  (SELECT COUNT(*) FROM students) AS totalStudents`;
+  (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS totalStudents`;
 
 function parseEvent(row) {
   if (!row) return row;
@@ -49,9 +57,13 @@ async function consolidate(eventId) {
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return null;
 
-  const records = await all('SELECT * FROM attendance WHERE event_id = ?', [eventId]);
+  // Students off the attendee list are neither rolled in as absent nor counted.
+  const excluded = (await exclusionsByEvent([Number(eventId)])).get(Number(eventId)) || new Set();
+  const records = (await all('SELECT * FROM attendance WHERE event_id = ?', [eventId])).filter(
+    (r) => !excluded.has(r.student_id)
+  );
   const byStudent = new Map(records.map((r) => [r.student_id, r]));
-  const students = await all('SELECT id FROM students');
+  const students = (await all('SELECT id FROM students')).filter((s) => !excluded.has(s.id));
 
   const missing = students.filter((s) => !byStudent.has(s.id));
   if (missing.length) {
@@ -122,9 +134,70 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/:id', async (req, res) => {
-  const row = await getEvent(req.params.id);
-  if (!row) return res.status(404).json({ error: 'Event not found' });
-  res.json(row);
+  const event = await getEvent(req.params.id);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  res.json(event);
+});
+
+// Who attends this event. Every student is listed and flagged; no exclusions
+// recorded means everyone attends (the default).
+router.get('/:id/attendees', async (req, res) => {
+  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  res.json(await attendeeList(event.id));
+});
+
+// Add or remove students from the attendee list. Removing also drops any
+// check-in they already made for this event.
+router.post('/:id/attendees', async (req, res) => {
+  const { studentIds, attending = true } = req.body || {};
+  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  if (!Array.isArray(studentIds) || !studentIds.length) {
+    return res.status(400).json({ error: 'studentIds must be a non-empty array' });
+  }
+  if (studentIds.length > 5000) {
+    return res.status(400).json({ error: 'Too many students in one request (max 5000)' });
+  }
+  const ids = [...new Set(studentIds.map((n) => Number(n)))];
+  if (ids.some((n) => !Number.isInteger(n) || n <= 0)) {
+    return res.status(400).json({ error: 'studentIds must be a non-empty array of student ids' });
+  }
+  const found = await get(
+    `SELECT COUNT(*) AS c FROM students WHERE id IN (${ids.map(() => '?').join(',')})`,
+    ids
+  );
+  if (found.c !== ids.length) return res.status(400).json({ error: 'One or more studentIds do not exist' });
+  const changed = attending
+    ? await includeStudents({ eventId: event.id, studentIds: ids })
+    : await excludeStudents({ eventId: event.id, studentIds: ids, userId: req.user.id });
+  const list = await attendeeList(event.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.attendees',
+    entity: 'event',
+    entityId: event.id,
+    detail: `${attending ? 'Added' : 'Removed'} ${changed} · ${list.attending}/${list.totalStudents} attending`,
+  });
+  res.json({ ...list, changed });
+});
+
+// Everyone attends again (clears all exclusions for the event).
+router.post('/:id/attendees/reset', async (req, res) => {
+  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const changed = await clearExclusions(event.id);
+  const list = await attendeeList(event.id);
+  if (changed) {
+    await logAudit({
+      user: req.user,
+      action: 'event.attendees',
+      entity: 'event',
+      entityId: event.id,
+      detail: `Restored all attendees · ${list.attending}/${list.totalStudents} attending`,
+    });
+  }
+  res.json({ ...list, changed });
 });
 
 // Offline scan pack: everything the scanner needs to validate and record scans
@@ -144,7 +217,17 @@ router.get('/:id/scan-pack', async (req, res) => {
     [req.params.id]
   );
   const settings = await getSettings();
-  res.json({ event, students, attendance, timezone: config.timezone, settings, generatedAt: nowUtc() });
+  // Offline scanners need the attendee list to keep rejecting off-list scans.
+  const excluded = (await exclusionsByEvent([event.id])).get(event.id) || new Set();
+  res.json({
+    event,
+    students,
+    attendance,
+    excludedStudentIds: [...excluded],
+    timezone: config.timezone,
+    settings,
+    generatedAt: nowUtc(),
+  });
 });
 
 router.post('/', async (req, res) => {

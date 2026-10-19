@@ -9,6 +9,7 @@ const TABLES = {
   students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'created_at'],
   events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'archived', 'archived_at', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id'],
   attendance: ['id', 'event_id', 'student_id', 'status', 'method', 'note', 'checked_in_at', 'checked_out_at', 'marked_by'],
+  event_exclusions: ['event_id', 'student_id', 'excluded_at', 'excluded_by'],
   settings: ['key', 'value', 'updated_at'],
   scan_receipts: ['client_scan_id', 'attendance_id', 'action', 'created_at'],
   audit_log: ['id', 'user_id', 'user_name', 'action', 'entity', 'entity_id', 'detail', 'created_at'],
@@ -17,8 +18,8 @@ const TABLES = {
 };
 
 // Delete children before parents; insert parents before children.
-const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance', 'scan_receipts', 'audit_log', 'settings', 'events', 'schedules', 'terms', 'students', 'users'];
-const INSERT_ORDER = ['users', 'terms', 'schedules', 'students', 'events', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
+const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance', 'scan_receipts', 'event_exclusions', 'audit_log', 'settings', 'events', 'schedules', 'terms', 'students', 'users'];
+const INSERT_ORDER = ['users', 'terms', 'schedules', 'students', 'events', 'event_exclusions', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
 
 export async function exportData() {
   const tables = {};
