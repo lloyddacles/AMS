@@ -152,6 +152,14 @@ export const api = {
   getBackupSummary: () => request('/admin/backup/summary'),
   restoreBackup: (backup) => request('/admin/restore', { method: 'POST', body: { backup } }),
 
+  correctionLookup: (studentNo, name) =>
+    request('/corrections/lookup', { method: 'POST', body: { studentNo, name }, auth: false }),
+  createCorrection: (data) => request('/corrections', { method: 'POST', body: data, auth: false }),
+  getCorrections: (status, params = {}) =>
+    request(`/corrections?${new URLSearchParams({ status, ...params }).toString()}`),
+  approveCorrection: (id, note) => request(`/corrections/${id}/approve`, { method: 'POST', body: { note } }),
+  rejectCorrection: (id, note) => request(`/corrections/${id}/reject`, { method: 'POST', body: { note } }),
+
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
   publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),

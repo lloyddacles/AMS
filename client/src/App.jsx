@@ -14,6 +14,8 @@ import Scanner from './pages/Scanner.jsx';
 import Live from './pages/Live.jsx';
 import Reports from './pages/Reports.jsx';
 import PublicCheckin from './pages/PublicCheckin.jsx';
+import Corrections from './pages/Corrections.jsx';
+import CorrectionsReview from './pages/CorrectionsReview.jsx';
 import About from './pages/About.jsx';
 import Profile from './pages/Profile.jsx';
 import Users from './pages/Users.jsx';
@@ -41,6 +43,8 @@ export default function App() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/checkin/:code" element={<PublicCheckin />} />
+      <Route path="/corrections" element={<Corrections />} />
+      <Route path="/corrections/review" element={<Protected><CorrectionsReview /></Protected>} />
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/students" element={<Protected><Students /></Protected>} />
       <Route path="/students/qr-sheet" element={<Protected><QrSheet /></Protected>} />

@@ -142,6 +142,23 @@ export async function notifyEventReopened(event) {
   });
 }
 
+// ---- Correction requests (student self-service) ----
+
+export async function notifyCorrectionRequested(correction, event, student) {
+  if (!correction || !event || !student) return false;
+  const reason = String(correction.reason || '').slice(0, 90);
+  const suffix = reason ? ` · "${reason}${reason.length >= 90 ? '…' : ''}"` : '';
+  return createNotification({
+    type: 'correction-requested',
+    title: `Correction requested: ${student.first_name} ${student.last_name}`,
+    body: `${event.name} · wants ${correction.requestedStatus ?? correction.requested_status}${suffix}`,
+    severity: 'info',
+    audience: 'all',
+    link: '/corrections/review',
+    dedupeKey: `correction-requested:${correction.id}`,
+  });
+}
+
 // ---- Background checks (run lazily while the app is in use) ----
 
 function dateInTzOffset(days, base = new Date()) {

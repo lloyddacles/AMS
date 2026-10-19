@@ -569,6 +569,7 @@ input:focus, select:focus, textarea:focus {
   background: var(--surface); border-radius: 16px; padding: 2rem; width: 100%; max-width: 400px;
   box-shadow: 0 20px 50px rgba(0, 0, 0, 0.3);
 }
+.public-page .login-card.wide-card { max-width: 640px; }
 .login-shell .login-card {
   max-width: none; border-radius: 0; box-shadow: none;
   padding: 2.75rem 2.5rem;

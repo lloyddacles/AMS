@@ -144,6 +144,25 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_exclusions_event ON event_exclusions(event_id);
   CREATE INDEX IF NOT EXISTS idx_exclusions_student ON event_exclusions(student_id);
 
+  -- Student-submitted attendance corrections: one pending request per student
+  -- per event; staff approve (updates attendance) or reject with a note.
+  CREATE TABLE IF NOT EXISTS attendance_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL REFERENCES events(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    requested_status TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    resolution_note TEXT,
+    reviewed_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    reviewed_at TEXT,
+    submitted_by TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_corrections_status ON attendance_corrections(status, created_at);
+  CREATE INDEX IF NOT EXISTS idx_corrections_event ON attendance_corrections(event_id);
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_corrections_pending ON attendance_corrections(event_id, student_id) WHERE status = 'pending';
+
   CREATE TABLE IF NOT EXISTS audit_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id INTEGER REFERENCES users(id) ON DELETE SET NULL,

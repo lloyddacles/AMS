@@ -5,7 +5,8 @@ import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
 import { notifyEventOpened, notifyEventClosed, notifyEventReopened } from '../services/notifications.js';
-import { displayStatus, eventPhase } from '../classify.js';
+import { eventPhase } from '../classify.js';
+import { rosterSnapshot, buildSummary } from '../services/eventSummary.js';
 import {
   exclusionsByEvent,
   excludeStudents,
@@ -59,16 +60,9 @@ async function consolidate(eventId) {
   if (!event) return null;
 
   // Students off the attendee list are neither rolled in as absent nor counted.
-  const excluded = (await exclusionsByEvent([Number(eventId)])).get(Number(eventId)) || new Set();
-  const records = (await all('SELECT * FROM attendance WHERE event_id = ?', [eventId])).filter(
-    (r) => !excluded.has(r.student_id)
-  );
-  const byStudent = new Map(records.map((r) => [r.student_id, r]));
-  const students = (await all('SELECT id FROM students')).filter((s) => !excluded.has(s.id));
-
-  const missing = students.filter((s) => !byStudent.has(s.id));
-  if (missing.length) {
-    const statements = missing.map((s) => ({
+  const snapshot = await rosterSnapshot(eventId);
+  if (snapshot.missing.length) {
+    const statements = snapshot.missing.map((s) => ({
       sql: `INSERT INTO attendance (event_id, student_id, status, method, note)
             VALUES (?, ?, 'absent', 'auto', 'Auto-consolidated on event close')`,
       args: [eventId, s.id],
@@ -76,31 +70,7 @@ async function consolidate(eventId) {
     await batch(statements, 'write');
   }
 
-  const counts = { early: 0, onTime: 0, late: 0, excused: 0, absent: 0 };
-  for (const r of records) {
-    const cls = displayStatus(event, r);
-    if (cls === 'early') counts.early += 1;
-    else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
-    else if (cls === 'late') counts.late += 1;
-    else if (cls === 'excused') counts.excused += 1;
-    else counts.absent += 1;
-  }
-  counts.absent += missing.length;
-
-  const attended = counts.early + counts.onTime + counts.late;
-  const totalStudents = students.length;
-  const summary = {
-    totalStudents,
-    attended,
-    early: counts.early,
-    onTime: counts.onTime,
-    late: counts.late,
-    excused: counts.excused,
-    absent: counts.absent,
-    rate: totalStudents ? Math.round((attended / totalStudents) * 100) : 0,
-    closedAt: nowUtc(),
-  };
-
+  const summary = buildSummary(event, snapshot, nowUtc());
   await run('UPDATE events SET status = ?, closed_at = ?, report_summary = ? WHERE id = ?', [
     'closed',
     summary.closedAt,

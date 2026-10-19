@@ -14,6 +14,7 @@ const links = [
   { to: '/events', label: 'Events', icon: '★' },
   { to: '/schedules', label: 'Schedules', icon: '❖' },
   { to: '/reports', label: 'Reports', icon: '▤' },
+  { to: '/corrections/review', label: 'Corrections', icon: '✎' },
   { to: '/terms', label: 'Terms', icon: '▦', roles: ['admin'] },
   { to: '/users', label: 'Staff', icon: '⚇', roles: ['admin'] },
   { to: '/audit', label: 'Audit Log', icon: '☰', roles: ['admin'] },

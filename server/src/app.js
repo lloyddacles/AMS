@@ -17,6 +17,7 @@ import adminRoutes from './routes/admin.js';
 import notificationRoutes from './routes/notifications.js';
 import termRoutes from './routes/terms.js';
 import scheduleRoutes from './routes/schedules.js';
+import correctionRoutes from './routes/corrections.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -53,6 +54,7 @@ app.use('/api/settings', settingsRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/terms', termRoutes);
 app.use('/api/schedules', scheduleRoutes);
+app.use('/api/corrections', correctionRoutes);
 app.use('/api/admin', adminRoutes);
 
 app.use((err, req, res, next) => {
