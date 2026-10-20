@@ -8,6 +8,7 @@ import Students from './pages/Students.jsx';
 import QrSheet from './pages/QrSheet.jsx';
 import Events from './pages/Events.jsx';
 import EventDetail from './pages/EventDetail.jsx';
+import PrintSheet from './pages/PrintSheet.jsx';
 import Schedules from './pages/Schedules.jsx';
 import Terms from './pages/Terms.jsx';
 import Scanner from './pages/Scanner.jsx';
@@ -51,6 +52,7 @@ export default function App() {
       <Route path="/live" element={<Protected><Live /></Protected>} />
       <Route path="/events" element={<Protected><Events /></Protected>} />
       <Route path="/events/:id" element={<Protected><EventDetail /></Protected>} />
+      <Route path="/events/:id/print-sheet" element={<Protected><PrintSheet /></Protected>} />
       <Route path="/events/:id/scan" element={<Protected><Scanner /></Protected>} />
       <Route path="/schedules" element={<Protected><Schedules /></Protected>} />
       <Route path="/terms" element={<Protected><AdminOnly><Terms /></AdminOnly></Protected>} />

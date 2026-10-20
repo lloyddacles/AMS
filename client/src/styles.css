@@ -678,6 +678,27 @@ input:focus, select:focus, textarea:focus {
 
 .scrim { position: fixed; inset: 0; background: rgba(15, 23, 42, 0.4); z-index: 15; }
 
+/* ---------- Printable attendance sheet ---------- */
+.print-sheet { padding: 1.5rem; }
+.sheet-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem;
+  margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 2px solid #e2e8f0;
+}
+.sheet-title { font-size: 1.15rem; font-weight: 700; }
+.sheet-meta { text-align: right; flex-shrink: 0; }
+.sheet-table th { background: #f8fafc; }
+.sheet-table th, .sheet-table td { border: 1px solid #cbd5e1; }
+.sheet-blank { min-width: 4.2cm; }
+.sheet-table td.sheet-blank { height: 9mm; }
+.sheet-blank.wide { min-width: 5.2cm; }
+.sheet-foot { margin-top: 1.25rem; }
+
+@media print {
+  .print-sheet { border: none; box-shadow: none; padding: 0; }
+  .sheet-table tr { break-inside: avoid; }
+  .sheet-table th, .sheet-table td { border-color: #64748b; }
+}
+
 /* ---------- Student ID cards (printable, ID size 85.6 × 54 mm) ---------- */
 .id-sheet {
   display: grid;

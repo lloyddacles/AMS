@@ -379,6 +379,13 @@ export default function EventDetail() {
           )}
           <button className="btn" onClick={() => exportCsv('event', id)}>Export CSV</button>
           <button className="btn" onClick={exportPdf}>Export PDF</button>
+          <button
+            className="btn"
+            title="Blank paper sign-in sheet for this event"
+            onClick={() => window.open(`/events/${id}/print-sheet`, '_blank')}
+          >
+            Print Sheet
+          </button>
         </div>
       </div>
 
