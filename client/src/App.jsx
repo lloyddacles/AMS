@@ -23,6 +23,13 @@ import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
 import MustChangePassword from './pages/MustChangePassword.jsx';
 import Backup from './pages/Backup.jsx';
+import { useStudent } from './studentAuth.jsx';
+import StudentLogin from './pages/portal/StudentLogin.jsx';
+import PortalLayout from './pages/portal/PortalLayout.jsx';
+import PortalDashboard from './pages/portal/PortalDashboard.jsx';
+import PortalHistory from './pages/portal/PortalHistory.jsx';
+import PortalCorrections from './pages/portal/PortalCorrections.jsx';
+import PortalAccount from './pages/portal/PortalAccount.jsx';
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -31,6 +38,13 @@ function Protected({ children }) {
   if (!user) return <Navigate to="/login" state={{ from: location }} replace />;
   if (user.mustChangePassword) return <MustChangePassword />;
   return <Layout>{children}</Layout>;
+}
+
+function StudentProtected({ children }) {
+  const { student, loading } = useStudent();
+  if (loading) return <LoadingScreen />;
+  if (!student) return <Navigate to="/portal/login" replace />;
+  return children;
 }
 
 function AdminOnly({ children }) {
@@ -46,6 +60,20 @@ export default function App() {
       <Route path="/checkin/:code" element={<PublicCheckin />} />
       <Route path="/corrections" element={<Corrections />} />
       <Route path="/corrections/review" element={<Protected><CorrectionsReview /></Protected>} />
+      <Route path="/portal/login" element={<StudentLogin />} />
+      <Route
+        path="/portal"
+        element={
+          <StudentProtected>
+            <PortalLayout />
+          </StudentProtected>
+        }
+      >
+        <Route index element={<PortalDashboard />} />
+        <Route path="history" element={<PortalHistory />} />
+        <Route path="corrections" element={<PortalCorrections />} />
+        <Route path="account" element={<PortalAccount />} />
+      </Route>
       <Route path="/" element={<Protected><Dashboard /></Protected>} />
       <Route path="/students" element={<Protected><Students /></Protected>} />
       <Route path="/students/qr-sheet" element={<Protected><QrSheet /></Protected>} />

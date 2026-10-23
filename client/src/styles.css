@@ -121,6 +121,11 @@ button { font-family: inherit; }
   background: var(--surface); border: 1px solid var(--border);
   border-radius: 999px; padding: 0.3rem 0.75rem;
 }
+.scanner-toggle {
+  display: inline-flex; align-items: center; gap: 0.4rem;
+  cursor: pointer; user-select: none;
+}
+.scanner-toggle input { margin: 0; cursor: pointer; }
 .public-clock { display: flex; justify-content: center; width: 100%; margin-bottom: 0.75rem; }
 .public-clock .live-clock__time { font-size: 1.5rem; }
 .public-clock .live-clock__ampm { font-size: 0.85rem; }
@@ -1169,3 +1174,58 @@ button.risk-pill { cursor: pointer; }
 @media (prefers-reduced-motion: reduce) {
   .sync-dot { animation: none; }
 }
+
+/* ---------- Student portal (self-service) ---------- */
+.portal { min-height: 100vh; display: flex; flex-direction: column; background: #f6f8fb; }
+.portal-top {
+  display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+  padding: 0.8rem 1.25rem; background: #fff; border-bottom: 1px solid var(--border);
+}
+.portal-brand { display: flex; align-items: center; gap: 0.55rem; }
+.portal-brand strong { display: block; font-size: 0.98rem; line-height: 1.1; }
+.portal-brand div span { display: block; font-size: 0.76rem; color: var(--muted); }
+.portal-user { display: flex; align-items: center; gap: 0.75rem; }
+.portal-user-info { display: flex; flex-direction: column; align-items: flex-end; }
+.portal-user-name { font-weight: 700; font-size: 0.9rem; }
+.portal-user-no { font-size: 0.76rem; color: var(--muted); }
+.portal-tabs {
+  display: flex; gap: 0.3rem; padding: 0 1.25rem; background: #fff;
+  border-bottom: 1px solid var(--border); overflow-x: auto;
+}
+.portal-tabs a {
+  padding: 0.65rem 0.9rem; font-size: 0.88rem; font-weight: 600; color: var(--muted);
+  border-bottom: 2px solid transparent; text-decoration: none; white-space: nowrap;
+}
+.portal-tabs a.active { color: var(--primary); border-bottom-color: var(--primary); }
+.portal-main { flex: 1; width: 100%; max-width: 1080px; margin: 0 auto; padding: 1.25rem; }
+.portal-page { display: flex; flex-direction: column; gap: 1rem; }
+.portal-section { padding: 1rem 1.15rem; }
+.section-title { font-size: 0.95rem; font-weight: 700; margin: 0 0 0.65rem; }
+.portal-chips { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.portal-note { font-size: 0.8rem; margin: 0.6rem 0 0; }
+.portal-upcoming { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.55rem; }
+.portal-upcoming li { padding: 0.6rem 0.7rem; border: 1px solid var(--border); border-radius: 10px; background: #f8fafc; }
+.portal-upcoming-name { display: flex; align-items: center; gap: 0.5rem; font-weight: 600; }
+.portal-filters { display: flex; gap: 0.5rem; flex-wrap: wrap; align-items: center; }
+.portal-filters input { flex: 1; min-width: 200px; }
+.portal-filters select { min-width: 150px; }
+.portal-reason { max-width: 260px; font-size: 0.85rem; }
+.portal-fields { margin: 0; display: flex; flex-direction: column; gap: 0.65rem; }
+.portal-fields div { display: flex; flex-direction: column; gap: 0.1rem; }
+.portal-fields dt { font-size: 0.76rem; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.portal-fields dd { margin: 0; font-weight: 600; }
+.portal-auth-switch { display: flex; justify-content: center; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.8rem; font-size: 0.86rem; text-align: center; }
+.linklike { background: none; border: none; padding: 0; font: inherit; color: var(--primary); cursor: pointer; }
+.linklike:hover { text-decoration: underline; }
+.portal .pager { justify-content: center; margin-top: 0.25rem; }
+
+/* Multi-day series */
+.series-strip { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+.series-chip {
+  display: flex; flex-direction: column; gap: 0.1rem; padding: 0.5rem 0.7rem;
+  border: 1px solid var(--border); border-radius: 10px; background: #f8fafc;
+  text-decoration: none; color: var(--text);
+}
+.series-chip.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.series-chip-date { font-weight: 600; }
+.series-chip-name { font-size: 0.78rem; color: var(--muted); }

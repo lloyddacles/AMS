@@ -5,6 +5,7 @@ import { displayStatus, absentCutoff } from '../classify.js';
 import { buildOverview, buildAtRisk, buildTrends, buildCompliance, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
 import { exclusionsByEvent, exclusionCountsByStudent } from '../services/roster.js';
+import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from '../services/series.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -206,36 +207,47 @@ router.get('/export', async (req, res) => {
 
   // default: per-student summary (within the selected date range / term)
   const ef = eventFilter(range);
-  const eventIds = (await all(`SELECT id FROM events${ef.sql}`, ef.params)).map((e) => e.id);
-  const totalEvents = eventIds.length;
+  const evRows = await all(`SELECT id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId FROM events${ef.sql}`, ef.params);
+  const seriesNames = await seriesNameMap();
+  const units = logicalUnits(evRows, seriesNames);
+  const totalEvents = units.length;
   let rows;
   if (totalEvents === 0) {
     rows = await all(
       `SELECT id, student_no, first_name, last_name, course, year_level, 0 AS attended
        FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
     );
-  } else {
-    const placeholders = eventIds.map(() => '?').join(',');
-    rows = await all(
-      `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level,
-              SUM(CASE WHEN a.status IN ('early','on-time','late','present') THEN 1 ELSE 0 END) AS attended
-       FROM students s LEFT JOIN attendance a
-         ON a.student_id = s.id AND a.event_id IN (${placeholders})
-       GROUP BY s.id ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-      eventIds
+    const csv = toCsv(
+      ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Events Attended', 'Total Events', 'Rate %'],
+      rows.map((r) => [r.student_no, r.first_name, r.last_name, r.course, r.year_level, 0, 0, 0])
     );
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="student-attendance-summary.csv"');
+    return res.send(csv);
   }
-  // Each student's denominator is the events they are on the attendee list for.
-  const excludedCounts = await exclusionCountsByStudent(eventIds);
+  const eventIds = evRows.map((e) => e.id);
+  const students = await all(
+    'SELECT id, student_no, first_name, last_name, course, year_level FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
+  );
+  const records = await all(
+    `SELECT event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt FROM attendance WHERE event_id IN (${eventIds.map(() => '?').join(',')})`,
+    eventIds
+  );
+  const excluded = await exclusionsByEvent(eventIds);
+  const now = new Date();
+  const ctx = { excluded, records: recordsByEvent(records), cutoffs: cutoffsFor(evRows), now };
   const csv = toCsv(
     ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Events Attended', 'Total Events', 'Rate %'],
-    rows.map((r) => {
-      const expected = Math.max(0, totalEvents - (excludedCounts.get(r.id) || 0));
-      return [
-        r.student_no, r.first_name, r.last_name, r.course, r.year_level,
-        r.attended, expected,
-        expected ? Math.round((Number(r.attended) / expected) * 100) : 0,
-      ];
+    students.map((s) => {
+      let attended = 0;
+      let expected = 0;
+      for (const u of units) {
+        const agg = aggregateUnit(unitEntries(u, s.id, ctx));
+        if (!agg.expected) continue;
+        expected += 1;
+        if (agg.status === 'early' || agg.status === 'on-time' || agg.status === 'present' || agg.status === 'late') attended += 1;
+      }
+      return [s.student_no, s.first_name, s.last_name, s.course, s.year_level, attended, expected, expected ? Math.round((attended / expected) * 100) : 0];
     })
   );
   res.setHeader('Content-Type', 'text/csv');

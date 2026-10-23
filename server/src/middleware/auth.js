@@ -1,10 +1,22 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
+import { get } from '../db.js';
 import { getUser } from '../services/users.js';
 
 export function signToken(user) {
   return jwt.sign(
     { id: user.id, username: user.username, name: user.name, role: user.role },
+    config.jwtSecret,
+    { expiresIn: '12h' }
+  );
+}
+
+// Student portal sessions are a separate token family: the `type` marker keeps
+// them from ever being accepted by staff routes (student ids and user ids are
+// independent sequences).
+export function signStudentToken(student) {
+  return jwt.sign(
+    { type: 'student', id: student.id, no: student.student_no },
     config.jwtSecret,
     { expiresIn: '12h' }
   );
@@ -20,6 +32,9 @@ export async function requireAuth(req, res, next) {
   try {
     payload = jwt.verify(token, config.jwtSecret);
   } catch {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
+  if (payload.type === 'student') {
     return res.status(401).json({ error: 'Invalid or expired session' });
   }
   try {
@@ -66,4 +81,34 @@ export function requireRole(...roles) {
     }
     next();
   };
+}
+
+// Guard for student-portal endpoints. Rejects staff tokens outright so the two
+// session families stay separate, and reloads the student row each request.
+export async function requireStudentAuth(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+  let payload;
+  try {
+    payload = jwt.verify(token, config.jwtSecret);
+  } catch {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
+  if (payload.type !== 'student') {
+    return res.status(401).json({ error: 'Invalid or expired session' });
+  }
+  try {
+    const student = await get(
+      `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
+              email, course, year_level AS yearLevel, section
+       FROM students WHERE id = ?`,
+      [payload.id]
+    );
+    if (!student) return res.status(401).json({ error: 'Account no longer exists' });
+    req.student = student;
+    next();
+  } catch (err) {
+    next(err);
+  }
 }

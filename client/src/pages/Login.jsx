@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { takeIdleLogout } from '../idle.js';
 import Footer from '../components/Footer.jsx';
 import LoginArt from '../components/LoginArt.jsx';
 
@@ -18,6 +19,13 @@ export default function Login() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [idleNotice, setIdleNotice] = useState(() => takeIdleLogout());
+
+  useEffect(() => {
+    if (!idleNotice) return undefined;
+    const timer = setTimeout(() => setIdleNotice(false), 8000);
+    return () => clearTimeout(timer);
+  }, [idleNotice]);
 
   useEffect(() => {
     if (user) navigate(location.state?.from?.pathname || '/', { replace: true });
@@ -67,6 +75,9 @@ export default function Login() {
             <h1>Welcome back</h1>
             <p>Sign in to your account to continue.</p>
           </div>
+          {idleNotice && (
+            <div className="alert alert-warn">Signed out due to inactivity after 5 minutes.</div>
+          )}
           <form onSubmit={handleSubmit} className="form">
             <label>
               Username
@@ -86,6 +97,9 @@ export default function Login() {
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
+          <div className="portal-auth-switch">
+            <Link to="/portal/login">Student? Sign in to the portal →</Link>
+          </div>
         </div>
       </div>
       <Footer compact />

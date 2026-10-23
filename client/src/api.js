@@ -1,4 +1,5 @@
 const TOKEN_KEY = 'attendance_token';
+const STUDENT_TOKEN_KEY = 'student_token';
 
 // In dev, Vite proxies "/api" to the local server. In production, set
 // VITE_API_URL to the deployed backend, e.g. https://your-api.onrender.com/api
@@ -13,6 +14,15 @@ export function setToken(token) {
   else localStorage.removeItem(TOKEN_KEY);
 }
 
+export function getStudentToken() {
+  return localStorage.getItem(STUDENT_TOKEN_KEY);
+}
+
+export function setStudentToken(token) {
+  if (token) localStorage.setItem(STUDENT_TOKEN_KEY, token);
+  else localStorage.removeItem(STUDENT_TOKEN_KEY);
+}
+
 function handleAuthError(status) {
   if (status !== 401) return;
   setToken(null);
@@ -21,12 +31,20 @@ function handleAuthError(status) {
   }
 }
 
-async function request(path, { method = 'GET', body, auth = true } = {}) {
-  const headers = { 'Content-Type': 'application/json' };
-  if (auth) {
-    const token = getToken();
-    if (token) headers.Authorization = `Bearer ${token}`;
+// Portal sessions fail soft outside the portal: never bounce a staff user to
+// the student login because an old student token expired.
+function handleStudentAuthError(status) {
+  if (status !== 401) return;
+  setStudentToken(null);
+  if (typeof window !== 'undefined' && window.location.pathname.startsWith('/portal')) {
+    window.location.assign('/portal/login');
   }
+}
+
+async function request(path, { method = 'GET', body, auth = true, token, student } = {}) {
+  const headers = { 'Content-Type': 'application/json' };
+  const bearer = token !== undefined ? token : auth ? getToken() : null;
+  if (bearer) headers.Authorization = `Bearer ${bearer}`;
   let res;
   try {
     res = await fetch(`${API_BASE}${path}`, {
@@ -51,13 +69,21 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   }
   const data = contentType.includes('application/json') ? await res.json() : null;
   if (!res.ok) {
-    if (auth) handleAuthError(res.status);
+    if (auth) {
+      if (student) handleStudentAuthError(res.status);
+      else handleAuthError(res.status);
+    }
     const message = (data && data.error) || `Request failed (${res.status})`;
     const err = new Error(message);
     err.status = res.status;
+    err.code = data && data.code;
     throw err;
   }
   return data;
+}
+
+function studentRequest(path, opts = {}) {
+  return request(path, { ...opts, token: getStudentToken(), student: true });
 }
 
 export const api = {
@@ -90,6 +116,11 @@ export const api = {
   resetEventAttendees: (id) => request(`/events/${id}/attendees/reset`, { method: 'POST' }),
   archiveEvent: (id) => request(`/events/${id}/archive`, { method: 'POST' }),
   unarchiveEvent: (id) => request(`/events/${id}/unarchive`, { method: 'POST' }),
+  getSeriesList: () => request('/events/series/list'),
+  createSeries: (data) => request('/events/series', { method: 'POST', body: data }),
+  getSeries: (id) => request(`/events/series/${id}`),
+  addContinuationDay: (eventId, data) => request(`/events/${eventId}/continue`, { method: 'POST', body: data }),
+  detachFromSeries: (seriesId, eventId) => request(`/events/series/${seriesId}/detach`, { method: 'POST', body: { eventId } }),
   getScanPack: (id) => request(`/events/${id}/scan-pack`),
   createEvent: (data) => request('/events', { method: 'POST', body: data }),
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: data }),
@@ -163,6 +194,18 @@ export const api = {
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
   publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),
+
+  studentSetup: (data) => request('/student/setup', { method: 'POST', body: data, auth: false }),
+  studentLogin: (data) => request('/student/login', { method: 'POST', body: data, auth: false }),
+  studentMe: () => studentRequest('/student/me'),
+  studentDashboard: () => studentRequest('/student/dashboard'),
+  studentAttendance: (params = {}) => studentRequest(`/student/attendance?${new URLSearchParams(params).toString()}`),
+  studentTerms: () => studentRequest('/student/terms'),
+  studentCorrections: (params = {}) => studentRequest(`/student/corrections?${new URLSearchParams(params).toString()}`),
+  studentCreateCorrection: (data) => studentRequest('/student/corrections', { method: 'POST', body: data }),
+  studentChangePassword: (currentPassword, newPassword) =>
+    studentRequest('/student/password', { method: 'POST', body: { currentPassword, newPassword } }),
+  resetStudentPortal: (id) => request(`/students/${id}/portal-reset`, { method: 'POST' }),
 };
 
 export async function exportCsv(type, eventId, extra = {}) {  const params = new URLSearchParams({ type });

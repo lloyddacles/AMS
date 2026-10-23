@@ -252,6 +252,22 @@ router.post('/regenerate-qr', requireRole('admin'), async (req, res) => {
   res.json({ count: targets.length, ids: targets.map((t) => t.id) });
 });
 
+// Clear a student's portal password (forgotten-password recovery: staff verify
+// the student's identity offline, then the student re-runs first-time setup).
+router.post('/:id/portal-reset', requireRole('admin'), async (req, res) => {
+  const row = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Student not found' });
+  await run('UPDATE students SET password_hash = NULL, password_set_at = NULL WHERE id = ?', [row.id]);
+  await logAudit({
+    user: req.user,
+    action: 'student.portal-reset',
+    entity: 'student',
+    entityId: row.id,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · portal password cleared`,
+  });
+  res.json({ ok: true });
+});
+
 router.post('/:id/regenerate-qr', async (req, res) => {
   const existing = await get('SELECT id FROM students WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Student not found' });

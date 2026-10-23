@@ -135,12 +135,29 @@ export async function recordsFor(studentId) {
 
 // Validate and store a new pending request (public endpoint).
 export async function createRequest({ eventId, studentNo, name, requestedStatus, reason }) {
+  const found = await findStudent({ studentNo, name });
+  if (found.error) return { error: found.error, status: found.status };
+  return createForStudent({
+    student: found.student,
+    eventId,
+    requestedStatus,
+    reason,
+  });
+}
+
+// Same validation and storage, for callers that already verified the student
+// (the authenticated portal passes the row from the session).
+export async function createForStudent({ student, eventId, requestedStatus, reason }) {
   const numericId = Number(eventId);
   if (!Number.isInteger(numericId) || numericId <= 0) return { error: 'eventId is required', status: 400 };
 
-  const found = await findStudent({ studentNo, name });
-  if (found.error) return { error: found.error, status: found.status };
-  const student = found.student;
+  // Accept both raw rows (public lookup) and the portal's aliased session row.
+  const row = {
+    id: student.id,
+    student_no: student.student_no ?? student.studentNo,
+    first_name: student.first_name ?? student.firstName,
+    last_name: student.last_name ?? student.lastName,
+  };
 
   const event = await get('SELECT * FROM events WHERE id = ?', [numericId]);
   if (!event) return { error: 'Event not found', status: 404 };
@@ -156,31 +173,31 @@ export async function createRequest({ eventId, studentNo, name, requestedStatus,
   if (text.length < 3 || text.length > 300) {
     return { error: 'Reason must be between 3 and 300 characters', status: 400 };
   }
-  if (await isExcluded(event.id, student.id)) {
+  if (await isExcluded(event.id, row.id)) {
     return { error: 'You are not on the attendee list for this event. Please contact the organizer.', status: 400 };
   }
   const pending = await get(
     "SELECT id FROM attendance_corrections WHERE event_id = ? AND student_id = ? AND status = 'pending'",
-    [event.id, student.id]
+    [event.id, row.id]
   );
   if (pending) return { error: 'You already have a pending request for this event.', status: 409 };
 
   const info = await run(
     `INSERT INTO attendance_corrections (event_id, student_id, requested_status, reason, submitted_by)
      VALUES (?, ?, ?, ?, ?)`,
-    [event.id, student.id, status, text, student.student_no]
+    [event.id, row.id, status, text, row.student_no]
   );
   const created = withClassification(
     await get(`SELECT ${correctionSelect} ${correctionJoins} WHERE c.id = ?`, [info.lastInsertRowid])
   );
   await logAudit({
-    user: { name: `${student.first_name} ${student.last_name} (${student.student_no})` },
+    user: { name: `${row.first_name} ${row.last_name} (${row.student_no})` },
     action: 'correction.request',
     entity: 'correction',
     entityId: created.id,
     detail: `${event.name} · wants ${status} · ${text}`,
   });
-  await notifyCorrectionRequested(created, event, student).catch(() => {});
+  await notifyCorrectionRequested(created, event, row).catch(() => {});
   return { correction: created };
 }
 
@@ -207,6 +224,32 @@ export async function listRequests({ status = 'pending', limit = 50, offset = 0 
 
 export async function getCorrection(id) {
   return withClassification(await get(`SELECT ${correctionSelect} ${correctionJoins} WHERE c.id = ?`, [id]));
+}
+
+// One student's own requests with per-status counts for their portal tabs.
+export async function listForStudent({ studentId, status = 'all', limit = 50, offset = 0 } = {}) {
+  const where = ['c.student_id = ?'];
+  const args = [studentId];
+  if (status && status !== 'all') {
+    where.push('c.status = ?');
+    args.push(String(status));
+  }
+  const clause = `WHERE ${where.join(' AND ')}`;
+  const rows = (await all(
+    `SELECT ${correctionSelect} ${correctionJoins} ${clause} ORDER BY c.id DESC LIMIT ? OFFSET ?`,
+    [...args, Number(limit) || 50, Number(offset) || 0]
+  )).map(withClassification);
+  const total = (await get(`SELECT COUNT(*) AS c FROM attendance_corrections c ${clause}`, args)).c;
+
+  const counts = { pending: 0, approved: 0, rejected: 0, all: 0 };
+  for (const row of await all(
+    'SELECT status, COUNT(*) AS c FROM attendance_corrections WHERE student_id = ? GROUP BY status',
+    [studentId]
+  )) {
+    counts[row.status] = row.c;
+    counts.all += row.c;
+  }
+  return { rows, total, counts };
 }
 
 // Apply an approved correction: put the student back on the attendee list if

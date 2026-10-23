@@ -1,10 +1,9 @@
 import { all, get } from '../db.js';
-import { displayStatus, absentCutoff } from '../classify.js';
-import { getSettings } from './settings.js';
 import { buildRiskModel } from './risk.js';
 import { exclusionsByEvent } from './roster.js';
+import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
 
-const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime';
+const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
 
 function bucket(counts, cls) {
@@ -56,6 +55,7 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
   const like = `%${search}%`;
   const ef = eventFilter({ from, to, termId });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
+  const seriesNames = await seriesNameMap();
   const students = await all(
     `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
             course, year_level AS yearLevel
@@ -68,32 +68,28 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
   const excluded = await exclusionsByEvent(events.map((e) => e.id));
 
-  const byStudent = new Map();
-  for (const r of records) {
-    if (!byStudent.has(r.studentId)) byStudent.set(r.studentId, new Map());
-    byStudent.get(r.studentId).set(r.eventId, r);
-  }
+  // A series counts once no matter how many days it spans; per-day statuses
+  // collapse into one logical status per student (see services/series.js).
+  const units = logicalUnits(events, seriesNames);
   const now = new Date();
-  const cutoffs = new Map(events.map((e) => [e.id, absentCutoff(e)]));
+  const ctx = {
+    excluded,
+    records: recordsByEvent(records),
+    cutoffs: cutoffsFor(events),
+    now,
+  };
 
-  const totalEvents = events.length;
+  const totalEvents = units.length;
   const rows = students.map((s) => {
     const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
-    const recs = byStudent.get(s.id) || new Map();
-    // Events this student is actually on the attendee list for — the real
-    // denominator for their rate, needed count and risk features.
+    // Logical events this student is actually on the attendee list for (any
+    // day) — the real denominator for their rate, needed count and risk.
     let expected = 0;
-    for (const e of events) {
-      const out = excluded.get(e.id);
-      if (out && out.has(s.id)) continue;
+    for (const u of units) {
+      const agg = aggregateUnit(unitEntries(u, s.id, ctx));
+      if (!agg.expected) continue;
       expected += 1;
-      const record = recs.get(e.id);
-      if (record) {
-        bucket(counts, displayStatus(e, record));
-      } else {
-        const cutoff = cutoffs.get(e.id);
-        if (cutoff && now > cutoff) counts.absent += 1;
-      }
+      if (agg.status) bucket(counts, agg.status);
     }
     const attended = counts.early + counts.onTime + counts.late;
     return {
@@ -219,6 +215,7 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
     `SELECT ${EVENT_COLS} FROM events${ef.sql} ORDER BY event_date, start_time`,
     ef.params
   );
+  const seriesNames = await seriesNameMap();
 
   const students = await all(
     `SELECT id FROM students WHERE (? = '' OR course = ?)`,
@@ -236,45 +233,38 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
       events.map((e) => e.id)
     );
   }
-  const byEvent = new Map();
-  for (const r of records) {
-    if (!byEvent.has(r.eventId)) byEvent.set(r.eventId, []);
-    byEvent.get(r.eventId).push(r);
-  }
 
+  // Series land in the bucket of their first day and count as one event.
+  const units = logicalUnits(events, seriesNames);
   const now = new Date();
+  const ctx = {
+    excluded,
+    records: recordsByEvent(records),
+    cutoffs: cutoffsFor(events),
+    now,
+  };
+
   const buckets = new Map();
   const order = [];
   let sumPresent = 0;
   let sumExcused = 0;
   let sumAbsent = 0;
 
-  for (const e of events) {
+  for (const u of units) {
     const counts = { early: 0, onTime: 0, late: 0, absent: 0, excused: 0 };
-    const out = excluded.get(e.id);
-    // Attendee list for this event (everyone in scope minus the excluded).
-    let roster = totalStudents;
-    if (out) {
-      for (const sid of out) if (studentIds.has(sid)) roster -= 1;
+    for (const sid of studentIds) {
+      const agg = aggregateUnit(unitEntries(u, sid, ctx));
+      if (!agg.expected || !agg.status) continue;
+      bucket(counts, agg.status);
     }
-    let recorded = 0;
-    for (const r of byEvent.get(e.id) || []) {
-      if (!studentIds.has(r.studentId)) continue;
-      if (out && out.has(r.studentId)) continue;
-      bucket(counts, displayStatus(e, r));
-      recorded += 1;
-    }
-    const cutoff = absentCutoff(e);
-    const decided = cutoff ? now > cutoff : false;
-    if (decided) counts.absent += Math.max(0, roster - recorded);
-
     const present = counts.early + counts.onTime + counts.late;
-    const key = granularity === 'event' ? String(e.id) : bucketKey(e.eventDate, granularity);
+
+    const key = granularity === 'event' ? u.key : bucketKey(u.date, granularity);
     if (!buckets.has(key)) {
       buckets.set(key, {
         key,
-        label: granularity === 'event' ? e.name : key,
-        date: e.eventDate,
+        label: granularity === 'event' ? u.name : key,
+        date: u.date,
         events: 0,
         present: 0,
         early: 0,
@@ -315,7 +305,7 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
     totalStudents,
     points,
     summary: {
-      events: events.length,
+      events: units.length,
       present: sumPresent,
       excused: sumExcused,
       absent: sumAbsent,

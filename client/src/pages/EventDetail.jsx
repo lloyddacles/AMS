@@ -73,6 +73,9 @@ export default function EventDetail() {
   const [busy, setBusy] = useState(false);
   const [excuseFor, setExcuseFor] = useState(null);
   const [excuseReason, setExcuseReason] = useState('');
+  const [seriesData, setSeriesData] = useState(null);
+  const [showContinue, setShowContinue] = useState(false);
+  const [continueForm, setContinueForm] = useState({ eventDate: '', startTime: '', endTime: '', name: '' });
 
   async function load() {
     try {
@@ -87,6 +90,11 @@ export default function EventDetail() {
       setStudents(studs);
       setAttendees(list);
       setAttendeeSel(new Set());
+      if (ev.seriesId) {
+        api.getSeries(ev.seriesId).then(setSeriesData).catch(() => {});
+      } else {
+        setSeriesData(null);
+      }
     } catch (e) {
       setError(e.message);
     }
@@ -203,6 +211,30 @@ export default function EventDetail() {
       const updated = await api.unarchiveEvent(id);
       setEvent(updated);
       flash('Event unarchived · back in the main list');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function addContinuation() {
+    if (!continueForm.eventDate) {
+      alert('Select a date for the continuation day');
+      return;
+    }
+    setBusy(true);
+    try {
+      const created = await api.addContinuationDay(id, {
+        eventDate: continueForm.eventDate,
+        startTime: continueForm.startTime || event.startTime,
+        endTime: continueForm.endTime || event.endTime,
+        name: continueForm.name || event.seriesName || event.name,
+      });
+      setShowContinue(false);
+      setContinueForm({ eventDate: '', startTime: '', endTime: '', name: '' });
+      flash('Continuation day added');
+      window.location.href = `/events/${created.id}`;
     } catch (e) {
       alert(e.message);
     } finally {
@@ -386,6 +418,11 @@ export default function EventDetail() {
           >
             Print Sheet
           </button>
+          {event.status === 'active' && (
+            <button className="btn" onClick={() => setShowContinue(true)}>
+              Add Day (continuation)
+            </button>
+          )}
         </div>
       </div>
 
@@ -403,6 +440,25 @@ export default function EventDetail() {
         </div>
       ) : null}
 
+      {event.seriesId && seriesData && seriesData.days && seriesData.days.length > 1 && (
+        <div className="card">
+          <div className="card-head">
+            <h3>Multi-day series · {event.seriesName || seriesData.name}</h3>
+            <span className="muted small">{seriesData.days.length} days</span>
+          </div>
+          <div className="series-strip">
+            {seriesData.days.map((d) => (
+              <Link key={d.id} to={`/events/${d.id}`} className={`series-chip${Number(d.id) === Number(id) ? ' active' : ''}`}>
+                <div className="series-chip-date">{d.eventDate}</div>
+                <div className="series-chip-name">{d.startTime || ''}</div>
+              </Link>
+            ))}
+          </div>
+          <p className="muted small" style={{ margin: '0.4rem 0 0' }}>
+            Reports count this series as one logical event. Attendee lists are copied to new continuation days.
+          </p>
+        </div>
+      )}
       {event.reportSummary && (
         <div className="card consolidate-card">
           <div className="card-head">
@@ -705,6 +761,41 @@ export default function EventDetail() {
       )}
 
       {showQr && <EventQrModal event={event} onClose={() => setShowQr(false)} />}
+
+      {showContinue && (
+        <Modal
+          title="Add continuation day"
+          onClose={() => setShowContinue(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setShowContinue(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={addContinuation} disabled={busy}>
+                {busy ? 'Adding…' : 'Add day'}
+              </button>
+            </>
+          }
+        >
+          <form className="form grid-form" onSubmit={(e) => { e.preventDefault(); addContinuation(); }}>
+            <label className="span-2">
+              Title (optional)
+              <input value={continueForm.name} onChange={(e) => setContinueForm({ ...continueForm, name: e.target.value })} placeholder={event.seriesName || event.name} />
+            </label>
+            <label className="span-2">
+              Date *
+              <input type="date" value={continueForm.eventDate} onChange={(e) => setContinueForm({ ...continueForm, eventDate: e.target.value })} required />
+            </label>
+            <label>
+              Start Time
+              <input type="time" value={continueForm.startTime} onChange={(e) => setContinueForm({ ...continueForm, startTime: e.target.value })} />
+            </label>
+            <label>
+              End Time
+              <input type="time" value={continueForm.endTime} onChange={(e) => setContinueForm({ ...continueForm, endTime: e.target.value })} />
+            </label>
+            <p className="muted small span-2">Attendee exclusions from the first day of this series will be copied to the new day.</p>
+          </form>
+        </Modal>
+      )}
       {excuseFor && (
         <Modal
           title={`Mark excused — ${excuseFor.firstName || ''} ${excuseFor.lastName || ''}`.trim()}

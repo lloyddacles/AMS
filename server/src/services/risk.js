@@ -1,6 +1,9 @@
 import { all } from '../db.js';
-import { displayStatus, absentCutoff, isAttendedStatus, todayInTz } from '../classify.js';
+import { todayInTz } from '../classify.js';
 import { exclusionsByEvent } from './roster.js';
+import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
+
+const EVENT_COLS_RISK = 'id, event_date, start_time, end_time, series_id AS seriesId';
 
 // Transparent attendance-risk model.
 //
@@ -71,8 +74,9 @@ function featureText(key, raw) {
 // means/weights used as the SHAP background) plus a per-student result.
 export async function buildRiskModel() {
   const events = await all(
-    'SELECT id, event_date, start_time, end_time FROM events ORDER BY event_date ASC, id ASC'
+    `SELECT ${EVENT_COLS_RISK} FROM events ORDER BY event_date ASC, id ASC`
   );
+  const seriesNames = await seriesNameMap();
   const students = await all(
     `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel
      FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
@@ -91,42 +95,36 @@ export async function buildRiskModel() {
   const records = await all(
     'SELECT event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt FROM attendance'
   );
-  const recByStudent = new Map();
-  for (const r of records) {
-    if (!recByStudent.has(r.studentId)) recByStudent.set(r.studentId, new Map());
-    recByStudent.get(r.studentId).set(r.eventId, r);
-  }
-  const cutoffs = new Map(events.map((e) => [e.id, absentCutoff(e)]));
   const excluded = await exclusionsByEvent();
   const now = new Date();
   const today = todayInTz();
 
-  const classify = (event, rec) => {
-    if (rec) return displayStatus(event, rec);
-    const cutoff = cutoffs.get(event.id);
-    return cutoff && now > cutoff ? 'absent' : null;
+  const units = logicalUnits(events, seriesNames);
+  const ctx = {
+    excluded,
+    records: recordsByEvent(records),
+    cutoffs: cutoffsFor(events),
+    now,
   };
 
   const rows = [];
   for (const s of students) {
-    const recs = recByStudent.get(s.id) || new Map();
     let attended = 0;
     let absent = 0;
     let late = 0;
     let excused = 0;
     let lastAttendedDate = null;
     const seq = [];
-    for (const e of events) {
-      // Off this event's attendee list: it is not part of the student's record.
-      const out = excluded.get(e.id);
-      if (out && out.has(s.id)) continue;
-      const cls = classify(e, recs.get(e.id));
+    for (const u of units) {
+      const agg = aggregateUnit(unitEntries(u, s.id, ctx));
+      if (!agg.expected) continue;
+      const cls = agg.status; // 'early','on-time','late','excused','absent', or null (pending)
       seq.push(cls);
       if (cls === 'excused') excused += 1;
-      else if (isAttendedStatus(cls)) {
+      else if (cls === 'early' || cls === 'on-time' || cls === 'present' || cls === 'late') {
         attended += 1;
         if (cls === 'late') late += 1;
-        lastAttendedDate = e.event_date;
+        lastAttendedDate = agg.attendedDate || u.date;
       } else if (cls === 'absent') absent += 1;
     }
     const total = seq.length;
@@ -210,5 +208,5 @@ export async function buildRiskModel() {
     return result;
   });
 
-  return { totalEvents: events.length, context, byStudent, students: list };
+  return { totalEvents: units.length, context, byStudent, students: list };
 }

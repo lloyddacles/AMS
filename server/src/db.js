@@ -90,6 +90,8 @@ const SCHEMA = `
     year_level TEXT,
     section TEXT,
     qr_token TEXT NOT NULL UNIQUE,
+    password_hash TEXT,
+    password_set_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -106,6 +108,16 @@ const SCHEMA = `
     archived INTEGER NOT NULL DEFAULT 0,
     archived_at TEXT,
     require_student_confirm INTEGER NOT NULL DEFAULT 0,
+    auto_confirm INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Multi-day / continuation events: several events (one per day) share a
+  -- series and are counted as ONE logical event in reports and stats.
+  CREATE TABLE IF NOT EXISTS event_series (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 
@@ -289,16 +301,20 @@ async function doInit() {
   await executeMultiple('PRAGMA foreign_keys = ON;');
   await executeMultiple(SCHEMA);
   await ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('events', 'auto_confirm', 'auto_confirm INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('events', 'closed_at', 'closed_at TEXT');
   await ensureColumn('events', 'report_summary', 'report_summary TEXT');
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
+  await ensureColumn('students', 'password_hash', 'password_hash TEXT');
+  await ensureColumn('students', 'password_set_at', 'password_set_at TEXT');
   await ensureColumn('users', 'avatar', 'avatar TEXT');
   await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
   await ensureColumn('users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('notifications', 'data', 'data TEXT');
   await ensureColumn('events', 'term_id', 'term_id INTEGER');
   await ensureColumn('events', 'schedule_id', 'schedule_id INTEGER');
+  await ensureColumn('events', 'series_id', 'series_id INTEGER');
   await ensureColumn('events', 'archived', 'archived INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('events', 'archived_at', 'archived_at TEXT');
   await ensureColumn('terms', 'min_attendance', 'min_attendance INTEGER NOT NULL DEFAULT 80');
@@ -308,6 +324,7 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_attendance_student ON attendance(student_id);
     CREATE INDEX IF NOT EXISTS idx_events_term ON events(term_id);
     CREATE INDEX IF NOT EXISTS idx_events_schedule ON events(schedule_id);
+    CREATE INDEX IF NOT EXISTS idx_events_series ON events(series_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
   `);
 }

@@ -24,10 +24,13 @@ router.use(requireAuth);
 const selectFields = `e.id, e.name, e.description, e.location,
   e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime,
   e.checkin_code AS checkinCode, e.status, e.require_student_confirm AS requireStudentConfirm,
+  e.auto_confirm AS autoConfirm,
   e.closed_at AS closedAt, e.report_summary AS reportSummary, e.created_at AS createdAt,
   e.term_id AS termId, e.schedule_id AS scheduleId,
-  e.archived AS archived, e.archived_at AS archivedAt,
+  e.archived AS archived, e.archived_at AS archivedAt, e.series_id AS seriesId,
   (SELECT name FROM terms t WHERE t.id = e.term_id) AS termName,
+  (SELECT name FROM event_series s WHERE s.id = e.series_id) AS seriesName,
+  (SELECT COUNT(*) FROM events e2 WHERE e2.series_id = e.series_id) AS seriesDayCount,
   (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
   (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS totalStudents`;
 
@@ -41,7 +44,15 @@ function parseEvent(row) {
       reportSummary = null;
     }
   }
-  return { ...row, archived: Number(row.archived) ? 1 : 0, reportSummary, phase: eventPhase(row) };
+  return {
+    ...row,
+    archived: Number(row.archived) ? 1 : 0,
+    reportSummary,
+    phase: eventPhase(row),
+    seriesId: row.seriesId || null,
+    seriesName: row.seriesName || null,
+    seriesDayCount: Number(row.seriesDayCount) || 0,
+  };
 }
 
 function getEvent(id) {
@@ -233,13 +244,13 @@ router.get('/:id/scan-pack', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, termId, scheduleId } = req.body || {};
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body || {};
   if (!name || !eventDate) {
     return res.status(400).json({ error: 'Event name and date are required' });
   }
   const info = await run(
-    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, term_id, schedule_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name.trim(),
       description || null,
@@ -250,6 +261,7 @@ router.post('/', async (req, res) => {
       newToken(),
       status || 'active',
       requireStudentConfirm ? 1 : 0,
+      autoConfirm ? 1 : 0,
       termId || null,
       scheduleId || null,
     ]
@@ -269,7 +281,7 @@ router.post('/', async (req, res) => {
 router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, termId, scheduleId } = req.body || {};
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body || {};
   const nextName = String(name ?? existing.name).trim();
   const nextDate = String(eventDate ?? existing.event_date).trim();
   if (!nextName || !nextDate) {
@@ -283,7 +295,7 @@ router.put('/:id', async (req, res) => {
   await run(
     `UPDATE events SET name = ?, description = ?, location = ?, event_date = ?,
       start_time = ?, end_time = ?, status = ?, archived = ?, archived_at = ?,
-      require_student_confirm = ?, term_id = ?, schedule_id = ? WHERE id = ?`,
+      require_student_confirm = ?, auto_confirm = ?, term_id = ?, schedule_id = ? WHERE id = ?`,
     [
       nextName,
       description ?? existing.description,
@@ -295,6 +307,7 @@ router.put('/:id', async (req, res) => {
       nextArchived,
       nextArchivedAt,
       requireStudentConfirm === undefined ? existing.require_student_confirm : (requireStudentConfirm ? 1 : 0),
+      autoConfirm === undefined ? existing.auto_confirm : (autoConfirm ? 1 : 0),
       termId === undefined ? existing.term_id : (termId || null),
       scheduleId === undefined ? existing.schedule_id : (scheduleId || null),
       req.params.id,
@@ -399,6 +412,118 @@ router.post('/:id/unarchive', async (req, res) => {
     detail: event.name,
   });
   res.json(event);
+});
+
+
+// List all event series with their days.
+router.get('/series/list', async (req, res) => {
+  const rows = await all(
+    `SELECT s.id, s.name, s.created_at AS createdAt,
+            (SELECT COUNT(*) FROM events e WHERE e.series_id = s.id) AS dayCount
+     FROM event_series s
+     ORDER BY s.id DESC`
+  );
+  res.json(rows);
+});
+
+// Create a new series from existing events (or start empty).
+router.post('/series', async (req, res) => {
+  const { name, eventIds = [] } = req.body || {};
+  if (!name || !String(name).trim()) return res.status(400).json({ error: 'Series name is required' });
+  const info = await run('INSERT INTO event_series (name, created_by) VALUES (?, ?)', [String(name).trim(), req.user.id]);
+  const seriesId = info.lastInsertRowid;
+  if (Array.isArray(eventIds) && eventIds.length) {
+    const ids = [...new Set(eventIds.map((n) => Number(n)))];
+    const inPlaceholders = ids.map(() => '?').join(',');
+    const conflicts = await get(
+      `SELECT COUNT(*) AS c FROM events WHERE id IN (${inPlaceholders}) AND series_id IS NOT NULL`,
+      ids
+    );
+    if (conflicts.c) return res.status(400).json({ error: 'One or more events already belong to a series' });
+    for (const eid of ids) {
+      await run('UPDATE events SET series_id = ? WHERE id = ?', [seriesId, eid]);
+    }
+  }
+  const days = await all(
+    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ORDER BY e.event_date, e.id`,
+    [seriesId]
+  );
+  await logAudit({ user: req.user, action: 'event.series.create', entity: 'series', entityId: String(seriesId), detail: name.trim() });
+  res.status(201).json({ id: seriesId, name: name.trim(), days: days.map(parseEvent) });
+});
+
+// Add a continuation day to an existing series.
+router.post('/:id/continue', async (req, res) => {
+  const existing = await getEvent(req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Event not found' });
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId } = req.body || {};
+  if (!eventDate) return res.status(400).json({ error: 'Date is required for the continuation day' });
+  let seriesId = existing.seriesId;
+  let seriesName = existing.seriesName;
+  if (!seriesId) {
+    const info = await run('INSERT INTO event_series (name, created_by) VALUES (?, ?)', [existing.name, req.user.id]);
+    seriesId = info.lastInsertRowid;
+    seriesName = existing.name;
+    await run('UPDATE events SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
+  }
+  const info2 = await run(
+    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id, series_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      name?.trim() || seriesName,
+      description ?? existing.description,
+      location ?? existing.location,
+      eventDate,
+      startTime ?? existing.startTime,
+      endTime ?? existing.endTime,
+      newToken(),
+      status || 'active',
+      requireStudentConfirm === undefined ? existing.requireStudentConfirm : (requireStudentConfirm ? 1 : 0),
+      autoConfirm === undefined ? existing.autoConfirm : (autoConfirm ? 1 : 0),
+      termId === undefined ? existing.termId : (termId || null),
+      existing.scheduleId,
+      seriesId,
+    ]
+  );
+  const newId = info2.lastInsertRowid;
+  const first = await get('SELECT id FROM events WHERE series_id = ? ORDER BY event_date, id LIMIT 1', [seriesId]);
+  if (first) {
+    const exclusions = await all('SELECT student_id AS studentId, excluded_by AS excludedBy FROM event_exclusions WHERE event_id = ?', [first.id]);
+    if (exclusions.length) {
+      await batch(
+        exclusions.map((x) => ({
+          sql: 'INSERT OR IGNORE INTO event_exclusions (event_id, student_id, excluded_by) VALUES (?, ?, ?)',
+          args: [newId, x.studentId, x.excludedBy || req.user.id],
+        })),
+        'write'
+      );
+    }
+  }
+  const created = await getEvent(newId);
+  await logAudit({ user: req.user, action: 'event.series.continue', entity: 'event', entityId: String(newId), detail: `${seriesName} · ${eventDate}` });
+  res.status(201).json(created);
+});
+
+// Get all days in a series.
+router.get('/series/:id', async (req, res) => {
+  const series = await get('SELECT * FROM event_series WHERE id = ?', [req.params.id]);
+  if (!series) return res.status(404).json({ error: 'Series not found' });
+  const days = await all(
+    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ORDER BY e.event_date, e.id`,
+    [req.params.id]
+  );
+  res.json({ id: series.id, name: series.name, days: days.map(parseEvent) });
+});
+
+// Detach an event from its series.
+router.post('/series/:id/detach', async (req, res) => {
+  const { eventId } = req.body || {};
+  if (!eventId) return res.status(400).json({ error: 'eventId required' });
+  const ev = await get('SELECT id, series_id AS seriesId FROM events WHERE id = ?', [Number(eventId)]);
+  if (!ev || ev.seriesId !== Number(req.params.id)) return res.status(404).json({ error: 'Event not in this series' });
+  await run('UPDATE events SET series_id = NULL WHERE id = ?', [ev.id]);
+  await logAudit({ user: req.user, action: 'event.series.detach', entity: 'event', entityId: String(ev.id), detail: String(req.params.id) });
+  res.json({ ok: true });
 });
 
 router.delete('/:id', async (req, res) => {

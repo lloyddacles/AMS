@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState } from 'react';
 import { api, getToken, setToken } from './api.js';
+import { markIdleLogout, useIdleLogout } from './idle.js';
 
 const AuthContext = createContext(null);
 const USER_KEY = 'attendance_user';
@@ -70,6 +71,15 @@ export function AuthProvider({ children }) {
     setUser(next);
     saveCachedUser(next);
   }
+
+  // Auto sign-out after 5 minutes without activity on the site.
+  useIdleLogout({
+    enabled: Boolean(user),
+    onLogout: () => {
+      logout();
+      markIdleLogout();
+    },
+  });
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, updateUser }}>{children}</AuthContext.Provider>

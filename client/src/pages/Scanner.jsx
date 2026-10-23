@@ -84,6 +84,20 @@ export default function Scanner() {
   const lastScan = useRef({ token: null, at: 0 });
   const confirmRef = useRef(null);
   const packRef = useRef(null); // { event, students, attendance, timezone, tokenMap }
+  // Auto-confirm preference: the event can turn it on for everyone; the staff
+  // member can still override it for this device/session.
+  const [autoPref, setAutoPref] = useState(() => {
+    try { return localStorage.getItem('scanner:autoConfirm') === '1'; } catch { return false; }
+  });
+  const [autoOverride, setAutoOverride] = useState(null);
+  const autoConfirm = autoOverride === null ? (!!event?.autoConfirm || autoPref) : autoOverride;
+  useEffect(() => {
+    try { localStorage.setItem('scanner:autoConfirm', autoPref ? '1' : '0'); } catch {}
+  }, [autoPref]);
+  function toggleAutoConfirm(next) {
+    setAutoPref(next);
+    setAutoOverride(next);
+  }
 
   function indexPack(pack) {
     const tokenMap = {};
@@ -134,6 +148,7 @@ export default function Scanner() {
   }
 
   useEffect(() => {
+    setAutoOverride(null);
     loadData();
     loadToday();
     return () => stopScanner();
@@ -365,10 +380,31 @@ export default function Scanner() {
   useEffect(() => {
     function onKey(e) {
       if (e.key === 'Escape') cancel();
+      // Enter confirms the pending scan without reaching for the mouse.
+      if (e.key === 'Enter' && !pendingScan?.requireStudentConfirm) {
+        const tag = e.target?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'BUTTON') return;
+        commit();
+      }
     }
     if (pendingScan) document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [pendingScan]);
+
+  // Auto-confirm: when the staff member is watching the queue they do not need
+  // to click "Confirm" for each student — the matched scan is committed on its
+  // own so the next student can scan right away. Kiosk mode (student number
+  // confirmation) is never auto-confirmed because the number must be typed.
+  useEffect(() => {
+    if (!pendingScan) return;
+    if (!autoConfirm) return;
+    if (pendingScan.requireStudentConfirm) return;
+    if (pendingScan.eventClosed || pendingScan.windowBlocked) return;
+    if (pendingScan.nextAction === 'already-complete') return;
+    if (committing) return;
+    const t = setTimeout(() => commit(), 200);
+    return () => clearTimeout(t);
+  }, [pendingScan, autoConfirm, committing]);
 
   const mode = event?.requireStudentConfirm ? 'kiosk' : 'staff';
   const offline = !online;
@@ -386,6 +422,16 @@ export default function Scanner() {
           <span className={`pill ${mode === 'kiosk' ? 'pill-blue' : 'pill-gray'}`}>
             {mode === 'kiosk' ? 'Kiosk mode · ID required' : 'Staff mode'}
           </span>
+          {!event?.requireStudentConfirm && (
+            <label className={`pill ${autoConfirm ? 'pill-green' : 'pill-gray'} scanner-toggle`}>
+              <input
+                type="checkbox"
+                checked={autoConfirm}
+                onChange={(e) => toggleAutoConfirm(e.target.checked)}
+              />
+              Auto-confirm
+            </label>
+          )}
           <span className="pill pill-green">Checked in: {count}</span>
         </div>
       </div>
@@ -439,6 +485,9 @@ export default function Scanner() {
               )}
               {pendingScan.eventClosed && <span className="pill pill-red">Check-in closed</span>}
               {pendingScan.offline && <span className="pill pill-amber">Offline · will sync</span>}
+              {autoConfirm && !pendingScan.requireStudentConfirm && !pendingScan.eventClosed && !pendingScan.windowBlocked && pendingScan.nextAction !== 'already-complete' && (
+                <span className="pill pill-green">Auto-confirming…</span>
+              )}
             </div>
             {pendingScan.nextAction === 'time-in' && !pendingScan.windowBlocked && pendingScan.lateAfterAt && (
               <div className="muted small">Late after {pendingScan.lateAfterAt}</div>

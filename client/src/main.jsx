@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './auth.jsx';
+import { StudentProvider } from './studentAuth.jsx';
 import { OfflineProvider } from './offline/OfflineProvider.jsx';
 import './styles.css';
 
@@ -30,7 +31,9 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <OfflineProvider>
         <AuthProvider>
-          <App />
+          <StudentProvider>
+            <App />
+          </StudentProvider>
         </AuthProvider>
       </OfflineProvider>
     </BrowserRouter>

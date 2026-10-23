@@ -14,6 +14,7 @@ const emptyForm = {
   endTime: '',
   status: 'active',
   requireStudentConfirm: false,
+  autoConfirm: false,
   termId: '',
 };
 
@@ -72,6 +73,7 @@ export default function Events() {
       endTime: ev.endTime || '',
       status: ev.status,
       requireStudentConfirm: !!ev.requireStudentConfirm,
+      autoConfirm: !!ev.autoConfirm,
       termId: ev.termId ? String(ev.termId) : '',
     });
     setFormError('');
@@ -206,6 +208,11 @@ export default function Events() {
                 )}
                 {ev.termName && <span className="pill pill-purple" style={{ marginLeft: '0.35rem' }}>{ev.termName}</span>}
                 {ev.requireStudentConfirm && <span className="pill pill-blue" style={{ marginLeft: '0.35rem' }}>Kiosk · ID</span>}
+                {ev.seriesId && Number(ev.seriesDayCount) > 0 && (
+                  <span className="pill pill-blue" style={{ marginLeft: '0.35rem' }}>
+                    {ev.seriesName || 'Series'} · {ev.seriesDayCount} day{Number(ev.seriesDayCount) === 1 ? '' : 's'}
+                  </span>
+                )}
               </p>
               <div className="rate-wrap">
                 <div className="rate-bar"><span style={{ width: `${rate}%` }} /></div>
@@ -299,6 +306,18 @@ export default function Events() {
                 onChange={(e) => setForm({ ...form, requireStudentConfirm: e.target.checked })}
               />
               <span>Require student number confirmation when scanning (anti-sharing / kiosk mode)</span>
+            </label>
+            <label className="checkbox span-2">
+              <input
+                type="checkbox"
+                checked={form.autoConfirm}
+                disabled={form.requireStudentConfirm}
+                onChange={(e) => setForm({ ...form, autoConfirm: e.target.checked })}
+              />
+              <span>
+                Auto-confirm scans (staff is monitoring — each matched scan is saved without clicking Confirm)
+                {form.requireStudentConfirm && ' · not available in kiosk mode'}
+              </span>
             </label>
             {formError && <div className="alert alert-error span-2">{formError}</div>}
           </form>

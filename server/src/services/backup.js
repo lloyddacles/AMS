@@ -6,8 +6,9 @@ const TABLES = {
   users: ['id', 'username', 'password_hash', 'name', 'role', 'avatar', 'active', 'must_change_password', 'created_at'],
   terms: ['id', 'name', 'start_date', 'end_date', 'min_attendance', 'is_current', 'created_at'],
   schedules: ['id', 'term_id', 'name', 'description', 'location', 'weekdays', 'start_time', 'end_time', 'start_date', 'end_date', 'require_student_confirm', 'active', 'last_generated_date', 'created_at'],
-  students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'created_at'],
-  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'archived', 'archived_at', 'require_student_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id'],
+  students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'password_hash', 'password_set_at', 'created_at'],
+  event_series: ['id', 'name', 'created_by', 'created_at'],
+  events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'archived', 'archived_at', 'require_student_confirm', 'auto_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id', 'series_id'],
   attendance: ['id', 'event_id', 'student_id', 'status', 'method', 'note', 'checked_in_at', 'checked_out_at', 'marked_by'],
   event_exclusions: ['event_id', 'student_id', 'excluded_at', 'excluded_by'],
   attendance_corrections: ['id', 'event_id', 'student_id', 'requested_status', 'reason', 'status', 'resolution_note', 'reviewed_by', 'reviewed_at', 'submitted_by', 'created_at'],
@@ -19,8 +20,8 @@ const TABLES = {
 };
 
 // Delete children before parents; insert parents before children.
-const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance_corrections', 'attendance', 'scan_receipts', 'event_exclusions', 'audit_log', 'settings', 'events', 'schedules', 'terms', 'students', 'users'];
-const INSERT_ORDER = ['users', 'terms', 'schedules', 'students', 'events', 'event_exclusions', 'attendance_corrections', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
+const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance_corrections', 'attendance', 'scan_receipts', 'event_exclusions', 'audit_log', 'settings', 'events', 'event_series', 'schedules', 'terms', 'students', 'users'];
+const INSERT_ORDER = ['users', 'terms', 'schedules', 'event_series', 'students', 'events', 'event_exclusions', 'attendance_corrections', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
 
 export async function exportData() {
   const tables = {};
