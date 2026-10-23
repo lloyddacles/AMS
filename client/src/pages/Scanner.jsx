@@ -410,29 +410,42 @@ export default function Scanner() {
   const offline = !online;
 
   return (
-    <div className="page">
-      <div className="page-head">
-        <div>
-          <Link to={`/events/${id}`} className="link back">← Event</Link>
-          <h2>Scan Check-in</h2>
-          <p className="muted">{event?.name}</p>
+    <div className="page scanner-page">
+      <div className="scanner-top">
+        <div className="scanner-heading">
+          <Link to={`/events/${id}`} className="link back">← Back to event</Link>
+          <div className="scanner-title-row">
+            <h2>Scan Check-in</h2>
+            <span className={`pill ${mode === 'kiosk' ? 'pill-blue' : 'pill-gray'}`}>
+              {mode === 'kiosk' ? 'Kiosk mode · ID required' : 'Staff mode'}
+            </span>
+          </div>
+          <p className="muted">{event?.name || 'Loading event…'}</p>
         </div>
-        <div className="head-actions">
+        <div className="scanner-meta">
           <LiveClock className="scanner-clock" showDate={false} />
-          <span className={`pill ${mode === 'kiosk' ? 'pill-blue' : 'pill-gray'}`}>
-            {mode === 'kiosk' ? 'Kiosk mode · ID required' : 'Staff mode'}
-          </span>
-          {!event?.requireStudentConfirm && (
-            <label className={`pill ${autoConfirm ? 'pill-green' : 'pill-gray'} scanner-toggle`}>
-              <input
-                type="checkbox"
-                checked={autoConfirm}
-                onChange={(e) => toggleAutoConfirm(e.target.checked)}
-              />
-              Auto-confirm
-            </label>
-          )}
-          <span className="pill pill-green">Checked in: {count}</span>
+          <div className="scanner-meta-tools">
+            {!event?.requireStudentConfirm && (
+              <label
+                className={`scanner-switch ${autoConfirm ? 'is-on' : ''}`}
+                title="Save matched scans without clicking Confirm"
+              >
+                <input
+                  type="checkbox"
+                  checked={autoConfirm}
+                  onChange={(e) => toggleAutoConfirm(e.target.checked)}
+                />
+                <span className="scanner-switch-track" aria-hidden="true">
+                  <span className="scanner-switch-thumb" />
+                </span>
+                <span>Auto-confirm</span>
+              </label>
+            )}
+            <span className="scanner-session" title="Scans recorded from this device in this session">
+              <span className="scanner-session-label">Session</span>
+              <strong>{count}</strong>
+            </span>
+          </div>
         </div>
       </div>
 
@@ -463,79 +476,37 @@ export default function Scanner() {
         </div>
       )}
 
-      {pendingScan && (
-        <div className={`confirm-card ${pendingScan.nextAction === 'already-complete' ? 'warn' : ''}`}>
-          <div className="confirm-info">
-            <div className="confirm-name">
-              {pendingScan.student?.lastName}, {pendingScan.student?.firstName}
+      <div className="scanner-grid">
+        <section className="card scanner-stage">
+          <div className="scanner-stage-head">
+            <div>
+              <h3>Camera</h3>
+              <p className="muted small">
+                {mode === 'kiosk'
+                  ? 'Student scans their QR, then types their student number to confirm.'
+                  : 'Point the camera at a student’s QR code.'}
+              </p>
             </div>
-            <div className="muted">
-              {pendingScan.student?.studentNo} · {pendingScan.student?.course || '—'} · {pendingScan.student?.yearLevel || '—'}
-            </div>
-            <div className="action-line">
-              {pendingScan.nextAction === 'time-in' && (
-                <span className={`pill ${STATUS_PILL[pendingScan.plannedStatus] || 'pill-green'}`}>
-                  Time In · {STATUS_LABEL[pendingScan.plannedStatus] || 'Present'}
-                </span>
-              )}
-              {pendingScan.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
-              {pendingScan.nextAction === 'already-complete' && <span className="pill pill-gray">Already timed out</span>}
-              {pendingScan.nextAction === 'time-out' && pendingScan.checkedInAt && (
-                <span className="muted small">in at {fmtTime(pendingScan.checkedInAt)}</span>
-              )}
-              {pendingScan.eventClosed && <span className="pill pill-red">Check-in closed</span>}
-              {pendingScan.offline && <span className="pill pill-amber">Offline · will sync</span>}
-              {autoConfirm && !pendingScan.requireStudentConfirm && !pendingScan.eventClosed && !pendingScan.windowBlocked && pendingScan.nextAction !== 'already-complete' && (
-                <span className="pill pill-green">Auto-confirming…</span>
-              )}
-            </div>
-            {pendingScan.nextAction === 'time-in' && !pendingScan.windowBlocked && pendingScan.lateAfterAt && (
-              <div className="muted small">Late after {pendingScan.lateAfterAt}</div>
-            )}
-            {pendingScan.nextAction === 'time-out' && !pendingScan.windowBlocked && pendingScan.timeoutOpensAt && (
-              <div className="muted small">Time-out opens at {pendingScan.timeoutOpensAt}</div>
-            )}
-            {pendingScan.windowMessage && <div className="alert alert-error">{pendingScan.windowMessage}</div>}
+            <span className={`scanner-live ${scanning ? 'is-live' : ''}`}>
+              <span className="scanner-live-dot" />
+              {scanning ? 'Live' : 'Idle'}
+            </span>
           </div>
 
-          {pendingScan.requireStudentConfirm && (
-            <div className="confirm-input">
-              <label>Confirm identity — enter student number</label>
-              <input
-                ref={confirmRef}
-                value={confirmValue}
-                onChange={(e) => setConfirmValue(e.target.value)}
-                onKeyDown={(e) => e.key === 'Enter' && commit()}
-                placeholder="e.g. 2024-0001"
-              />
-              <span className="muted small">Tip: the last 4 digits are accepted.</span>
-            </div>
-          )}
-
-          {commitError && <div className="alert alert-error">{commitError}</div>}
-
-          <div className="confirm-actions">
-            <button className="btn" onClick={cancel}>Cancel</button>
-            <button
-              className="btn btn-primary"
-              onClick={commit}
-              disabled={committing || pendingScan.eventClosed || pendingScan.windowBlocked || pendingScan.nextAction === 'already-complete'}
-            >
-              {committing
-                ? 'Recording…'
-                : pendingScan.nextAction === 'time-out'
-                  ? 'Confirm Time Out'
-                  : pendingScan.nextAction === 'already-complete'
-                    ? 'Already Completed'
-                    : 'Confirm Time In'}
-            </button>
+          <div className="reader-wrap">
+            <div id="reader" className="reader" />
+            {!scanning && (
+              <div className="reader-placeholder">
+                <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z" />
+                  <circle cx="12" cy="13" r="4" />
+                </svg>
+                <strong>Camera is off</strong>
+                <span>Start the camera to begin scanning student QR codes.</span>
+              </div>
+            )}
           </div>
-        </div>
-      )}
 
-      <div className="scanner-layout">
-        <div className="card">
-          <div id="reader" className="reader" />
           <div className="scanner-controls">
             {!scanning ? (
               <button className="btn btn-primary btn-block" onClick={startScanner} disabled={!packReady && !event}>
@@ -545,38 +516,164 @@ export default function Scanner() {
               <button className="btn btn-danger btn-block" onClick={stopScanner}>Stop Camera</button>
             )}
           </div>
-          <p className="muted small center">
-            {mode === 'kiosk'
-              ? 'Student scans their QR, then types their student number to confirm.'
-              : 'Point the camera at a student’s QR, then confirm the matched student.'}
-          </p>
-          {notice && <div className="alert alert-info">{notice}</div>}
-          {error && <div className="alert alert-error">{error}</div>}
-        </div>
 
-        <div className="card">
-          <h3>Today’s Check-ins</h3>
-          <ul className="list">
-            {today.length === 0 && <li className="muted small">No one has checked in yet today.</li>}
-            {today.map((t, i) => (
-              <li key={i} className="list-row">
-                <div>
-                  <div className="strong">{t.lastName}, {t.firstName}</div>
+          {notice && <div className="alert alert-success scan-alert">{notice}</div>}
+          {error && <div className="alert alert-error scan-alert">{error}</div>}
+        </section>
+
+        <aside className="scanner-side">
+          {pendingScan ? (
+            <div className={`scan-card ${pendingScan.nextAction === 'already-complete' ? 'is-warn' : ''} ${autoConfirm ? 'is-auto' : ''}`}>
+              <div className="scan-card-head">
+                <div className="scan-avatar">
+                  {initials(pendingScan.student?.firstName, pendingScan.student?.lastName)}
+                </div>
+                <div className="scan-identity">
+                  <div className="confirm-name">
+                    {pendingScan.student?.lastName}, {pendingScan.student?.firstName}
+                  </div>
                   <div className="muted small">
-                    {t.eventName}
-                    {t.pending ? ' · pending sync' : ''}
+                    {pendingScan.student?.studentNo} · {pendingScan.student?.course || '—'} · {pendingScan.student?.yearLevel || '—'}
                   </div>
                 </div>
-                <div className="scan-meta">
-                  <span className="muted small">{fmtTime(t.checkedInAt)}</span>
+              </div>
+
+              <div className="action-line">
+                {pendingScan.nextAction === 'time-in' && (
+                  <span className={`pill ${STATUS_PILL[pendingScan.plannedStatus] || 'pill-green'}`}>
+                    Time In · {STATUS_LABEL[pendingScan.plannedStatus] || 'Present'}
+                  </span>
+                )}
+                {pendingScan.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
+                {pendingScan.nextAction === 'already-complete' && <span className="pill pill-gray">Already timed out</span>}
+                {pendingScan.nextAction === 'time-out' && pendingScan.checkedInAt && (
+                  <span className="muted small">in at {fmtTime(pendingScan.checkedInAt)}</span>
+                )}
+                {pendingScan.eventClosed && <span className="pill pill-red">Check-in closed</span>}
+                {pendingScan.offline && <span className="pill pill-amber">Offline · will sync</span>}
+                {autoConfirm && !pendingScan.requireStudentConfirm && !pendingScan.eventClosed && !pendingScan.windowBlocked && pendingScan.nextAction !== 'already-complete' && (
+                  <span className="pill pill-green">Auto-confirming…</span>
+                )}
+              </div>
+
+              {pendingScan.nextAction === 'time-in' && !pendingScan.windowBlocked && pendingScan.lateAfterAt && (
+                <div className="muted small">Late after {pendingScan.lateAfterAt}</div>
+              )}
+              {pendingScan.nextAction === 'time-out' && !pendingScan.windowBlocked && pendingScan.timeoutOpensAt && (
+                <div className="muted small">Time-out opens at {pendingScan.timeoutOpensAt}</div>
+              )}
+              {pendingScan.windowMessage && <div className="alert alert-error">{pendingScan.windowMessage}</div>}
+
+              {pendingScan.requireStudentConfirm && (
+                <div className="confirm-input">
+                  <label>Confirm identity — enter student number</label>
+                  <input
+                    ref={confirmRef}
+                    value={confirmValue}
+                    onChange={(e) => setConfirmValue(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && commit()}
+                    placeholder="e.g. 2024-0001"
+                  />
+                  <span className="muted small">Tip: the last 4 digits are accepted.</span>
                 </div>
-              </li>
-            ))}
-          </ul>
-        </div>
+              )}
+
+              {commitError && <div className="alert alert-error">{commitError}</div>}
+
+              <div className="confirm-actions">
+                <button className="btn" onClick={cancel}>Cancel</button>
+                <button
+                  className="btn btn-primary"
+                  onClick={commit}
+                  disabled={committing || pendingScan.eventClosed || pendingScan.windowBlocked || pendingScan.nextAction === 'already-complete'}
+                >
+                  {committing
+                    ? 'Recording…'
+                    : pendingScan.nextAction === 'time-out'
+                      ? 'Confirm Time Out'
+                      : pendingScan.nextAction === 'already-complete'
+                        ? 'Already Completed'
+                        : 'Confirm Time In'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="card scanner-waiting">
+              <div className="scanner-waiting-icon">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <rect x="14" y="3" width="7" height="7" rx="1" />
+                  <rect x="3" y="14" width="7" height="7" rx="1" />
+                  <path d="M14 14h3v3M21 14v.01M14 21h.01M17 21h4v-4" />
+                </svg>
+              </div>
+              <strong>{scanning ? 'Ready to scan' : 'Waiting for camera'}</strong>
+              <p className="muted small">
+                {scanning
+                  ? 'Scanned students will appear here for confirmation.'
+                  : 'Start the camera to scan a student QR code.'}
+              </p>
+            </div>
+          )}
+
+          <section className="card scanner-feed">
+            <div className="feed-head">
+              <div>
+                <h3>Today’s Check-ins</h3>
+                <p className="muted small">Across all events today</p>
+              </div>
+              <span className="feed-count">{today.length}</span>
+            </div>
+            <ul className="feed-list">
+              {today.length === 0 && (
+                <li className="feed-empty">No one has checked in yet today.</li>
+              )}
+              {today.map((t, i) => (
+                <li key={t.id ?? i} className="feed-row">
+                  <span className={`feed-avatar ${statusTone(t.classification)}`}>
+                    {initials(t.firstName, t.lastName)}
+                  </span>
+                  <div className="feed-main">
+                    <div className="feed-name">{t.lastName}, {t.firstName}</div>
+                    <div className="muted small">
+                      {t.studentNo ? `${t.studentNo} · ` : ''}{t.eventName}
+                      {t.pending ? ' · pending sync' : ''}
+                    </div>
+                  </div>
+                  <div className="feed-end">
+                    {t.classification && (
+                      <span className={`pill ${STATUS_PILL[t.classification] || 'pill-gray'}`}>
+                        {STATUS_LABEL[t.classification] || t.classification}
+                      </span>
+                    )}
+                    <span className="muted small feed-time">{fmtTime(t.checkedInAt)}</span>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </aside>
       </div>
     </div>
   );
+}
+
+const TONE_CLASS = {
+  early: 'is-cyan',
+  'on-time': 'is-green',
+  present: 'is-blue',
+  late: 'is-amber',
+  absent: 'is-red',
+};
+
+function statusTone(status) {
+  return TONE_CLASS[status] || '';
+}
+
+function initials(first, last) {
+  const a = String(first || '').trim().charAt(0);
+  const b = String(last || '').trim().charAt(0);
+  return `${a}${b}`.toUpperCase() || '?';
 }
 
 function beep(duplicate) {
