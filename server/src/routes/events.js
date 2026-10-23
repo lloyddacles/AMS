@@ -14,7 +14,6 @@ import {
   setOnlyAttendees,
   clearExclusions,
   attendeeList,
-  attendeeStats,
 } from '../services/roster.js';
 import { config } from '../config.js';
 

@@ -136,11 +136,3 @@ export function eventPhase(event, now = new Date()) {
   return 'active';
 }
 
-export const CLASSIFY_LABEL = {
-  early: 'Early',
-  'on-time': 'On-time',
-  late: 'Late',
-  absent: 'Absent',
-  present: 'Present',
-  excused: 'Excused',
-};

@@ -7,7 +7,6 @@ import { dashboardFor, historyFor, listTerms } from '../services/portal.js';
 import { checkLogin, recordFailure, recordSuccess } from '../services/loginGuard.js';
 import { logAudit } from '../services/audit.js';
 import { DEFAULT_PASSWORD } from '../services/users.js';
-import { config } from '../config.js';
 
 const router = Router();
 

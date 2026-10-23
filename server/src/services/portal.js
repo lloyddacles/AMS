@@ -121,7 +121,7 @@ export async function dashboardFor(studentId) {
   const now = new Date();
   const units = logicalUnits(events, seriesNames);
   const sctx = {
-    excluded: new Map([...new Set()].map((x) => [x, new Set()])),
+    excluded: new Map(),
     records: recordsByEvent(
       Array.from(ctx.attByEvent.entries()).map(([eventId, a]) => ({ eventId, studentId, status: a.status, method: a.method, checked_in_at: a.checkedInAt }))
     ),
@@ -241,7 +241,6 @@ export async function historyFor(studentId, { limit = 25, offset = 0, termId = n
       status = hasOpen ? 'pending' : 'absent';
     }
     const primary = u.primary;
-    const att = ctx.attByEvent.get(agg.attendedDate ? u.events.find((x) => x.eventDate === agg.attendedDate)?.id || primary.id : primary.id);
     const bestDayId = agg.attendedDate
       ? (u.events.find((x) => String(x.eventDate) === String(agg.attendedDate))?.id || primary.id)
       : primary.id;
@@ -260,7 +259,7 @@ export async function historyFor(studentId, { limit = 25, offset = 0, termId = n
       startTime: primary.startTime,
       endTime: primary.endTime,
       archived: Number(primary.archived) ? 1 : 0,
-      eventStatus: primary.eventStatus || primary.status,
+      eventStatus: primary.status,
       status,
       checkedInAt: att2 ? att2.checkedInAt : null,
       method: att2 ? att2.method : null,

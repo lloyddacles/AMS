@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { buildOverview, buildAtRisk, buildTrends, buildCompliance, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
-import { exclusionsByEvent, exclusionCountsByStudent } from '../services/roster.js';
+import { exclusionsByEvent } from '../services/roster.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from '../services/series.js';
 
 const router = Router();

@@ -11,7 +11,6 @@ import {
   formatTzTime,
   isAttendedStatus,
   todayInTz,
-  parseUtc,
   eventPhase,
 } from '../classify.js';
 
