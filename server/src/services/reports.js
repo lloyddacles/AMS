@@ -1,6 +1,7 @@
 import { all, get } from '../db.js';
 import { buildRiskModel } from './risk.js';
 import { exclusionsByEvent } from './roster.js';
+import { getSettings } from './settings.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId';
