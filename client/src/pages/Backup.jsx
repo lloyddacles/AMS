@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { api, downloadBackup } from '../api.js';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const LABELS = {
@@ -10,6 +12,16 @@ const LABELS = {
   settings: 'Settings',
   scan_receipts: 'Offline scan receipts',
   audit_log: 'Audit entries',
+};
+
+const ICONS = {
+  users: { icon: 'shield', accent: 'blue' },
+  students: { icon: 'users', accent: 'purple' },
+  events: { icon: 'calendar', accent: 'green' },
+  attendance: { icon: 'check', accent: 'amber' },
+  settings: { icon: 'key', accent: 'blue' },
+  scan_receipts: { icon: 'repeat', accent: 'purple' },
+  audit_log: { icon: 'file', accent: 'green' },
 };
 
 export default function Backup() {
@@ -91,19 +103,21 @@ export default function Backup() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Backup &amp; Restore</h2>
-          <p className="muted">Download a full copy of the database, or restore from a backup file.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Data safety"
+        title="Backup &amp; Restore"
+        subtitle="Download a full copy of the database, or restore from a backup file."
+      />
 
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}
 
       <div className="card">
-        <div className="card-head">
-          <h3>Current data</h3>
+        <div className="dash-card-head">
+          <div>
+            <h3>Current data</h3>
+            <p className="muted small">Everything currently stored in the database.</p>
+          </div>
           {summary && (
             <span className="muted small">
               {summary.students} students · {summary.events} events · {summary.attendance} records
@@ -113,14 +127,20 @@ export default function Backup() {
         {loading && !summary ? (
           <Spinner label="Loading…" size="lg" variant="panel" />
         ) : (
-          <div className="backup-grid">
+          <div className="stat-grid">
             {summary &&
-              Object.entries(summary).map(([key, value]) => (
-                <div className="backup-stat" key={key}>
-                  <div className="backup-value">{value}</div>
-                  <div className="backup-label">{LABELS[key] || key}</div>
-                </div>
-              ))}
+              Object.entries(summary).map(([key, value]) => {
+                const meta = ICONS[key] || { icon: 'database', accent: 'blue' };
+                return (
+                  <StatCard
+                    key={key}
+                    icon={meta.icon}
+                    accent={meta.accent}
+                    label={LABELS[key] || key}
+                    value={value}
+                  />
+                );
+              })}
           </div>
         )}
         <div className="backup-actions">
@@ -131,7 +151,7 @@ export default function Backup() {
       </div>
 
       <div className="card">
-        <div className="card-head">
+        <div className="dash-card-head">
           <h3>Restore from backup</h3>
         </div>
         <div className="alert alert-warn">
@@ -148,7 +168,7 @@ export default function Backup() {
 
       {pending && (
         <div className="card">
-          <div className="card-head">
+          <div className="dash-card-head">
             <h3>Confirm restore</h3>
           </div>
           <p className="muted">

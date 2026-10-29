@@ -3,6 +3,8 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import Modal from '../components/Modal.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = {
@@ -127,38 +129,47 @@ export default function Events() {
 
   const list = view === 'archived' ? archivedEvents : events;
   const visible = termFilter ? list.filter((e) => String(e.termId) === termFilter) : list;
+  const activeCount = events.filter((e) => e.status === 'active').length;
+  const recurringCount = events.filter((e) => e.scheduleId).length;
+  const seriesCount = events.filter((e) => e.seriesId).length;
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>{view === 'archived' ? 'Archived Events' : 'Events'}</h2>
-          <p className="muted">
-            {visible.length} event{visible.length === 1 ? '' : 's'}
-            {termFilter ? ` in ${terms.find((t) => String(t.id) === termFilter)?.name || 'term'}` : ''}
-            {view === 'archived' ? ' · closed and filed away' : ''}
-          </p>
-        </div>
-        <div className="head-actions">
-          {terms.length > 0 && (
-            <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-              <option value="">All terms</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-              ))}
-            </select>
-          )}
-          <button className="btn btn-primary" onClick={openCreate}>+ Add Event</button>
-        </div>
+      <PageHeader
+        eyebrow="Attendance events"
+        title={view === 'archived' ? 'Archived Events' : 'Events'}
+        subtitle={
+          `${visible.length} event${visible.length === 1 ? '' : 's'}`
+          + (termFilter ? ` in ${terms.find((t) => String(t.id) === termFilter)?.name || 'term'}` : '')
+          + (view === 'archived' ? ' · closed and filed away' : '')
+        }
+        actions={<button className="btn btn-primary" onClick={openCreate}>+ Add Event</button>}
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="calendar" accent="blue" label="Total events" value={events.length} hint="In the main list" />
+        <StatCard icon="live" accent="green" label="Active" value={activeCount} hint="Check-in open" />
+        <StatCard icon="repeat" accent="purple" label="Recurring" value={recurringCount} hint="From schedules" />
+        <StatCard icon="layers" accent="amber" label="Series" value={seriesCount} hint="Multi-day events" />
       </div>
 
-      <div className="tabs">
-        <button className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>
-          Events <span className="tab-count">{events.length}</span>
-        </button>
-        <button className={view === 'archived' ? 'active' : ''} onClick={() => setView('archived')}>
-          Archived <span className="tab-count">{archivedEvents.length}</span>
-        </button>
+      <div className="listbar">
+        <div className="tabs">
+          <button className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>
+            Events <span className="tab-count">{events.length}</span>
+          </button>
+          <button className={view === 'archived' ? 'active' : ''} onClick={() => setView('archived')}>
+            Archived <span className="tab-count">{archivedEvents.length}</span>
+          </button>
+        </div>
+        {terms.length > 0 && (
+          <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+            <option value="">All terms</option>
+            {terms.map((t) => (
+              <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+            ))}
+          </select>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

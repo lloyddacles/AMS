@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { name: '', startDate: '', endDate: '', minAttendance: 80, isCurrent: false };
@@ -78,14 +80,30 @@ export default function Terms() {
     }
   }
 
+  const currentTerm = terms.find((t) => Number(t.isCurrent) === 1);
+  const eventTotal = terms.reduce((sum, t) => sum + (Number(t.eventCount) || 0), 0);
+  const scheduleTotal = terms.reduce((sum, t) => sum + (Number(t.scheduleCount) || 0), 0);
+
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Terms</h2>
-          <p className="muted">School terms or semesters. Group events and schedules by term.</p>
-        </div>
-        <button className="btn btn-primary" onClick={openCreate}>+ Add term</button>
+      <PageHeader
+        eyebrow="Academic calendar"
+        title="Terms"
+        subtitle="School terms or semesters. Group events and schedules by term."
+        actions={<button className="btn btn-primary" onClick={openCreate}>+ Add term</button>}
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="book" accent="blue" label="Terms" value={terms.length} hint="Defined in the system" />
+        <StatCard
+          icon="shield"
+          accent="green"
+          label="Current minimum"
+          value={currentTerm ? `${currentTerm.minAttendance ?? 80}%` : '—'}
+          hint={currentTerm ? currentTerm.name : 'No current term'}
+        />
+        <StatCard icon="calendar" accent="purple" label="Events" value={eventTotal} hint="Across all terms" />
+        <StatCard icon="layers" accent="amber" label="Schedules" value={scheduleTotal} hint="Across all terms" />
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

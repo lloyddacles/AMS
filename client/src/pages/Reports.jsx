@@ -5,6 +5,8 @@ import {
 } from 'recharts';
 import { api, exportCsv } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 import RiskExplainer from '../components/RiskExplainer.jsx';
 
@@ -134,6 +136,16 @@ export default function Reports() {
   }, [view, from, to, termId, setParams]);
 
   const courses = overview ? [...new Set(overview.students.map((s) => s.course).filter(Boolean))].sort() : [];
+  const perfectCount = overview ? overview.students.filter((s) => Number(s.rate) === 100).length : 0;
+  const belowEighty = overview ? overview.students.filter((s) => Number(s.rate) < 80).length : 0;
+
+  const VIEW_COPY = {
+    summary: 'Attendance totals and rates for each student in the selected range.',
+    matrix: 'A per-event grid showing every student’s mark at a glance.',
+    trends: 'Watch attendance rates move over days, weeks, months, or events.',
+    'at-risk': 'Students below the attendance threshold, with an explainable risk score.',
+    compliance: 'Who falls short of the required attendance for the selected term.',
+  };
 
   const sortedStudents = useMemo(() => {
     if (!overview) return [];
@@ -248,30 +260,31 @@ export default function Reports() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Reports</h2>
-          <p className="muted">Attendance summaries and per-event breakdowns.</p>
-        </div>
-        <div className="head-actions">
-          {view === 'at-risk' ? (
-            <>
-              <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>Export PDF</button>
-              <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
-            </>
-          ) : view === 'trends' ? (
-            <button className="btn" onClick={exportTrendsCsv} disabled={!trends}>Export CSV</button>
-          ) : view === 'compliance' ? (
-            <button className="btn" onClick={() => exportCsv('compliance', null, { search, course, ...rangeParams })} disabled={!compliance}>Export CSV</button>
-          ) : (
-            <>
-              <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
-              <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Export Summary CSV</button>
-              <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Export Matrix CSV</button>
-            </>
-          )}
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Insights"
+        title="Reports"
+        subtitle={VIEW_COPY[view] || VIEW_COPY.summary}
+        actions={
+          <>
+            {view === 'at-risk' ? (
+              <>
+                <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>Export PDF</button>
+                <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
+              </>
+            ) : view === 'trends' ? (
+              <button className="btn" onClick={exportTrendsCsv} disabled={!trends}>Export CSV</button>
+            ) : view === 'compliance' ? (
+              <button className="btn" onClick={() => exportCsv('compliance', null, { search, course, ...rangeParams })} disabled={!compliance}>Export CSV</button>
+            ) : (
+              <>
+                <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
+                <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Export Summary CSV</button>
+                <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Export Matrix CSV</button>
+              </>
+            )}
+          </>
+        }
+      />
 
       <div className="tabs">
         <button className={view === 'summary' ? 'active' : ''} onClick={() => setView('summary')}>Student Summary</button>
@@ -283,7 +296,7 @@ export default function Reports() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="toolbar report-filters">
+      <div className="toolbar report-filters filter-bar">
         {(view === 'summary' || view === 'at-risk' || view === 'compliance') && (
           <>
             <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
@@ -348,6 +361,14 @@ export default function Reports() {
               </label>
             </div>
           </div>
+          {overview && (
+            <div className="stat-grid">
+              <StatCard icon="users" accent="blue" label="Students" value={overview.students.length} hint="Matching filters" />
+              <StatCard icon="calendar" accent="purple" label="Events" value={overview.totalEvents} hint="In selected range" />
+              <StatCard icon="check" accent="green" label="Perfect attendance" value={perfectCount} hint="100% rate" />
+              <StatCard icon="alert" accent="amber" label="Below 80%" value={belowEighty} hint="Need follow-up" />
+            </div>
+          )}
           {!overview ? (
             <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
@@ -479,10 +500,10 @@ export default function Reports() {
           ) : (
             <>
               <div className="stat-grid">
-                <StatCard label="Events in range" value={trends.summary.events} accent="purple" />
-                <StatCard label="Present" value={trends.summary.present} accent="green" />
-                <StatCard label="Absent" value={trends.summary.absent} accent="amber" />
-                <StatCard label="Attendance rate" value={`${trends.summary.rate}%`} accent="blue" />
+                <StatCard icon="calendar" label="Events in range" value={trends.summary.events} accent="purple" />
+                <StatCard icon="check" label="Present" value={trends.summary.present} accent="green" />
+                <StatCard icon="alert" label="Absent" value={trends.summary.absent} accent="amber" />
+                <StatCard icon="chart" label="Attendance rate" value={`${trends.summary.rate}%`} accent="blue" />
               </div>
               <div className="card">
                 <div className="card-head">
@@ -675,10 +696,10 @@ export default function Reports() {
           ) : (
             <>
               <div className="stat-grid">
-                <StatCard label={compliance.termName ? `Minimum — ${compliance.termName}` : 'Minimum'} value={`${compliance.minimum}%`} accent="purple" />
-                <StatCard label="Non-compliant" value={compliance.below} accent="amber" />
-                <StatCard label="Total students" value={compliance.totalStudents} accent="blue" />
-                <StatCard label="Events in range" value={compliance.totalEvents} accent="green" />
+                <StatCard icon="shield" label={compliance.termName ? `Minimum — ${compliance.termName}` : 'Minimum'} value={`${compliance.minimum}%`} accent="purple" />
+                <StatCard icon="alert" label="Non-compliant" value={compliance.below} accent="amber" />
+                <StatCard icon="users" label="Total students" value={compliance.totalStudents} accent="blue" />
+                <StatCard icon="calendar" label="Events in range" value={compliance.totalEvents} accent="green" />
               </div>
               <div className="card table-card">
                 <table className="table">
@@ -730,15 +751,6 @@ export default function Reports() {
           )}
         </>
       )}
-    </div>
-  );
-}
-
-function StatCard({ label, value, accent }) {
-  return (
-    <div className={`stat-card accent-${accent}`}>
-      <div className="stat-value">{value}</div>
-      <div className="stat-label">{label}</div>
     </div>
   );
 }

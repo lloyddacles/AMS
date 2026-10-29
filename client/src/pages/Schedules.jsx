@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const WEEKDAYS = [
@@ -156,14 +158,24 @@ export default function Schedules() {
     }
   }
 
+  const activeCount = schedules.filter((s) => Number(s.active)).length;
+  const generatedCount = schedules.reduce((sum, s) => sum + (Number(s.eventCount) || 0), 0);
+  const termCount = new Set(schedules.map((s) => s.termId).filter(Boolean)).size;
+
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Class Schedules</h2>
-          <p className="muted">Define recurring sessions once, then generate all their events in a click.</p>
-        </div>
-        <button className="btn btn-primary" onClick={openCreate}>+ New schedule</button>
+      <PageHeader
+        eyebrow="Recurring sessions"
+        title="Class Schedules"
+        subtitle="Define recurring sessions once, then generate all their events in a click."
+        actions={<button className="btn btn-primary" onClick={openCreate}>+ New schedule</button>}
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="layers" accent="blue" label="Schedules" value={schedules.length} hint="Total defined" />
+        <StatCard icon="live" accent="green" label="Active" value={activeCount} hint="Generating events" />
+        <StatCard icon="calendar" accent="purple" label="Events generated" value={generatedCount} hint="Across all schedules" />
+        <StatCard icon="book" accent="amber" label="Terms used" value={termCount} hint="Linked to a term" />
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -194,10 +206,17 @@ export default function Schedules() {
             <tbody>
               {schedules.map((s) => (
                 <tr key={s.id}>
-                  <td className="strong">
-                    {s.name}
-                    {Number(s.active) === 0 && <span className="pill pill-gray" style={{ marginLeft: '0.5rem' }}>inactive</span>}
-                    {s.location && <div className="muted small">{s.location}</div>}
+                  <td>
+                    <div className="name-cell">
+                      <span className="mini-avatar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v18H3z M16 2v4 M8 2v4 M3 10h18" /></svg></span>
+                      <div>
+                        <div className="strong">
+                          {s.name}
+                          {Number(s.active) === 0 && <span className="pill pill-gray" style={{ marginLeft: '0.5rem' }}>inactive</span>}
+                        </div>
+                        {s.location ? <div className="muted small">{s.location}</div> : null}
+                      </div>
+                    </div>
                   </td>
                   <td>{s.termName || <span className="muted">—</span>}</td>
                   <td>{s.weekdayLabel || '—'}</td>

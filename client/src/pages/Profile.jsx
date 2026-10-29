@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import PageHeader from '../components/PageHeader.jsx';
 
 const MAX_DIM = 320;
 
@@ -84,12 +85,17 @@ export default function Profile() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Profile</h2>
-          <p className="muted">Manage your administrator account and profile picture.</p>
-        </div>
-      </div>
+      <PageHeader
+        eyebrow="Account"
+        title="Profile"
+        subtitle="Manage your administrator account and profile picture."
+        actions={
+          <>
+            <span className="pill pill-blue">{user?.role || 'staff'}</span>
+            <span className="pill pill-gray">@{user?.username || 'account'}</span>
+          </>
+        }
+      />
 
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}

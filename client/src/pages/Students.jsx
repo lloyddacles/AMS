@@ -6,6 +6,8 @@ import { composeIdCard } from '../idCard.js';
 import Modal from '../components/Modal.jsx';
 import BulkAddStudents from '../components/BulkAddStudents.jsx';
 import StudentIdCard from '../components/StudentIdCard.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '' };
@@ -193,48 +195,62 @@ export default function Students() {
     }
   }
 
+  const courseCount = new Set(students.map((s) => s.course).filter(Boolean)).size;
+  const sectionCount = new Set(students.map((s) => s.section).filter(Boolean)).size;
+  const yearCount = new Set(students.map((s) => s.yearLevel).filter(Boolean)).size;
+
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Students</h2>
-          <p className="muted">{students.length} student{students.length === 1 ? '' : 's'}</p>
-        </div>
-        <div className="head-actions">
-          <Link className="btn" to="/students/qr-sheet">Print ID Cards</Link>
-          <button className="btn" onClick={() => setBulkOpen(true)}>Bulk Add</button>
-          {isAdmin && (
-            <button className="btn" onClick={regenerateAll} disabled={regenBusy || students.length === 0}>
-              {regenBusy ? 'Working…' : 'Regenerate All QR'}
-            </button>
-          )}
-          <button className="btn btn-primary" onClick={openCreate}>+ Add Student</button>
-        </div>
+      <PageHeader
+        eyebrow="Directory"
+        title="Students"
+        subtitle={`${students.length} student${students.length === 1 ? '' : 's'} in view`}
+        actions={
+          <>
+            <Link className="btn" to="/students/qr-sheet">Print ID Cards</Link>
+            <button className="btn" onClick={() => setBulkOpen(true)}>Bulk Add</button>
+            {isAdmin && (
+              <button className="btn" onClick={regenerateAll} disabled={regenBusy || students.length === 0}>
+                {regenBusy ? 'Working…' : 'Regenerate All QR'}
+              </button>
+            )}
+            <button className="btn btn-primary" onClick={openCreate}>+ Add Student</button>
+          </>
+        }
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="users" accent="blue" label="Students" value={students.length} hint="Matching current search" />
+        <StatCard icon="book" accent="purple" label="Courses" value={courseCount} hint="Distinct courses" />
+        <StatCard icon="layers" accent="green" label="Sections" value={sectionCount} hint="Distinct sections" />
+        <StatCard icon="star" accent="amber" label="Year levels" value={yearCount} hint="Distinct year levels" />
       </div>
 
-      <div className="toolbar">
-        <input
-          className="search"
-          placeholder="Search by name, student no, or course…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-        <div className="toolbar-right">
-          {isAdmin && selected.size > 0 && (
-            <div className="sel-actions">
-              <span className="muted small">{selected.size} selected</span>
-              <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
-                {regenBusy ? 'Working…' : 'Regenerate QR'}
-              </button>
-              <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
-            </div>
-          )}
-          <label className="page-size">
-            Rows
-            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-            </select>
-          </label>
+      <div className="filter-bar">
+        <div className="toolbar">
+          <input
+            className="search"
+            placeholder="Search by name, student no, or course…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <div className="toolbar-right">
+            {isAdmin && selected.size > 0 && (
+              <div className="sel-actions">
+                <span className="muted small">{selected.size} selected</span>
+                <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
+                  {regenBusy ? 'Working…' : 'Regenerate QR'}
+                </button>
+                <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
+              </div>
+            )}
+            <label className="page-size">
+              Rows
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
+          </div>
         </div>
       </div>
 
@@ -285,7 +301,14 @@ export default function Students() {
                   </td>
                 )}
                 <td className="mono">{s.studentNo}</td>
-                <td className="strong">{s.lastName}, {s.firstName}</td>
+                <td>
+                  <div className="name-cell">
+                    <span className="mini-avatar">
+                      {(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}
+                    </span>
+                    <span className="strong">{s.lastName}, {s.firstName}</span>
+                  </div>
+                </td>
                 <td>{s.course || '—'}</td>
                 <td>{s.yearLevel || '—'}</td>
                 <td>{s.section || '—'}</td>

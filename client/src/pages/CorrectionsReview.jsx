@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const STATUS_PILL = {
@@ -110,11 +112,17 @@ export default function CorrectionsReview() {
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Correction Requests</h2>
-          <p className="muted">Students submit these themselves. Approving applies the change to attendance.</p>
-        </div>
+      <PageHeader
+        eyebrow="Review queue"
+        title="Correction Requests"
+        subtitle="Students submit these themselves. Approving applies the change to attendance."
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="clock" accent="amber" label="Pending" value={counts.pending ?? 0} hint="Awaiting review" />
+        <StatCard icon="check" accent="green" label="Approved" value={counts.approved ?? 0} hint="Change applied" />
+        <StatCard icon="alert" accent="red" label="Rejected" value={counts.rejected ?? 0} hint="Not granted" />
+        <StatCard icon="file" accent="blue" label="All requests" value={counts.all ?? 0} hint="Every status" />
       </div>
 
       <div className="tabs">

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../api.js';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const ACTION_LABEL = {
@@ -88,29 +90,38 @@ export default function AuditLog() {
   }, [search, entity, userId]);
 
   const pageCount = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const filterCount = [search, entity, userId].filter(Boolean).length;
 
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Audit Log</h2>
-          <p className="muted">A record of changes made to attendance, events, students, and accounts.</p>
-        </div>
+      <PageHeader
+        eyebrow="Security"
+        title="Audit Log"
+        subtitle="A record of changes made to attendance, events, students, and accounts."
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="file" accent="blue" label="Entries" value={total} hint="Matching current filters" />
+        <StatCard icon="clock" accent="purple" label="On this page" value={rows.length} hint={`Page ${page} of ${pageCount}`} />
+        <StatCard icon="filter" accent="green" label="Filters" value={filterCount} hint="Search, entity, user" />
+        <StatCard icon="users" accent="amber" label="Actors" value={users.length} hint="Accounts with activity" />
       </div>
 
-      <div className="toolbar">
-        <input className="search" placeholder="Search by user, action, or detail…" value={search} onChange={(e) => setSearch(e.target.value)} />
-        <select value={entity} onChange={(e) => setEntity(e.target.value)}>
-          <option value="">All entities</option>
-          <option value="attendance">Attendance</option>
-          <option value="event">Events</option>
-          <option value="student">Students</option>
-          <option value="user">Accounts</option>
-        </select>
-        <select value={userId} onChange={(e) => setUserId(e.target.value)}>
-          <option value="">All users</option>
-          {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
+      <div className="filter-bar">
+        <div className="toolbar">
+          <input className="search" placeholder="Search by user, action, or detail…" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <select value={entity} onChange={(e) => setEntity(e.target.value)}>
+            <option value="">All entities</option>
+            <option value="attendance">Attendance</option>
+            <option value="event">Events</option>
+            <option value="student">Students</option>
+            <option value="user">Accounts</option>
+          </select>
+          <select value={userId} onChange={(e) => setUserId(e.target.value)}>
+            <option value="">All users</option>
+            {users.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        </div>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}

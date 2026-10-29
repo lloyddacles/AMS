@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Modal from '../components/Modal.jsx';
+import PageHeader from '../components/PageHeader.jsx';
+import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { username: '', password: '', name: '', role: 'staff' };
@@ -98,14 +100,24 @@ export default function Users() {
     }
   }
 
+  const adminCount = users.filter((u) => u.role === 'admin').length;
+  const staffCount = users.filter((u) => u.role === 'staff').length;
+  const activeCount = users.filter((u) => Number(u.active)).length;
+
   return (
     <div className="page">
-      <div className="page-head">
-        <div>
-          <h2>Staff &amp; Admins</h2>
-          <p className="muted">Accounts that can sign in to AttendX.</p>
-        </div>
-        <button className="btn btn-primary" onClick={openCreate}>+ Add account</button>
+      <PageHeader
+        eyebrow="Access control"
+        title="Staff &amp; Admins"
+        subtitle="Accounts that can sign in to AttendX."
+        actions={<button className="btn btn-primary" onClick={openCreate}>+ Add account</button>}
+      />
+
+      <div className="stat-grid">
+        <StatCard icon="users" accent="blue" label="Accounts" value={users.length} hint="Total staff accounts" />
+        <StatCard icon="shield" accent="purple" label="Admins" value={adminCount} hint="Full access" />
+        <StatCard icon="key" accent="green" label="Staff" value={staffCount} hint="Attendance &amp; events" />
+        <StatCard icon="check" accent="amber" label="Active" value={activeCount} hint="Can sign in" />
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
@@ -127,8 +139,14 @@ export default function Users() {
             <tbody>
               {users.map((u) => (
                 <tr key={u.id}>
-                  <td className="strong">
-                    {u.name}{Number(u.id) === Number(me?.id) && <span className="pill pill-blue" style={{ marginLeft: '0.5rem' }}>you</span>}
+                  <td>
+                    <div className="name-cell">
+                      <span className="mini-avatar">{(u.name || '?').trim().split(/\s+/).map((p) => p[0]).slice(0, 2).join('')}</span>
+                      <span className="strong">
+                        {u.name}
+                        {Number(u.id) === Number(me?.id) && <span className="pill pill-blue" style={{ marginLeft: '0.5rem' }}>you</span>}
+                      </span>
+                    </div>
                   </td>
                   <td className="mono">{u.username}</td>
                   <td><span className={`pill ${u.role === 'admin' ? 'pill-purple' : 'pill-gray'}`}>{u.role}</span></td>
