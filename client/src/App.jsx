@@ -21,6 +21,7 @@ import About from './pages/About.jsx';
 import Profile from './pages/Profile.jsx';
 import Users from './pages/Users.jsx';
 import AuditLog from './pages/AuditLog.jsx';
+import Settings from './pages/Settings.jsx';
 import MustChangePassword from './pages/MustChangePassword.jsx';
 import Backup from './pages/Backup.jsx';
 import { useStudent } from './studentAuth.jsx';
@@ -84,6 +85,7 @@ export default function App() {
       <Route path="/events/:id/scan" element={<Protected><Scanner /></Protected>} />
       <Route path="/schedules" element={<Protected><Schedules /></Protected>} />
       <Route path="/terms" element={<Protected><AdminOnly><Terms /></AdminOnly></Protected>} />
+      <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />
       <Route path="/reports" element={<Protected><Reports /></Protected>} />
       <Route path="/about" element={<Protected><About /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />

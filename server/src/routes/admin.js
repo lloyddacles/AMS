@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { exportData, importData, backupSummary } from '../services/backup.js';
+import { runAutomation } from '../services/automation.js';
 import { logAudit } from '../services/audit.js';
 
 const router = Router();
@@ -24,6 +25,13 @@ router.get('/backup', async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Content-Disposition', `attachment; filename="attendx-backup-${stamp}.json"`);
   res.send(JSON.stringify(data, null, 2));
+});
+
+// Run lifecycle maintenance immediately (auto-close, auto-archive, alerts).
+// The same job runs on the daily Vercel cron and lazily on page loads.
+router.post('/automation/run', async (req, res) => {
+  const result = await runAutomation();
+  res.json(result);
 });
 
 // Replace all data with the contents of a previously downloaded backup.

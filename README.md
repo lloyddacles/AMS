@@ -152,14 +152,27 @@ database:
 
 1. **Database (Turso)** — create a database and copy its URL and auth token.
 2. **API project** — import this repo on Vercel, set **Root Directory** to
-   `server`, and add env vars `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`, and
-   `JWT_SECRET`. The Express app is detected and deployed as a function.
+   `server`, and add env vars `TURSO_DATABASE_URL`, `TURSO_AUTH_TOKEN`,
+   `JWT_SECRET`, and `CRON_SECRET` (a long random value). The Express app is
+   detected and deployed as a function.
 3. **Client project** — import this repo again, set **Root Directory** to
    `client`, and add `VITE_API_URL=https://<api-domain>/api`.
 4. **CORS** — set the API's `CLIENT_ORIGIN` to the client's URL and redeploy.
+5. **Automation** — `server/vercel.json` schedules `GET /api/cron` once a day.
+   Vercel sends `Authorization: Bearer <CRON_SECRET>`. On a Pro plan you can
+   make the schedule more frequent (for example `*/10 * * * *`). The same
+   maintenance job also runs lazily from the Dashboard and Live board, so
+   events still close promptly while the app is in use.
 
 The database schema and default admin account are created automatically on the
 first request.
+
+### Attendance policy
+
+Admins can tune the on-time window, late/absent cutoff, time-out window,
+auto-close grace, auto-archive age, low check-in alerts, and at-risk thresholds
+from **Settings** in the sidebar. Changes apply to new scans immediately; no
+redeploy is needed.
 
 ---
 
@@ -175,6 +188,8 @@ All endpoints are under `/api`. Authentication uses a Bearer JWT.
 | Attendance | `POST /attendance/scan`, `POST /attendance/lookup`, `/public/…` |
 | Reports    | `GET /reports/...` (CSV export)                                 |
 | Dashboard  | `GET /dashboard/stats`                                          |
+| Settings   | `GET/PUT /settings`                                             |
+| Maintenance| `GET/POST /cron`, `POST /admin/automation/run`                  |
 
 ---
 

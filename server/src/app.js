@@ -19,6 +19,8 @@ import termRoutes from './routes/terms.js';
 import scheduleRoutes from './routes/schedules.js';
 import correctionRoutes from './routes/corrections.js';
 import portalRoutes from './routes/portal.js';
+import cronRoutes from './routes/cron.js';
+import { getSettings, refreshSettingsIfStale } from './services/settings.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -35,11 +37,18 @@ app.use(express.json({ limit: '2mb' }));
 // Run schema setup + admin seeding once per instance, before handling requests.
 let ready = null;
 function bootstrap() {
-  if (!ready) ready = initDb().then(() => ensureAdmin());
+  // Load settings once so the synchronous classification policy cache is warm
+  // before the first authenticated request (including on a cold start).
+  if (!ready) ready = initDb().then(() => ensureAdmin()).then(() => getSettings());
   return ready;
 }
 app.use((req, res, next) => {
   bootstrap().then(() => next()).catch(next);
+});
+// Keep the synchronous classification cache fresh across warm serverless
+// instances without adding a query to every scan.
+app.use((req, res, next) => {
+  refreshSettingsIfStale().then(() => next()).catch(next);
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
@@ -58,6 +67,7 @@ app.use('/api/schedules', scheduleRoutes);
 app.use('/api/corrections', correctionRoutes);
 app.use('/api/student', portalRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/cron', cronRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;

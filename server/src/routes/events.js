@@ -5,8 +5,9 @@ import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
 import { getSettings } from '../services/settings.js';
 import { notifyEventOpened, notifyEventClosed, notifyEventReopened } from '../services/notifications.js';
-import { eventPhase } from '../classify.js';
-import { rosterSnapshot, buildSummary } from '../services/eventSummary.js';
+import { eventPhase, eventStart, eventEnd, displayStatus } from '../classify.js';
+import { consolidateEvent, nowUtc } from '../services/eventSummary.js';
+import { maybeRunAutomation } from '../services/automation.js';
 import {
   exclusionsByEvent,
   excludeStudents,
@@ -48,6 +49,9 @@ function parseEvent(row) {
     archived: Number(row.archived) ? 1 : 0,
     reportSummary,
     phase: eventPhase(row),
+    // UTC instants so any client timezone can render accurate countdowns.
+    startAt: eventStart(row)?.toISOString() || null,
+    endAt: eventEnd(row)?.toISOString() || null,
     seriesId: row.seriesId || null,
     seriesName: row.seriesName || null,
     seriesDayCount: Number(row.seriesDayCount) || 0,
@@ -58,41 +62,12 @@ function getEvent(id) {
   return get(`SELECT ${selectFields} FROM events e WHERE e.id = ?`, [id]).then(parseEvent);
 }
 
-// Current time as a SQLite-style UTC timestamp.
-function nowUtc() {
-  return new Date().toISOString().slice(0, 19).replace('T', ' ');
-}
-
-// Compute the final per-student classification for an event and persist any
-// missing students as absent, producing a locked-in summary for reporting.
-async function consolidate(eventId) {
-  const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
-  if (!event) return null;
-
-  // Students off the attendee list are neither rolled in as absent nor counted.
-  const snapshot = await rosterSnapshot(eventId);
-  if (snapshot.missing.length) {
-    const statements = snapshot.missing.map((s) => ({
-      sql: `INSERT INTO attendance (event_id, student_id, status, method, note)
-            VALUES (?, ?, 'absent', 'auto', 'Auto-consolidated on event close')`,
-      args: [eventId, s.id],
-    }));
-    await batch(statements, 'write');
-  }
-
-  const summary = buildSummary(event, snapshot, nowUtc());
-  await run('UPDATE events SET status = ?, closed_at = ?, report_summary = ? WHERE id = ?', [
-    'closed',
-    summary.closedAt,
-    JSON.stringify(summary),
-    eventId,
-  ]);
-  return summary;
-}
-
 // List events. By default archived events are hidden so the main section stays
 // focused on current work; pass ?archived=1 for the archive, ?archived=all for both.
 router.get('/', async (req, res) => {
+  // Cheap, throttled maintenance: close events that have ended so the list and
+  // dashboard stay accurate even when nobody clicked "Close" manually.
+  await maybeRunAutomation().catch(() => {});
   const { termId, archived } = req.query;
   const clauses = [];
   const params = [];
@@ -112,6 +87,82 @@ router.get('/', async (req, res) => {
     params
   );
   res.json(rows.map(parseEvent));
+});
+
+// Live command-center feed: open events plus per-event progress, status
+// breakdown and the most recent scans. One request powers the whole Live page.
+router.get('/live-board', async (req, res) => {
+  await maybeRunAutomation().catch(() => {});
+
+  const rows = await all(
+    `SELECT ${selectFields} FROM events e
+     WHERE e.archived = 0 AND e.status = 'active'
+     ORDER BY e.event_date ASC, e.start_time ASC, e.id ASC`
+  );
+  const events = rows.map(parseEvent);
+  if (!events.length) return res.json({ now: new Date().toISOString(), events: [] });
+
+  const ids = events.map((e) => e.id);
+  const records = await all(
+    `SELECT a.event_id AS eventId, a.student_id AS studentId, a.status, a.method,
+            a.checked_in_at AS checkedInAt, a.checked_out_at AS checkedOutAt,
+            s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName
+     FROM attendance a
+     JOIN students s ON s.id = a.student_id
+     WHERE a.event_id IN (${ids.map(() => '?').join(',')})
+     ORDER BY COALESCE(a.checked_in_at, a.checked_out_at, '') DESC, a.id DESC`,
+    ids
+  );
+
+  const byEvent = new Map();
+  for (const row of records) {
+    if (!byEvent.has(row.eventId)) byEvent.set(row.eventId, []);
+    byEvent.get(row.eventId).push(row);
+  }
+
+  const board = events.map((event) => {
+    const recs = byEvent.get(event.id) || [];
+    const counts = { early: 0, onTime: 0, late: 0, excused: 0, absent: 0 };
+    let attended = 0;
+    for (const r of recs) {
+      const cls = displayStatus(event, r);
+      if (cls === 'early') counts.early += 1;
+      else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
+      else if (cls === 'late') counts.late += 1;
+      else if (cls === 'excused') counts.excused += 1;
+      else counts.absent += 1;
+      if (cls === 'early' || cls === 'on-time' || cls === 'late' || cls === 'present') attended += 1;
+    }
+
+    const expected = Number(event.totalStudents) || 0;
+    // Records are created on close; until then, students with no record are
+    // the remaining absentees.
+    const accounted = attended + counts.excused + counts.absent;
+    counts.absent += Math.max(0, expected - accounted);
+
+    return {
+      ...event,
+      board: {
+        expected,
+        attended,
+        rate: expected ? Math.round((attended / expected) * 100) : 0,
+        ...counts,
+        lastScanAt: recs.find((r) => r.checkedInAt || r.checkedOutAt)?.checkedInAt || null,
+        recentScans: recs.slice(0, 6).map((r) => ({
+          studentId: r.studentId,
+          studentNo: r.studentNo,
+          firstName: r.firstName,
+          lastName: r.lastName,
+          status: displayStatus(event, r),
+          method: r.method,
+          checkedInAt: r.checkedInAt,
+          checkedOutAt: r.checkedOutAt,
+        })),
+      },
+    };
+  });
+
+  res.json({ now: new Date().toISOString(), events: board });
 });
 
 router.get('/:id', async (req, res) => {
@@ -343,7 +394,7 @@ router.post('/:id/regenerate-code', async (req, res) => {
 router.post('/:id/close', async (req, res) => {
   const existing = await get('SELECT id, status FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
-  const summary = await consolidate(req.params.id);
+  const summary = await consolidateEvent(req.params.id);
   const event = await getEvent(req.params.id);
   await logAudit({
     user: req.user,

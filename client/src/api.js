@@ -101,6 +101,7 @@ export const api = {
   regenerateStudentQr: (id) => request(`/students/${id}/regenerate-qr`, { method: 'POST' }),
   regenerateStudentQrBulk: (payload) => request('/students/regenerate-qr', { method: 'POST', body: payload }),
 
+  getLiveBoard: () => request('/events/live-board'),
   getEvents: (termId, opts = {}) => {
     const params = new URLSearchParams();
     if (termId) params.set('termId', termId);
@@ -182,6 +183,7 @@ export const api = {
 
   getBackupSummary: () => request('/admin/backup/summary'),
   restoreBackup: (backup) => request('/admin/restore', { method: 'POST', body: { backup } }),
+  runAutomation: () => request('/admin/automation/run', { method: 'POST' }),
 
   correctionLookup: (studentNo, name) =>
     request('/corrections/lookup', { method: 'POST', body: { studentNo, name }, auth: false }),

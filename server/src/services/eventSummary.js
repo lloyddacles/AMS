@@ -1,6 +1,11 @@
-import { get, all, run } from '../db.js';
+import { get, all, run, batch } from '../db.js';
 import { displayStatus } from '../classify.js';
 import { exclusionsByEvent } from './roster.js';
+
+// Current time as a SQLite-style UTC timestamp.
+export function nowUtc() {
+  return new Date().toISOString().slice(0, 19).replace('T', ' ');
+}
 
 // Roster-aware snapshot of an event's attendance: who attends, what is recorded
 // and who has no record yet (those become absent when the event closes).
@@ -43,6 +48,34 @@ export function buildSummary(event, snapshot, closedAt = null) {
     rate: totalStudents ? Math.round((attended / totalStudents) * 100) : 0,
   };
   if (closedAt) summary.closedAt = closedAt;
+  return summary;
+}
+
+// Close an event and consolidate attendance: every student without a record is
+// locked in as absent, and a final summary is stored for reporting. Shared by
+// the manual close route and the background automation worker.
+export async function consolidateEvent(eventId) {
+  const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
+  if (!event) return null;
+
+  // Students off the attendee list are neither rolled in as absent nor counted.
+  const snapshot = await rosterSnapshot(eventId);
+  if (snapshot.missing.length) {
+    const statements = snapshot.missing.map((s) => ({
+      sql: `INSERT INTO attendance (event_id, student_id, status, method, note)
+            VALUES (?, ?, 'absent', 'auto', 'Auto-consolidated on event close')`,
+      args: [eventId, s.id],
+    }));
+    await batch(statements, 'write');
+  }
+
+  const summary = buildSummary(event, snapshot, nowUtc());
+  await run('UPDATE events SET status = ?, closed_at = ?, report_summary = ? WHERE id = ?', [
+    'closed',
+    summary.closedAt,
+    JSON.stringify(summary),
+    eventId,
+  ]);
   return summary;
 }
 

@@ -1,12 +1,8 @@
 import { config } from './config.js';
+import { cachedSettings } from './services/settings.js';
 
 const TIMEZONE = config.timezone;
 const MS_MIN = 60000;
-
-// Minutes after the event start used to classify a time-in.
-const ON_TIME_MAX_MIN = 10; // 0–10 min after start = on-time
-const LATE_MAX_MIN = 60; // 10–60 min after start = late; beyond 60 = absent
-const TIMEOUT_OPEN_BEFORE_END_MIN = 30; // time-out opens 30 min before the end
 
 const ATTENDED = ['early', 'on-time', 'late', 'present'];
 
@@ -61,13 +57,15 @@ export function eventEnd(event) {
 // Time-out opens this many minutes before the event ends.
 export function timeoutOpensAt(event) {
   const end = eventEnd(event);
-  return end ? new Date(end.getTime() - TIMEOUT_OPEN_BEFORE_END_MIN * MS_MIN) : null;
+  const { timeoutOpenBeforeEndMin } = cachedSettings();
+  return end ? new Date(end.getTime() - timeoutOpenBeforeEndMin * MS_MIN) : null;
 }
 
-// Instant after which a missing check-in counts as absent (start + 60 min).
+// Instant after which a missing check-in counts as absent (start + late cutoff).
 export function absentCutoff(event) {
   const start = eventStart(event);
-  return start ? new Date(start.getTime() + LATE_MAX_MIN * MS_MIN) : null;
+  const { lateMaxMin } = cachedSettings();
+  return start ? new Date(start.getTime() + lateMaxMin * MS_MIN) : null;
 }
 
 // Today's date as YYYY-MM-DD in the app timezone.
@@ -104,10 +102,11 @@ export function classifyByTime(event, checkedInUtc) {
   const start = eventStart(event);
   const t = parseUtc(checkedInUtc);
   if (!start || !t) return null;
+  const { onTimeMaxMin, lateMaxMin } = cachedSettings();
   const diffMin = (t.getTime() - start.getTime()) / MS_MIN;
   if (diffMin < 0) return 'early';
-  if (diffMin <= ON_TIME_MAX_MIN) return 'on-time';
-  if (diffMin <= LATE_MAX_MIN) return 'late';
+  if (diffMin <= onTimeMaxMin) return 'on-time';
+  if (diffMin <= lateMaxMin) return 'late';
   return 'absent';
 }
 

@@ -246,9 +246,9 @@ export default function Scanner() {
     let windowBlocked = false;
     let windowMessage = '';
     if (nextAction === 'time-in') {
-      plannedStatus = classifyByTime(pack.event, new Date(), tz) || 'present';
+      plannedStatus = classifyByTime(pack.event, new Date(), tz, pack.settings) || 'present';
     } else if (nextAction === 'time-out') {
-      const opens = timeoutOpensAt(pack.event, tz);
+      const opens = timeoutOpensAt(pack.event, tz, pack.settings);
       if (opens && new Date() < opens) {
         windowBlocked = true;
         windowMessage = `Time-out opens at ${formatTzTime(opens, tz)}.`;
@@ -269,7 +269,7 @@ export default function Scanner() {
       windowBlocked,
       windowMessage,
       checkedInAt: st.in || null,
-      timeoutOpensAt: formatTzTime(timeoutOpensAt(pack.event, tz), tz),
+      timeoutOpensAt: formatTzTime(timeoutOpensAt(pack.event, tz, pack.settings), tz),
     });
     beep(nextAction === 'time-out' ? 660 : nextAction === 'already-complete' ? 400 : 880);
   }

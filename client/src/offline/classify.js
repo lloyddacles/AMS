@@ -1,10 +1,13 @@
 // Client-side mirror of the server's time classification, used when the scanner
 // is offline so it can still show Early / On-time / Late and time-out windows.
-// Keep the thresholds in sync with server/src/classify.js.
+// Thresholds come from the scan pack's cached settings so an admin policy
+// change works offline too.
 
-const ON_TIME_MAX_MIN = 10;
-const LATE_MAX_MIN = 60;
-const TIMEOUT_OPEN_BEFORE_END_MIN = 30;
+const DEFAULT_POLICY = {
+  onTimeMaxMin: 10,
+  lateMaxMin: 60,
+  timeoutOpenBeforeEndMin: 30,
+};
 const MS_MIN = 60000;
 const DEFAULT_TZ = 'Asia/Manila';
 
@@ -52,19 +55,21 @@ export function eventEnd(event, tz = DEFAULT_TZ) {
   return zonedToDate(event.eventDate || event.event_date, event.endTime || event.end_time, tz);
 }
 
-export function timeoutOpensAt(event, tz = DEFAULT_TZ) {
+export function timeoutOpensAt(event, tz = DEFAULT_TZ, policy) {
+  const { timeoutOpenBeforeEndMin } = { ...DEFAULT_POLICY, ...(policy || {}) };
   const end = eventEnd(event, tz);
-  return end ? new Date(end.getTime() - TIMEOUT_OPEN_BEFORE_END_MIN * MS_MIN) : null;
+  return end ? new Date(end.getTime() - timeoutOpenBeforeEndMin * MS_MIN) : null;
 }
 
-export function classifyByTime(event, scannedAt, tz = DEFAULT_TZ) {
+export function classifyByTime(event, scannedAt, tz = DEFAULT_TZ, policy) {
+  const { onTimeMaxMin, lateMaxMin } = { ...DEFAULT_POLICY, ...(policy || {}) };
   const start = eventStart(event, tz);
   const t = scannedAt instanceof Date ? scannedAt : new Date(scannedAt);
   if (!start || Number.isNaN(t.getTime())) return null;
   const diffMin = (t.getTime() - start.getTime()) / MS_MIN;
   if (diffMin < 0) return 'early';
-  if (diffMin <= ON_TIME_MAX_MIN) return 'on-time';
-  if (diffMin <= LATE_MAX_MIN) return 'late';
+  if (diffMin <= onTimeMaxMin) return 'on-time';
+  if (diffMin <= lateMaxMin) return 'late';
   return 'absent';
 }
 

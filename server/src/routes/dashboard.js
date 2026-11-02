@@ -3,6 +3,7 @@ import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus } from '../classify.js';
 import { buildAtRisk } from '../services/reports.js';
+import { maybeRunAutomation } from '../services/automation.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -12,6 +13,7 @@ const ATTENDED_SQL = "('early','on-time','late','present')";
 const ON_LIST_SQL = `NOT EXISTS (SELECT 1 FROM event_exclusions x WHERE x.event_id = a.event_id AND x.student_id = a.student_id)`;
 
 router.get('/stats', async (req, res) => {
+  await maybeRunAutomation().catch(() => {});
   const totalStudents = (await get('SELECT COUNT(*) AS c FROM students')).c;
   const totalEvents = (await get('SELECT COUNT(*) AS c FROM events')).c;
   const totalRecords = (

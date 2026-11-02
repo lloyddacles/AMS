@@ -53,6 +53,9 @@ export const config = {
   // Login throttling.
   loginMaxAttempts: Number(process.env.LOGIN_MAX_ATTEMPTS || 5),
   loginLockMinutes: Number(process.env.LOGIN_LOCK_MINUTES || 15),
+  // Shared secret Vercel Cron sends as `Authorization: Bearer <CRON_SECRET>`.
+  // Required on production deployments that enable the cron job.
+  cronSecret: process.env.CRON_SECRET || '',
   // Timezone used to interpret event dates/times (event schedules are local).
   // The server (e.g. Vercel) runs in UTC, so this is required for correct
   // early/on-time/late classification and time-out windows.

@@ -1,12 +1,8 @@
 import { get, all, run } from '../db.js';
 import { buildAtRisk, buildCompliance } from './reports.js';
 import { featureLabel } from './risk.js';
+import { cachedSettings } from './settings.js';
 import { todayInTz, eventStart, eventEnd } from '../classify.js';
-
-// A check-in rate below this (once an event has started) raises a low-check-in alert.
-const LOW_CHECKIN_RATE = 50;
-// Only alert after the event has been running this many minutes.
-const LOW_CHECKIN_GRACE_MIN = 15;
 
 // Which audiences a given role may see. 'all' notifications are visible to everyone.
 export function audiencesFor(role) {
@@ -269,6 +265,7 @@ export async function evaluateCompliance() {
 
 // Alert once per active event when very few students have checked in after it starts.
 export async function evaluateLowCheckins() {
+  const { lowCheckinRate, lowCheckinGraceMin } = cachedSettings();
   const date = todayInTz();
   const events = await all(
     `SELECT id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, status
@@ -285,7 +282,7 @@ export async function evaluateLowCheckins() {
     const start = eventStart(e);
     if (!start) continue;
     const sinceMin = (now.getTime() - start.getTime()) / 60000;
-    if (sinceMin < LOW_CHECKIN_GRACE_MIN) continue;
+    if (sinceMin < lowCheckinGraceMin) continue;
     // Only events that actually have an end can be "over"; a missing end time
     // makes eventEnd() resolve to midnight, which would always skip here.
     const end = e.endTime ? eventEnd(e) : null;
@@ -305,7 +302,7 @@ export async function evaluateLowCheckins() {
       )
     ).c;
     const rate = Math.round((attended / total) * 100);
-    if (rate >= LOW_CHECKIN_RATE) continue;
+    if (rate >= lowCheckinRate) continue;
     const ok = await createNotification({
       type: 'low-checkin',
       title: `Low check-in: ${e.name}`,
