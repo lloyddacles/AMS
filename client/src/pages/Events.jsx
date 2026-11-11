@@ -200,14 +200,14 @@ export default function Events() {
   const seriesCount = events.filter((e) => e.seriesId).length;
 
   return (
-    <div className="page">
+    <div className="page events-page">
       <PageHeader
         eyebrow="Attendance events"
         title={view === 'archived' ? 'Archived Events' : 'Events'}
         subtitle={
           `${visible.length} event${visible.length === 1 ? '' : 's'}`
           + (termFilter ? ` in ${terms.find((t) => String(t.id) === termFilter)?.name || 'term'}` : '')
-          + (view === 'archived' ? ' · closed and filed away' : '')
+          + (view === 'archived' ? ' · closed and filed away' : ' · manage schedules, check-ins, and attendance')
         }
         actions={<button className="btn btn-primary" onClick={openCreate}>+ Add Event</button>}
       />
@@ -219,71 +219,75 @@ export default function Events() {
         <StatCard icon="layers" accent="amber" label="Series" value={seriesCount} hint="Multi-day events" />
       </div>
 
-      <div className="listbar">
-        <div className="tabs">
-          <button className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>
-            Events <span className="tab-count">{events.length}</span>
-          </button>
-          <button className={view === 'archived' ? 'active' : ''} onClick={() => setView('archived')}>
-            Archived <span className="tab-count">{archivedEvents.length}</span>
-          </button>
-        </div>
-        <div className="listbar-right">
-          {visible.length > 0 && (
-            <label className="select-all">
-              <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} />
-              Select all
-            </label>
-          )}
-          {terms.length > 0 && (
-            <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-              <option value="">All terms</option>
-              {terms.map((t) => (
-                <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-              ))}
-            </select>
-          )}
-        </div>
-      </div>
-
-      {selected.size > 0 && (
-        <div className="card bulk-bar">
-          <div className="bulk-bar-info">
-            <strong>{selected.size}</strong> event{selected.size === 1 ? '' : 's'} selected
+      <div className="card events-controls">
+        <div className="events-controls-main">
+          <div className="tabs">
+            <button className={view === 'events' ? 'active' : ''} onClick={() => setView('events')}>
+              Events <span className="tab-count">{events.length}</span>
+            </button>
+            <button className={view === 'archived' ? 'active' : ''} onClick={() => setView('archived')}>
+              Archived <span className="tab-count">{archivedEvents.length}</span>
+            </button>
           </div>
-          <div className="bulk-bar-actions">
-            {view === 'archived' ? (
-              <button className="btn btn-sm" onClick={() => runBulk('unarchive')} disabled={bulkBusy}>
-                {bulkBusy ? 'Working…' : 'Unarchive'}
-              </button>
-            ) : (
-              <>
-                <button className="btn btn-sm btn-primary" onClick={() => runBulk('close')} disabled={bulkBusy}>
-                  {bulkBusy ? 'Working…' : 'Close'}
-                </button>
-                <button className="btn btn-sm" onClick={() => runBulk('reopen')} disabled={bulkBusy}>Reopen</button>
-                <button className="btn btn-sm" onClick={() => runBulk('archive')} disabled={bulkBusy}>Archive</button>
-              </>
+          <div className="events-controls-right">
+            {visible.length > 0 && (
+              <label className="events-select-all">
+                <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} />
+                <span>Select all shown</span>
+              </label>
             )}
-            <button className="btn btn-sm" onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear</button>
+            {terms.length > 0 && (
+              <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+                <option value="">All terms</option>
+                {terms.map((t) => (
+                  <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+                ))}
+              </select>
+            )}
           </div>
         </div>
-      )}
+        {selected.size > 0 && (
+          <div className="events-bulk-bar">
+            <div className="events-bulk-info">
+              <span className="events-bulk-count">{selected.size}</span>
+              <span>event{selected.size === 1 ? '' : 's'} selected</span>
+            </div>
+            <div className="events-bulk-actions">
+              {view === 'archived' ? (
+                <button className="btn btn-sm" onClick={() => runBulk('unarchive')} disabled={bulkBusy}>
+                  {bulkBusy ? 'Working…' : 'Unarchive'}
+                </button>
+              ) : (
+                <>
+                  <button className="btn btn-sm btn-primary" onClick={() => runBulk('close')} disabled={bulkBusy}>
+                    {bulkBusy ? 'Working…' : 'Close'}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => runBulk('reopen')} disabled={bulkBusy}>Reopen</button>
+                  <button className="btn btn-sm" onClick={() => runBulk('archive')} disabled={bulkBusy}>Archive</button>
+                </>
+              )}
+              <button className="btn btn-sm btn-ghost-light" onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear</button>
+            </div>
+          </div>
+        )}
+      </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       {loading && <div className="card"><Spinner label="Loading events…" size="lg" variant="panel" /></div>}
 
       {!loading && visible.length === 0 && view === 'events' && (
-        <div className="empty card">
+        <div className="empty card events-empty">
+          <div className="events-empty-icon">★</div>
           <h3>No events{termFilter ? ' for this term' : ' yet'}</h3>
           <p className="muted">Create an event, or set up a recurring schedule to generate them automatically.</p>
-          <button className="btn btn-primary" onClick={openCreate}>+ Add Event</button>
+          <button className="btn btn-primary" onClick={openCreate}>+ Create your first event</button>
         </div>
       )}
 
       {!loading && visible.length === 0 && view === 'archived' && (
-        <div className="empty card">
+        <div className="empty card events-empty">
+          <div className="events-empty-icon">⭳</div>
           <h3>Nothing archived{termFilter ? ' for this term' : ''}</h3>
           <p className="muted">Close an event, then archive it to keep the main list tidy. Archived events keep their attendance and still appear in reports.</p>
           <button className="btn" onClick={() => setView('events')}>Back to events</button>
@@ -296,55 +300,62 @@ export default function Events() {
           const phase = phaseOf(ev);
           const phaseMeta = EVENT_PHASES[phase] || EVENT_PHASES.active;
           const isArchived = view === 'archived';
+          const checked = selected.has(ev.id);
           return (
-            <div key={ev.id} className={`card event-card${isArchived ? ' archived' : ''}`}>
+            <div key={ev.id} className={`card event-card event-card-v2${isArchived ? ' archived' : ''}${checked ? ' is-selected' : ''}`}>
               <div className="event-card-top">
-                {isArchived ? (
-                  <span className="pill pill-gray">Archived</span>
-                ) : (
-                  <span className={`pill ${phaseMeta.pill}`}>{phaseMeta.label}</span>
-                )}
-                <span className="muted small">{ev.eventDate}{ev.startTime ? ` · ${ev.startTime}` : ''}</span>
+                <label className="event-select" title="Select event">
+                  <input type="checkbox" checked={checked} onChange={() => toggleSelect(ev.id)} />
+                </label>
+                <div className="event-card-badges">
+                  {isArchived ? (
+                    <span className="pill pill-gray">Archived</span>
+                  ) : (
+                    <span className={`pill ${phaseMeta.pill}`}>{phaseMeta.label}</span>
+                  )}
+                  {ev.scheduleId ? <span className="pill pill-cyan">↻ Recurring</span> : <span className="pill pill-gray">One-off</span>}
+                </div>
               </div>
-              <h3>{ev.name}</h3>
-              <p className="muted small clamp">{ev.description || 'No description'}</p>
-              <p className="muted small">📍 {ev.location || 'Location TBD'}</p>
-              <p className="small">
-                {ev.scheduleId ? (
-                  <span className="pill pill-cyan">↻ Recurring</span>
-                ) : (
-                  <span className="pill pill-gray">One-off</span>
-                )}
-                {ev.termName && <span className="pill pill-purple" style={{ marginLeft: '0.35rem' }}>{ev.termName}</span>}
-                {ev.requireStudentConfirm && <span className="pill pill-blue" style={{ marginLeft: '0.35rem' }}>Kiosk · ID</span>}
-                {ev.seriesId && Number(ev.seriesDayCount) > 0 && (
-                  <span className="pill pill-blue" style={{ marginLeft: '0.35rem' }}>
-                    {ev.seriesName || 'Series'} · {ev.seriesDayCount} day{Number(ev.seriesDayCount) === 1 ? '' : 's'}
-                  </span>
-                )}
-              </p>
-              <div className="rate-wrap">
-                <div className="rate-bar"><span style={{ width: `${rate}%` }} /></div>
-                <span className="rate-label">{ev.attendanceCount}/{ev.totalStudents}</span>
+
+              <div className="event-card-body">
+                <h3 className="event-card-title">{ev.name}</h3>
+                <p className="muted small clamp event-card-desc">{ev.description || 'No description provided.'}</p>
+                <div className="event-meta-grid">
+                  <div className="event-meta-item"><span className="event-meta-label">Date</span><span>{ev.eventDate}{ev.startTime ? ` · ${ev.startTime}` : ''}</span></div>
+                  <div className="event-meta-item"><span className="event-meta-label">Location</span><span>{ev.location || 'Location TBD'}</span></div>
+                </div>
+                <div className="event-tag-row">
+                  {ev.termName && <span className="pill pill-purple">{ev.termName}</span>}
+                  {ev.requireStudentConfirm && <span className="pill pill-blue">Kiosk · ID</span>}
+                  {ev.seriesId && Number(ev.seriesDayCount) > 0 && (
+                    <span className="pill pill-blue">{ev.seriesName || 'Series'} · {ev.seriesDayCount} day{Number(ev.seriesDayCount) === 1 ? '' : 's'}</span>
+                  )}
+                </div>
+                <div className="event-progress">
+                  <div className="event-progress-head">
+                    <span className="muted small">Attendance</span>
+                    <span className="strong small">{ev.attendanceCount}/{ev.totalStudents} · {rate}%</span>
+                  </div>
+                  <div className="rate-wrap">
+                    <div className="rate-bar"><span style={{ width: `${rate}%` }} /></div>
+                  </div>
+                </div>
               </div>
-              <div className="event-card-actions">
+
+              <div className="event-card-actions event-card-actions-v2">
                 {isArchived ? (
                   <>
-                    <Link className="btn btn-sm" to={`/events/${ev.id}`}>Open</Link>
+                    <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}`}>Open</Link>
                     <button className="btn btn-sm" onClick={() => unarchive(ev)}>Unarchive</button>
                     <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
                   </>
                 ) : (
                   <>
-                    {phase === 'active' && (
-                      <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>
-                    )}
+                    {phase === 'active' && <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>}
                     <Link className={`btn btn-sm ${phase === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
                     <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
-                    {ev.status === 'closed' && (
-                      <button className="btn btn-sm" onClick={() => archive(ev)} title="Move to the Archived section">Archive</button>
-                    )}
+                    {ev.status === 'closed' && <button className="btn btn-sm" onClick={() => archive(ev)} title="Move to the Archived section">Archive</button>}
                     <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
                   </>
                 )}
