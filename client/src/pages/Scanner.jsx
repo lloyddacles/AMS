@@ -552,7 +552,7 @@ export default function Scanner() {
                   </span>
                 )}
                 {pendingScan.nextAction === 'time-out' && <span className="pill pill-blue">Time Out</span>}
-                {pendingScan.nextAction === 'already-complete' && <span className="pill pill-gray">Already timed out</span>}
+                {pendingScan.nextAction === 'already-complete' && <span className="pill pill-gray">Already recorded / scanned</span>}
                 {pendingScan.nextAction === 'time-out' && pendingScan.checkedInAt && (
                   <span className="muted small">in at {fmtTime(pendingScan.checkedInAt)}</span>
                 )}
