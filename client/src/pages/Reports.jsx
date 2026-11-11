@@ -260,6 +260,39 @@ export default function Reports() {
     }
   }
 
+  async function exportFullReportPdf() {
+    if (!overview) return;
+    try {
+      const [trendsData, atRiskData, complianceData] = await Promise.all([
+        trends ? Promise.resolve(trends) : api.getReportTrends({ course, granularity, ...rangeParams }).catch(() => null),
+        atRisk ? Promise.resolve(atRisk) : api.getAtRisk({ search, course, ...rangeParams }).catch(() => null),
+        compliance ? Promise.resolve(compliance) : api.getReportCompliance({ search, course, ...rangeParams }).catch(() => null),
+      ]);
+      const termName = termId ? (terms.find((t) => String(t.id) === String(termId))?.name || '') : '';
+      const preparedBy = String(user?.name || '').trim() || '—';
+      const viewLabelMap = {
+        summary: 'Student Summary',
+        matrix: 'Event Matrix',
+        trends: 'Trends',
+        'at-risk': 'At-Risk',
+        compliance: 'Compliance',
+      };
+      const { exportComprehensiveReportPdf } = await import('../pdf.js');
+      exportComprehensiveReportPdf({
+        overview,
+        insights,
+        trends: trendsData,
+        atRisk: atRiskData,
+        compliance: complianceData,
+        filters: { search, course, from, to, termId, termName },
+        preparedBy,
+        viewLabel: viewLabelMap[view] || 'Reports',
+      });
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   async function saveThreshold(e) {
     e.preventDefault();
     const value = Number(thresholdInput);
@@ -318,9 +351,12 @@ export default function Reports() {
         subtitle={VIEW_COPY[view] || VIEW_COPY.summary}
         actions={
           <>
+            <button className="btn btn-primary" onClick={exportFullReportPdf} disabled={!overview} title="Export complete report with summary, AI insights, and attendance details for submission">
+              Export Full Report (PDF)
+            </button>
             {view === 'at-risk' ? (
               <>
-                <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>Export PDF</button>
+                <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>At-Risk PDF</button>
                 <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
               </>
             ) : view === 'trends' ? (
@@ -329,9 +365,9 @@ export default function Reports() {
               <button className="btn" onClick={() => exportCsv('compliance', null, { search, course, ...rangeParams })} disabled={!compliance}>Export CSV</button>
             ) : (
               <>
-                <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Export PDF</button>
-                <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Export Summary CSV</button>
-                <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Export Matrix CSV</button>
+                <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Summary PDF</button>
+                <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Summary CSV</button>
+                <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Matrix CSV</button>
               </>
             )}
           </>
