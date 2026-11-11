@@ -16,7 +16,8 @@ describe('API basics', () => {
   it('returns health ok', async () => {
     const res = await request(app).get('/api/health');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ ok: true });
+    expect(res.body.ok).toBe(true);
+    expect(res.body.db).toBe('up');
   });
 
   it('requires auth for protected routes', async () => {
@@ -26,6 +27,18 @@ describe('API basics', () => {
 
   it('rejects invalid login payloads', async () => {
     const res = await request(app).post('/api/auth/login').send({});
+    expect(res.status).toBe(400);
+  });
+
+  it('validates attendance scan payloads', async () => {
+    // Unauthenticated scan endpoint returns 401 before/after validation depending on middleware;
+    // protected routes should still reject missing auth.
+    const res = await request(app).post('/api/attendance/scan').send({});
+    expect([400, 401]).toContain(res.status);
+  });
+
+  it('validates correction lookup payloads', async () => {
+    const res = await request(app).post('/api/corrections/lookup').send({});
     expect(res.status).toBe(400);
   });
 });

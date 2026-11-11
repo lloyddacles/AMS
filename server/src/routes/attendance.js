@@ -3,6 +3,7 @@ import { get, all, run } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
 import { isExcluded, exclusionsByEvent, includeStudents } from '../services/roster.js';
+import { validate, schemas } from '../validate.js';
 import {
   classifyByTime,
   displayStatus,
@@ -328,9 +329,8 @@ router.get('/event/:eventId', async (req, res) => {
 });
 
 // Resolve a scanned QR for the scanner UI (preview before committing).
-router.post('/lookup', async (req, res) => {
-  const { eventId, qrToken } = req.body || {};
-  if (!eventId || !qrToken) return res.status(400).json({ error: 'eventId and qrToken are required' });
+router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
+  const { eventId, qrToken } = req.body;
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
@@ -383,9 +383,8 @@ router.post('/lookup', async (req, res) => {
 });
 
 // QR scan check-in: the scanned QR text is the student's qr_token.
-router.post('/scan', async (req, res) => {
-  const { eventId, qrToken, confirmValue, scannedAt, clientScanId } = req.body || {};
-  if (!eventId || !qrToken) return res.status(400).json({ error: 'eventId and qrToken are required' });
+router.post('/scan', validate(schemas.scan), async (req, res) => {
+  const { eventId, qrToken, confirmValue, scannedAt, clientScanId } = req.body;
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   if (event.status !== 'active' && !scannedAt) {
@@ -411,10 +410,8 @@ router.post('/scan', async (req, res) => {
 // Batch sync for scans that were recorded while offline. Each item is
 // independently idempotent (via clientScanId) and uses the device timestamp, so
 // retries are safe and the recorded time reflects when the scan happened.
-router.post('/scan/batch', async (req, res) => {
-  const scans = Array.isArray(req.body?.scans) ? req.body.scans : null;
-  if (!scans) return res.status(400).json({ error: 'scans array is required' });
-  if (scans.length > 500) return res.status(400).json({ error: 'Too many scans in one batch (max 500)' });
+router.post('/scan/batch', validate(schemas.scanBatch), async (req, res) => {
+  const { scans } = req.body;
 
   const results = [];
   let synced = 0;
@@ -474,9 +471,8 @@ router.post('/scan/batch', async (req, res) => {
 });
 
 // Manual mark / update by student id
-router.post('/', async (req, res) => {
-  const { eventId, studentId, status = 'present', note } = req.body || {};
-  if (!eventId || !studentId) return res.status(400).json({ error: 'eventId and studentId are required' });
+router.post('/', validate(schemas.manualAttendance), async (req, res) => {
+  const { eventId, studentId, status = 'present', note } = req.body;
   if (status === 'excused' && !String(note || '').trim()) {
     return res.status(400).json({ error: 'A reason is required when marking a student excused' });
   }
@@ -501,10 +497,12 @@ router.post('/', async (req, res) => {
   res.status(duplicate ? 200 : 201).json({ ...row, duplicate });
 });
 
-router.put('/:id', async (req, res) => {
-  const existing = await get('SELECT * FROM attendance WHERE id = ?', [req.params.id]);
+router.put('/:id', validate(schemas.attendanceUpdate), async (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const existing = await get('SELECT * FROM attendance WHERE id = ?', [id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
-  const { status, note } = req.body || {};
+  const { status, note } = req.body;
   const nextStatus = status ?? existing.status;
   const nextNote = note === undefined ? existing.note : note;
   if (nextStatus === 'excused' && !String(nextNote || '').trim()) {
@@ -514,9 +512,9 @@ router.put('/:id', async (req, res) => {
   await run("UPDATE attendance SET status = ?, note = ?, method = 'manual' WHERE id = ?", [
     nextStatus,
     nextNote,
-    req.params.id,
+    id,
   ]);
-  const row = await getAttendanceRow(req.params.id);
+  const row = await getAttendanceRow(id);
   await logAudit({
     user: req.user,
     action: 'attendance.update',
@@ -528,15 +526,17 @@ router.put('/:id', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-  const before = await getAttendanceRow(req.params.id);
-  const info = await run('DELETE FROM attendance WHERE id = ?', [req.params.id]);
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const before = await getAttendanceRow(id);
+  const info = await run('DELETE FROM attendance WHERE id = ?', [id]);
   if (!info.changes) return res.status(404).json({ error: 'Attendance record not found' });
   if (before) {
     await logAudit({
       user: req.user,
       action: 'attendance.delete',
       entity: 'attendance',
-      entityId: req.params.id,
+      entityId: id,
       detail: `${before.studentNo} ${before.lastName}, ${before.firstName} · ${before.status}`,
     });
   }

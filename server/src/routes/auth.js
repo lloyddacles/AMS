@@ -3,6 +3,7 @@ import { verifyCredentials, changePassword, getUser, updateProfile, DEFAULT_PASS
 import { signToken, requireAuth } from '../middleware/auth.js';
 import { checkLogin, recordFailure, recordSuccess } from '../services/loginGuard.js';
 import { config } from '../config.js';
+import { validate, schemas } from '../validate.js';
 
 const router = Router();
 
@@ -10,11 +11,8 @@ const router = Router();
 const AVATAR_MAX_LEN = 1000000;
 const AVATAR_RE = /^data:image\/(png|jpe?g|webp|gif);base64,[A-Za-z0-9+/=]+$/;
 
-router.post('/login', async (req, res) => {
-  const { username, password } = req.body || {};
-  if (!username || !password) {
-    return res.status(400).json({ error: 'Username and password are required' });
-  }
+router.post('/login', validate(schemas.login), async (req, res) => {
+  const { username, password } = req.body;
 
   const gate = await checkLogin(username);
   if (gate.locked) {
@@ -63,14 +61,8 @@ router.put('/profile', requireAuth, async (req, res) => {
   res.json({ user: result.user });
 });
 
-router.post('/password', requireAuth, async (req, res) => {
-  const { currentPassword, newPassword } = req.body || {};
-  if (!currentPassword || !newPassword) {
-    return res.status(400).json({ error: 'Current and new password are required' });
-  }
-  if (String(newPassword).length < 6) {
-    return res.status(400).json({ error: 'New password must be at least 6 characters' });
-  }
+router.post('/password', requireAuth, validate(schemas.changePassword), async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
   if (String(newPassword).toLowerCase() === DEFAULT_PASSWORD) {
     return res.status(400).json({ error: 'Please choose a password other than the default' });
   }

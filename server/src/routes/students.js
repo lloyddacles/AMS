@@ -3,6 +3,7 @@ import { batch, get, all, run } from '../db.js';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { newToken } from '../services/users.js';
 import { logAudit } from '../services/audit.js';
+import { validate, schemas } from '../validate.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -46,11 +47,8 @@ router.get('/:id', async (req, res) => {
   res.json(row);
 });
 
-router.post('/', async (req, res) => {
-  const { studentNo, firstName, lastName, email, course, yearLevel, section } = req.body || {};
-  if (!studentNo || !firstName || !lastName) {
-    return res.status(400).json({ error: 'Student number, first name and last name are required' });
-  }
+router.post('/', validate(schemas.studentCreate), async (req, res) => {
+  const { studentNo, firstName, lastName, email, course, yearLevel, section } = req.body;
   try {
     const info = await run(
       `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, section, qr_token)
@@ -77,12 +75,9 @@ router.post('/', async (req, res) => {
 // Bulk create / update. Accepts { students: [{...}], updateExisting: bool }.
 // With updateExisting, rows whose student number already exists are updated in
 // place (keeping their QR token); otherwise they are skipped. Reports every row.
-router.post('/bulk', async (req, res) => {
-  const rows = Array.isArray(req.body?.students) ? req.body.students : null;
-  const updateExisting = req.body?.updateExisting === true;
-  if (!rows) return res.status(400).json({ error: 'Expected an array of students' });
-  if (rows.length === 0) return res.status(400).json({ error: 'No students to import' });
-  if (rows.length > 1000) return res.status(400).json({ error: 'Please import at most 1000 students at a time' });
+router.post('/bulk', validate(schemas.studentBulk), async (req, res) => {
+  const rows = req.body.students;
+  const updateExisting = req.body.updateExisting === true;
 
   const skipped = [];
   const candidates = [];

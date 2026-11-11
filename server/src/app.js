@@ -2,7 +2,7 @@ import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import { config } from './config.js';
-import { initDb } from './db.js';
+import { initDb, get } from './db.js';
 import { ensureAdmin } from './bootstrap.js';
 import authRoutes from './routes/auth.js';
 import studentRoutes from './routes/students.js';
@@ -59,7 +59,15 @@ app.use((req, res, next) => {
   refreshSettingsIfStale().then(() => next()).catch(next);
 });
 
-app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.get('/api/health', async (req, res) => {
+  try {
+    // Lightweight readiness signal (DB reachable/migrated enough to answer).
+    await get('SELECT 1 AS ok');
+    res.json({ ok: true, db: 'up' });
+  } catch {
+    res.status(503).json({ ok: false, db: 'down' });
+  }
+});
 app.use('/api/auth/login', authRateLimit());
 app.use('/api/student/login', authRateLimit());
 app.use('/api/student/setup', publicWriteRateLimit());
