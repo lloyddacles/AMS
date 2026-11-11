@@ -69,6 +69,7 @@ export default function EventDetail() {
   const [showQr, setShowQr] = useState(false);
   const [search, setSearch] = useState('');
   const [attendeeSearch, setAttendeeSearch] = useState('');
+  const [attendeeSection, setAttendeeSection] = useState('');
   const [attendeeSel, setAttendeeSel] = useState(() => new Set());
   const [busy, setBusy] = useState(false);
   const [excuseFor, setExcuseFor] = useState(null);
@@ -348,15 +349,47 @@ export default function EventDetail() {
   const excludedCount = attendees?.excludedCount || 0;
   const offListIds = new Set(attendeeRows.filter((s) => !s.attending).map((s) => s.studentId));
   const filteredAttendance = attendance.filter((a) => a.attending !== false);
+  const sectionOptions = [...new Set(attendeeRows.map((s) => String(s.section || '').trim()).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   const filteredAttendeeRows = attendeeRows.filter((s) => {
     const q = attendeeSearch.toLowerCase();
+    const section = String(s.section || '').trim();
     return (
-      !q ||
-      s.firstName.toLowerCase().includes(q) ||
-      s.lastName.toLowerCase().includes(q) ||
-      s.studentNo.toLowerCase().includes(q)
+      (!attendeeSection || section === attendeeSection) &&
+      (!q ||
+        s.firstName.toLowerCase().includes(q) ||
+        s.lastName.toLowerCase().includes(q) ||
+        s.studentNo.toLowerCase().includes(q) ||
+        section.toLowerCase().includes(q))
     );
   });
+  const sectionIds = attendeeSection ? attendeeRows.filter((s) => String(s.section || '').trim() === attendeeSection).map((s) => s.studentId) : [];
+  const sectionOffIds = sectionIds.filter((sid) => offListIds.has(sid));
+  const sectionOnIds = sectionIds.filter((sid) => !offListIds.has(sid));
+
+  function selectSectionIds(ids) {
+    setAttendeeSel((prev) => {
+      const next = new Set(prev);
+      for (const id of ids) next.add(id);
+      return next;
+    });
+  }
+
+  async function onlySectionAttend() {
+    if (!attendeeSection || sectionIds.length === 0) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api.setEventAttendeesOnly(Number(id), sectionIds);
+      setToast(`Only section ${attendeeSection} attends this event.`);
+      setTimeout(() => setToast(''), 2500);
+      await load();
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
   const selOffList = [...attendeeSel].filter((sid) => offListIds.has(sid));
   const selOnList = [...attendeeSel].filter((sid) => !offListIds.has(sid));
   const allShownSelected =
@@ -662,6 +695,17 @@ export default function EventDetail() {
               value={attendeeSearch}
               onChange={(e) => setAttendeeSearch(e.target.value)}
             />
+            <select
+              value={attendeeSection}
+              onChange={(e) => setAttendeeSection(e.target.value)}
+              aria-label="Filter by section"
+              title="Filter attendees by section"
+            >
+              <option value="">All sections</option>
+              {sectionOptions.map((sec) => (
+                <option key={sec} value={sec}>{sec}</option>
+              ))}
+            </select>
             <div className="toolbar-actions">
               <button
                 className="btn btn-sm"
@@ -690,6 +734,27 @@ export default function EventDetail() {
               </button>
             </div>
           </div>
+          {attendeeSection && (
+            <div className="toolbar" style={{ marginTop: '-0.25rem' }}>
+              <div className="muted small" style={{ alignSelf: 'center' }}>
+                Section <strong>{attendeeSection}</strong>: {sectionIds.length} student(s)
+              </div>
+              <div className="toolbar-actions">
+                <button className="btn btn-sm" disabled={busy || sectionIds.length === 0} onClick={() => selectSectionIds(sectionIds)}>
+                  Select section
+                </button>
+                <button className="btn btn-sm" disabled={busy || sectionOffIds.length === 0} onClick={() => updateAttendees(sectionOffIds, true)}>
+                  Add section
+                </button>
+                <button className="btn btn-sm" disabled={busy || sectionOnIds.length === 0} onClick={() => updateAttendees(sectionOnIds, false)}>
+                  Remove section
+                </button>
+                <button className="btn btn-sm btn-primary" disabled={busy || sectionIds.length === 0} onClick={onlySectionAttend} title="Make only this section attend this event">
+                  Only this section attends
+                </button>
+              </div>
+            </div>
+          )}
           <div className="card table-card">
             <table className="table">
               <thead>
@@ -705,13 +770,14 @@ export default function EventDetail() {
                   <th>Student No</th>
                   <th>Name</th>
                   <th>Course</th>
+                  <th>Section</th>
                   <th>Status</th>
                   <th className="right">Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAttendeeRows.length === 0 && (
-                  <tr><td colSpan={6} className="muted center">No students match.</td></tr>
+                  <tr><td colSpan={7} className="muted center">No students match.</td></tr>
                 )}
                 {filteredAttendeeRows.map((s) => (
                   <tr key={s.studentId} className={s.attending ? '' : 'row-off'}>
@@ -726,6 +792,7 @@ export default function EventDetail() {
                     <td className="mono">{s.studentNo}</td>
                     <td className="strong">{s.lastName}, {s.firstName}</td>
                     <td>{s.course || '—'}</td>
+                    <td>{s.section || '—'}</td>
                     <td>
                       {s.attending ? (
                         <span className="pill pill-green">Attending</span>
