@@ -84,19 +84,26 @@ export default function Dashboard() {
     value: s.count,
   }));
   const statusTotal = statusData.reduce((sum, s) => sum + s.value, 0);
-  const firstName = String(user?.name || '').trim().split(/\s+/)[0] || 'there';
+  const accountName = String(user?.name || '').trim() || 'there';
+  const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
     <div className="page dashboard-page">
-      <section className="dash-hero dashboard-hero">
+      <section className="dash-hero dashboard-hero dashboard-hero-v2">
         <div className="dash-hero-copy">
-          <span className="dash-eyebrow">Overview</span>
-          <h2>{greeting()}, {firstName}</h2>
-          <p className="muted">Here’s the latest snapshot of attendance across your events, students, and recent activity.</p>
+          <span className="dash-eyebrow">Attendance Overview</span>
+          <h2>{greeting()}, Sir {accountName}</h2>
+          <p className="muted">Welcome back. Here’s your latest attendance snapshot for today and across recent events.</p>
+          <div className="dashboard-hero-meta">
+            <span className="dashboard-meta-chip">{todayLabel}</span>
+            <span className="dashboard-meta-chip">Overall rate: {stats.overallRate}%</span>
+            <span className="dashboard-meta-chip">{stats.totalRecords} check-ins recorded</span>
+          </div>
         </div>
-        <div className="dash-hero-actions">
-          <Link to="/live" className="btn btn-primary">Live scan</Link>
-          <Link to="/events" className="btn">Manage events</Link>
+        <div className="dash-hero-actions dashboard-hero-actions">
+          <Link to="/live" className="btn btn-primary">Open Live Scan</Link>
+          <Link to="/events" className="btn">Manage Events</Link>
+          <Link to="/students" className="btn">Students</Link>
           <Link to="/reports" className="btn">Reports</Link>
         </div>
       </section>
@@ -108,8 +115,8 @@ export default function Dashboard() {
         <StatCard icon="rate" accent="amber" label="Overall rate" value={`${stats.overallRate}%`} hint="Average attendance" />
       </div>
 
-      <div className="dash-charts">
-        <section className="card dash-chart-card">
+      <div className="dash-charts dashboard-charts">
+        <section className="card dash-chart-card dashboard-panel">
           <div className="dash-card-head">
             <div>
               <h3>Attendance per Event</h3>
@@ -154,7 +161,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="card dash-chart-card">
+        <section className="card dash-chart-card dashboard-panel">
           <div className="dash-card-head">
             <div>
               <h3>Status Breakdown</h3>
@@ -210,8 +217,8 @@ export default function Dashboard() {
         </section>
       </div>
 
-      <div className="grid-2">
-        <section className="card">
+      <div className="grid-2 dashboard-lower-grid">
+        <section className="card dashboard-panel">
           <div className="dash-card-head">
             <div>
               <h3>Recent Events</h3>
@@ -248,7 +255,7 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="card">
+        <section className="card dashboard-panel">
           <div className="dash-card-head">
             <div>
               <h3>Top Attendees</h3>
@@ -275,11 +282,11 @@ export default function Dashboard() {
         </section>
       </div>
 
-      <section className="card dash-risk">
+      <section className="card dash-risk dashboard-panel">
         <div className="dash-card-head">
           <div>
             <h3>At-Risk Students</h3>
-            <p className="muted small">Below {stats.atRisk.threshold}% attendance</p>
+            <p className="muted small">Students below {stats.atRisk.threshold}% attendance</p>
           </div>
           <Link className="link" to="/reports?view=at-risk">View all</Link>
         </div>
