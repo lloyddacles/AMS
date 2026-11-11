@@ -9,6 +9,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 import RiskExplainer from '../components/RiskExplainer.jsx';
+import { buildReportInsights } from '../utils/reportInsights.js';
 
 const SUMMARY_COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
@@ -33,7 +34,30 @@ const MARK_LEGEND = [
   { status: 'absent', label: 'Absent', mark: 'A' },
   { status: 'none', label: 'Not on list', mark: '—' },
 ];
+
 const MARK_LABEL = Object.fromEntries(MARK_LEGEND.map((m) => [m.status, m.mark]));
+
+function formatDateTime(value) {
+  if (!value) return '';
+  try {
+    return new Date(value).toLocaleString();
+  } catch {
+    return '';
+  }
+}
+
+function toneClass(tone) {
+  if (tone === 'positive') return 'is-positive';
+  if (tone === 'warning') return 'is-warning';
+  if (tone === 'critical') return 'is-critical';
+  return 'is-neutral';
+}
+
+function priorityClass(priority) {
+  if (priority === 'High') return 'priority-high';
+  if (priority === 'Medium') return 'priority-medium';
+  return 'priority-low';
+}
 
 export default function Reports() {
   const [params, setParams] = useSearchParams();
@@ -52,6 +76,7 @@ export default function Reports() {
   const [atRisk, setAtRisk] = useState(null);
   const [trends, setTrends] = useState(null);
   const [compliance, setCompliance] = useState(null);
+  const [riskModel, setRiskModel] = useState(null);
   const [thresholdInput, setThresholdInput] = useState('');
   const [error, setError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -59,6 +84,7 @@ export default function Reports() {
   const [pageSize, setPageSize] = useState(25);
   const [expandedRisk, setExpandedRisk] = useState(null);
   const [riskCache, setRiskCache] = useState({});
+  const [insightsOpen, setInsightsOpen] = useState(true);
 
   const rangeParams = { from, to, termId: termId || '' };
 
@@ -75,6 +101,12 @@ export default function Reports() {
     }, 250);
     return () => clearTimeout(t);
   }, [search, course, from, to, termId]);
+
+  useEffect(() => {
+    let alive = true;
+    api.getRisk().then((d) => { if (alive) setRiskModel(d); }).catch(() => { if (alive) setRiskModel(null); });
+    return () => { alive = false; };
+  }, [from, to, termId]);
 
   useEffect(() => {
     if (view !== 'matrix') return undefined;
@@ -138,13 +170,25 @@ export default function Reports() {
   const courses = overview ? [...new Set(overview.students.map((s) => s.course).filter(Boolean))].sort() : [];
   const perfectCount = overview ? overview.students.filter((s) => Number(s.rate) === 100).length : 0;
   const belowEighty = overview ? overview.students.filter((s) => Number(s.rate) < 80).length : 0;
+  const avgRate = overview && overview.students.length
+    ? Math.round(overview.students.reduce((sum, s) => sum + (Number(s.rate) || 0), 0) / overview.students.length)
+    : 0;
+
+  const insights = useMemo(() => buildReportInsights({
+    overview,
+    trends,
+    atRisk,
+    compliance,
+    riskModel,
+    filters: { search, course, from, to, termId },
+  }), [overview, trends, atRisk, compliance, riskModel, search, course, from, to, termId]);
 
   const VIEW_COPY = {
-    summary: 'Attendance totals and rates for each student in the selected range.',
-    matrix: 'A per-event grid showing every student’s mark at a glance.',
-    trends: 'Watch attendance rates move over days, weeks, months, or events.',
-    'at-risk': 'Students below the attendance threshold, with an explainable risk score.',
-    compliance: 'Who falls short of the required attendance for the selected term.',
+    summary: 'Clear per-student attendance totals, rates, and status details for confident reporting.',
+    matrix: 'A per-event grid showing every student’s mark at a glance, including exclusions.',
+    trends: 'Track attendance movement over time to spot improvement, decline, and patterns.',
+    'at-risk': 'Prioritize students below threshold with explainable risk signals and intervention drivers.',
+    compliance: 'See who meets or misses the required attendance minimum and what recovery is needed.',
   };
 
   const sortedStudents = useMemo(() => {
@@ -155,7 +199,7 @@ export default function Reports() {
       const av = col.get(a);
       const bv = col.get(b);
       if (col.num) return (av - bv) * dir;
-      return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true }) * dir;
+      return String(av).localeCompare(String(bv), undefined, { sensitivity: 'base', numeric: true }) * dir;
     });
   }, [overview, sort]);
 
@@ -258,8 +302,16 @@ export default function Reports() {
     }
   }
 
+  const activeFilters = [
+    course ? `Course: ${course}` : null,
+    search ? `Search: "${search}"` : null,
+    from ? `From: ${from}` : null,
+    to ? `To: ${to}` : null,
+    termId ? `Term: ${terms.find((t) => String(t.id) === String(termId))?.name || termId}` : null,
+  ].filter(Boolean);
+
   return (
-    <div className="page">
+    <div className="page reports-page">
       <PageHeader
         eyebrow="Insights"
         title="Reports"
@@ -296,10 +348,10 @@ export default function Reports() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="toolbar report-filters filter-bar">
+      <div className="toolbar report-filters filter-bar reports-filter-bar">
         {(view === 'summary' || view === 'at-risk' || view === 'compliance') && (
           <>
-            <input className="search" placeholder="Search students…" value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="search" placeholder="Search students, numbers, courses…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select value={course} onChange={(e) => setCourse(e.target.value)}>
               <option value="">All courses</option>
               {courses.map((c) => <option key={c} value={c}>{c}</option>)}
@@ -332,26 +384,152 @@ export default function Reports() {
             <option value="event">Per event</option>
           </select>
         )}
-        <div className="toolbar-right">
+        <div className="toolbar-right reports-quick-ranges">
           <button type="button" className="btn btn-sm" onClick={() => quickRange('all')}>All time</button>
           <button type="button" className="btn btn-sm" onClick={() => quickRange('30')}>Last 30d</button>
           <button type="button" className="btn btn-sm" onClick={() => quickRange('month')}>This month</button>
           <button type="button" className="btn btn-sm" onClick={() => quickRange('year')}>This year</button>
+          {(from || to || termId || search || course) && (
+            <button type="button" className="btn btn-sm" onClick={() => { setFrom(''); setTo(''); setTermId(''); setSearch(''); setCourse(''); }}>Clear</button>
+          )}
         </div>
-        {(from || to || termId) && (
-          <button
-            type="button"
-            className="btn btn-sm"
-            onClick={() => { setFrom(''); setTo(''); setTermId(''); }}
-          >
-            Clear filters
-          </button>
-        )}
       </div>
+
+      {activeFilters.length > 0 && (
+        <div className="reports-active-filters">
+          <span className="muted small">Active filters:</span>
+          {activeFilters.map((f) => <span key={f} className="reports-filter-chip">{f}</span>)}
+        </div>
+      )}
+
+      <section className="card ai-insights-card">
+        <div className="ai-insights-head">
+          <div className="ai-insights-title-wrap">
+            <div className="ai-badge">AI Insights</div>
+            <div>
+              <h3 style={{ margin: 0 }}>Attendance intelligence for teacher decisions</h3>
+              <p className="muted small" style={{ margin: '0.2rem 0 0' }}>
+                Evidence-based insights generated from report data, trends, risk signals, and compliance context.
+              </p>
+            </div>
+          </div>
+          <div className="ai-insights-meta">
+            <span className={`ai-confidence ai-confidence-${insights.confidence.level.toLowerCase()}`}>Confidence: {insights.confidence.level}</span>
+            <span className="muted small">Updated {formatDateTime(insights.generatedAt)}</span>
+            <button className="btn btn-sm" type="button" onClick={() => setInsightsOpen((v) => !v)}>{insightsOpen ? 'Hide' : 'Show'}</button>
+          </div>
+        </div>
+
+        <div className="ai-insights-summary">
+          <div className="ai-headline">{insights.headline}</div>
+          <p className="muted" style={{ margin: '0.35rem 0 0' }}>{insights.summary}</p>
+          <div className="ai-coverage">
+            <span>Coverage: {insights.metrics.events} events · {insights.metrics.students} students · avg {insights.metrics.avgRate}%</span>
+            <span>Data confidence score: {insights.confidence.score}/100</span>
+          </div>
+          {insights.confidence.reasons?.length > 0 && (
+            <ul className="ai-reasons">
+              {insights.confidence.reasons.map((r, i) => <li key={i}>{r}</li>)}
+            </ul>
+          )}
+        </div>
+
+        {insightsOpen && (
+          <div className="ai-insights-grid">
+            <div className="ai-panel">
+              <h4>Key findings</h4>
+              <div className="ai-finding-list">
+                {insights.findings.map((f, i) => (
+                  <div key={i} className={`ai-finding ${toneClass(f.tone)}`}>
+                    <div className="ai-finding-title">{f.title}</div>
+                    <div className="ai-finding-detail">{f.detail}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="ai-panel">
+              <h4>Recommended decisions & actions</h4>
+              <div className="ai-action-list">
+                {insights.actions.map((a, i) => (
+                  <div key={i} className="ai-action">
+                    <div className="ai-action-top">
+                      <span className={`ai-priority ${priorityClass(a.priority)}`}>{a.priority} priority</span>
+                      <strong>{a.title}</strong>
+                    </div>
+                    <p>{a.detail}</p>
+                    <p className="muted small"><strong>Why:</strong> {a.why}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="ai-panel">
+              <h4>Priority students to review</h4>
+              {insights.priorityStudents.length === 0 ? (
+                <p className="muted">No priority risk cases identified from current data.</p>
+              ) : (
+                <div className="ai-priority-list">
+                  {insights.priorityStudents.map((s) => (
+                    <div key={s.id} className="ai-priority-student">
+                      <div className="ai-priority-student-main">
+                        <strong>{s.name}</strong>
+                        <span className="muted small">{s.studentNo}{s.course ? ` · ${s.course}` : ''}</span>
+                      </div>
+                      <div className="ai-priority-student-metrics">
+                        <span className="pill pill-red">{s.rate}% rate</span>
+                        {typeof s.risk === 'number' && <span className={`risk-pill risk-${s.riskLevel || 'moderate'}`}>{s.risk}% risk</span>}
+                        <span className="muted small">Absent: {s.absent} · Late: {s.late}</span>
+                      </div>
+                      {s.drivers?.length > 0 && <div className="muted small">Drivers: {s.drivers.join(', ')}</div>}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="ai-panel">
+              <h4>Group & pattern highlights</h4>
+              {insights.groups.length > 1 ? (
+                <div className="ai-group-list">
+                  {insights.groups.map((g) => (
+                    <div key={g.course} className="ai-group-row">
+                      <div>
+                        <strong>{g.course}</strong>
+                        <div className="muted small">{g.count} students · {g.below80} below 80%</div>
+                      </div>
+                      <div className="ai-group-rate">
+                        <div className="rate-bar"><span style={{ width: `${Math.max(0, Math.min(100, g.avgRate))}%` }} /></div>
+                        <span className="rate-label">{g.avgRate}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">Not enough course-group variation in the current data for group comparison.</p>
+              )}
+              {insights.notable?.lateHeavy?.length > 0 && (
+                <div className="ai-note-box">
+                  <strong>Frequent lateness:</strong> {insights.notable.lateHeavy.map((s) => `${s.lastName}, ${s.firstName} (${s.late})`).join('; ')}
+                </div>
+              )}
+              {insights.notable?.highAbsence?.length > 0 && (
+                <div className="ai-note-box">
+                  <strong>Most absences:</strong> {insights.notable.highAbsence.map((s) => `${s.lastName}, ${s.firstName} (${s.absent})`).join('; ')}
+                </div>
+              )}
+              <p className="muted small" style={{ marginTop: '0.5rem' }}>
+                AI insights are generated from available attendance/risk data to support decisions; verify context before taking formal action.
+              </p>
+            </div>
+          </div>
+        )}
+      </section>
 
       {view === 'summary' && (
         <>
           <div className="toolbar">
+            <div className="muted small">Showing {overview ? overview.students.length : 0} student{overview && overview.students.length === 1 ? '' : 's'} in the selected range</div>
             <div className="toolbar-right">
               <label className="page-size">
                 Rows
@@ -365,75 +543,76 @@ export default function Reports() {
             <div className="stat-grid">
               <StatCard icon="users" accent="blue" label="Students" value={overview.students.length} hint="Matching filters" />
               <StatCard icon="calendar" accent="purple" label="Events" value={overview.totalEvents} hint="In selected range" />
-              <StatCard icon="check" accent="green" label="Perfect attendance" value={perfectCount} hint="100% rate" />
-              <StatCard icon="alert" accent="amber" label="Below 80%" value={belowEighty} hint="Need follow-up" />
+              <StatCard icon="chart" accent="green" label="Average rate" value={`${avgRate}%`} hint="Across listed students" />
+              <StatCard icon="alert" accent="amber" label="Need attention" value={belowEighty} hint={`${perfectCount} perfect attendance`} />
             </div>
           )}
           {!overview ? (
             <div className="card"><Spinner label="Loading report…" size="lg" variant="panel" /></div>
           ) : (
             <>
-            <div className="card table-card">
-              <table className="table">
-                <thead>
-                  <tr>
-                    {SUMMARY_COLUMNS.map((c) => (
-                      <th key={c.key} className={c.num ? 'num' : ''}>
-                        <button
-                          type="button"
-                          className={`sortable ${sort.key === c.key ? 'active' : ''}`}
-                          onClick={() => toggleSort(c.key)}
-                          title={`Sort by ${c.label}`}
-                        >
-                          {c.label}
-                          <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
-                        </button>
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {total === 0 && (
-                    <tr><td colSpan={9} className="muted center">No students found.</td></tr>
-                  )}
-                  {pageRows.map((s) => (
-                    <tr key={s.id}>
-                      <td className="mono">{s.studentNo}</td>
-                      <td className="strong">{s.lastName}, {s.firstName}</td>
-                      <td>{s.course || '—'}</td>
-                      <td className="num">{s.early}</td>
-                      <td className="num">{s.onTime}</td>
-                      <td className="num">{s.late}</td>
-                      <td className="num">{s.excused}</td>
-                      <td className="num">{s.absent}</td>
-                      <td>
-                        <div className="rate-wrap">
-                          <div className="rate-bar"><span style={{ width: `${s.rate}%` }} /></div>
-                          <span className="rate-label">{s.rate}%</span>
-                        </div>
-                      </td>
+              <div className="card table-card">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      {SUMMARY_COLUMNS.map((c) => (
+                        <th key={c.key} className={c.num ? 'num' : ''}>
+                          <button
+                            type="button"
+                            className={`sortable ${sort.key === c.key ? 'active' : ''}`}
+                            onClick={() => toggleSort(c.key)}
+                            title={`Sort by ${c.label}`}
+                          >
+                            {c.label}
+                            <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                          </button>
+                        </th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-              <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
-                {overview.totalEvents} event{overview.totalEvents === 1 ? '' : 's'} total.
-              </div>
-            </div>
-            {total > 0 && (
-              <div className="pagination">
-                <span className="muted small">
-                  Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, total)} of {total}
-                </span>
-                <div className="pager">
-                  <button className="btn btn-sm" onClick={() => setPage(1)} disabled={currentPage === 1}>« First</button>
-                  <button className="btn btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>‹ Prev</button>
-                  <span className="pager-info">Page {currentPage} of {pageCount}</span>
-                  <button className="btn btn-sm" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}>Next ›</button>
-                  <button className="btn btn-sm" onClick={() => setPage(pageCount)} disabled={currentPage === pageCount}>Last »</button>
+                  </thead>
+                  <tbody>
+                    {total === 0 && (
+                      <tr><td colSpan={9} className="muted center">No students found for the selected filters.</td></tr>
+                    )}
+                    {pageRows.map((s) => (
+                      <tr key={s.id}>
+                        <td className="mono">{s.studentNo}</td>
+                        <td className="strong">{s.lastName}, {s.firstName}</td>
+                        <td>{s.course || '—'}</td>
+                        <td className="num">{s.early}</td>
+                        <td className="num">{s.onTime}</td>
+                        <td className="num">{s.late}</td>
+                        <td className="num">{s.excused}</td>
+                        <td className="num">{s.absent}</td>
+                        <td>
+                          <div className="rate-wrap">
+                            <div className={`rate-bar ${Number(s.rate) < 75 ? 'danger' : ''}`}><span style={{ width: `${s.rate}%` }} /></div>
+                            <span className="rate-label">{s.rate}%</span>
+                          </div>
+                          <div className="muted small">Attended {s.attended}/{s.expected} expected</div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
+                  {overview.totalEvents} event{overview.totalEvents === 1 ? '' : 's'} total · rates are based on each student’s expected attendance in this range.
                 </div>
               </div>
-            )}
+              {total > 0 && (
+                <div className="pagination">
+                  <span className="muted small">
+                    Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, total)} of {total}
+                  </span>
+                  <div className="pager">
+                    <button className="btn btn-sm" onClick={() => setPage(1)} disabled={currentPage === 1}>« First</button>
+                    <button className="btn btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>‹ Prev</button>
+                    <span className="pager-info">Page {currentPage} of {pageCount}</span>
+                    <button className="btn btn-sm" onClick={() => setPage((p) => Math.min(pageCount, p + 1))} disabled={currentPage === pageCount}>Next ›</button>
+                    <button className="btn btn-sm" onClick={() => setPage(pageCount)} disabled={currentPage === pageCount}>Last »</button>
+                  </div>
+                </div>
+              )}
             </>
           )}
         </>
@@ -452,41 +631,45 @@ export default function Reports() {
                     {m.label}
                   </span>
                 ))}
+                <span className="muted small" style={{ marginLeft: 'auto' }}>{matrix.events.length} events · {matrix.students.length} students</span>
               </div>
               <div className="scroll-x">
-              <table className="table matrix">
-                <thead>
-                  <tr>
-                    <th className="sticky-col">Student</th>
-                    {matrix.events.map((e) => (
-                      <th key={e.id} className="rot">{e.name}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {matrix.students.map((s) => (
-                    <tr key={s.id}>
-                      <td className="sticky-col strong">{s.lastName}, {s.firstName}</td>
-                      {matrix.events.map((e) => {
-                        const key = `${e.id}:${s.id}`;
-                        const offList = matrix.excluded?.[key];
-                        const status = matrix.records[key];
-                        return (
-                          <td key={e.id} className="cell-mark">
-                            {offList ? (
-                              <span className="mark mark-none" title="Not on the attendee list for this event">—</span>
-                            ) : status ? (
-                              <span className={`mark mark-${status}`} title={status}>{MARK_LABEL[status] || status[0].toUpperCase()}</span>
-                            ) : (
-                              <span className="mark mark-absent" title="absent">A</span>
-                            )}
-                          </td>
-                        );
-                      })}
+                <table className="table matrix">
+                  <thead>
+                    <tr>
+                      <th className="sticky-col">Student</th>
+                      {matrix.events.map((e) => (
+                        <th key={e.id} className="rot" title={`${e.name}${e.eventDate ? ` (${e.eventDate})` : ''}`}>{e.name}</th>
+                      ))}
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {matrix.students.length === 0 && (
+                      <tr><td colSpan={Math.max(1, matrix.events.length + 1)} className="muted center">No students found.</td></tr>
+                    )}
+                    {matrix.students.map((s) => (
+                      <tr key={s.id}>
+                        <td className="sticky-col strong">{s.lastName}, {s.firstName} <span className="muted small">({s.studentNo})</span></td>
+                        {matrix.events.map((e) => {
+                          const key = `${e.id}:${s.id}`;
+                          const offList = matrix.excluded?.[key];
+                          const status = matrix.records[key];
+                          return (
+                            <td key={e.id} className="cell-mark">
+                              {offList ? (
+                                <span className="mark mark-none" title="Not on the attendee list for this event">—</span>
+                              ) : status ? (
+                                <span className={`mark mark-${status}`} title={status}>{MARK_LABEL[status] || status[0].toUpperCase()}</span>
+                              ) : (
+                                <span className="mark mark-absent" title="absent">A</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}
@@ -509,7 +692,7 @@ export default function Reports() {
                 <div className="card-head">
                   <h3>Attendance rate over time</h3>
                   <span className="muted small">
-                    {granularity === 'event' ? 'Per event' : `By ${granularity}`} · {trends.totalStudents} student{trends.totalStudents === 1 ? '' : 's'} in scope
+                    {granularity === 'event' ? 'Per event' : `By ${granularity}`} · {trends.totalStudents} student{trends.totalStudents === 1 ? '' : 's'} in scope · trend {insights.metrics.trend.label.toLowerCase()}
                   </span>
                 </div>
                 {trends.points.length === 0 ? (
@@ -569,7 +752,7 @@ export default function Reports() {
                         <td className="num">{p.absent}</td>
                         <td>
                           <div className="rate-wrap">
-                            <div className="rate-bar"><span style={{ width: `${p.rate}%` }} /></div>
+                            <div className={`rate-bar ${p.rate < 75 ? 'danger' : ''}`}><span style={{ width: `${p.rate}%` }} /></div>
                             <span className="rate-label">{p.rate}%</span>
                           </div>
                         </td>
@@ -586,6 +769,7 @@ export default function Reports() {
       {view === 'at-risk' && (
         <>
           <div className="toolbar">
+            <div className="muted small">Students below the attendance threshold are prioritized for intervention.</div>
             <form className="toolbar-right threshold-form" onSubmit={saveThreshold}>
               <label>
                 Threshold %
@@ -628,7 +812,7 @@ export default function Reports() {
                   {atRisk.students.length === 0 && (
                     <tr>
                       <td colSpan={9} className="muted center">
-                        No students below {atRisk.threshold}% attendance.
+                        No students below {atRisk.threshold}% attendance for the selected filters.
                       </td>
                     </tr>
                   )}
@@ -682,7 +866,7 @@ export default function Reports() {
               <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
                 {atRisk.students.length} at-risk student{atRisk.students.length === 1 ? '' : 's'} · below {atRisk.threshold}% ·
                 {' '}based on {atRisk.totalEvents} event{atRisk.totalEvents === 1 ? '' : 's'} total.
-                {' '}Risk is an explainable logistic score (exact SHAP) — tap a score to see drivers.
+                {' '}Risk is an explainable score with transparent drivers — open a score to review factors and decide next steps.
               </div>
             </div>
           )}
@@ -738,13 +922,13 @@ export default function Reports() {
                             <span className="rate-label">{s.rate}%</span>
                           </div>
                         </td>
-                        <td className="num">{s.needed}</td>
+                        <td className="num"><strong>{s.needed}</strong></td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
                 <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
-                  {compliance.below} below {compliance.minimum}% · {compliance.compliantCount} compliant · based on {compliance.totalEvents} event{compliance.totalEvents === 1 ? '' : 's'} total.
+                  {compliance.below} below {compliance.minimum}% · {compliance.compliantCount} compliant · based on {compliance.totalEvents} event{compliance.totalEvents === 1 ? '' : 's'} total. “Needed” shows attendances required to reach the minimum.
                 </div>
               </div>
             </>
