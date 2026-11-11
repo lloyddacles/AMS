@@ -402,13 +402,18 @@ export default function Scanner() {
   // to click "Confirm" for each student — the matched scan is committed on its
   // own so the next student can scan right away. Kiosk mode (student number
   // confirmation) is never auto-confirmed because the number must be typed.
+  // If a student is accidentally scanned again after completion, auto-cancel the
+  // duplicate notice so the operator does not need to dismiss it manually.
   useEffect(() => {
     if (!pendingScan) return;
     if (!autoConfirm) return;
     if (pendingScan.requireStudentConfirm) return;
-    if (pendingScan.eventClosed || pendingScan.windowBlocked) return;
-    if (pendingScan.nextAction === 'already-complete') return;
     if (committing) return;
+    if (pendingScan.nextAction === 'already-complete') {
+      const t = setTimeout(() => cancel(), 1200);
+      return () => clearTimeout(t);
+    }
+    if (pendingScan.eventClosed || pendingScan.windowBlocked) return;
     const t = setTimeout(() => commit(), 200);
     return () => clearTimeout(t);
   }, [pendingScan, autoConfirm, committing]);
@@ -558,6 +563,9 @@ export default function Scanner() {
                 )}
                 {pendingScan.eventClosed && <span className="pill pill-red">Check-in closed</span>}
                 {pendingScan.offline && <span className="pill pill-amber">Offline · will sync</span>}
+                {autoConfirm && !pendingScan.requireStudentConfirm && !committing && pendingScan.nextAction === 'already-complete' && (
+                  <span className="pill pill-amber">Auto-canceling…</span>
+                )}
                 {autoConfirm && !pendingScan.requireStudentConfirm && !pendingScan.eventClosed && !pendingScan.windowBlocked && pendingScan.nextAction !== 'already-complete' && (
                   <span className="pill pill-green">Auto-confirming…</span>
                 )}
