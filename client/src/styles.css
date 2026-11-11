@@ -851,15 +851,156 @@ input:focus, select:focus, textarea:focus {
 .checkbox span { font-size: 0.85rem; color: #334155; }
 
 /* ---------- Recurring schedule form ---------- */
-.field-label { display: block; font-size: 0.78rem; font-weight: 600; color: #334155; margin-bottom: 0.4rem; }
-.weekday-picker { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.field-label { display: block; font-size: 0.82rem; font-weight: 600; color: #334155; margin-bottom: 0.4rem; }
+.weekday-picker { display: flex; flex-wrap: wrap; gap: 0.45rem; }
 .weekday-chip {
-  min-width: 48px; padding: 0.45rem 0.65rem; border-radius: 9px;
-  border: 1px solid var(--border); background: var(--surface); color: var(--text);
-  font-size: 0.82rem; font-weight: 600; cursor: pointer; transition: all 0.12s;
+  min-width: 52px; min-height: 38px; padding: 0.45rem 0.7rem; border-radius: 10px;
+  border: 1px solid #dbe5ef; background: #fff; color: var(--text);
+  font-size: 0.82rem; font-weight: 700; cursor: pointer; transition: all 0.12s;
 }
-.weekday-chip:hover { border-color: #cbd5e1; background: #f8fafc; }
-.weekday-chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.weekday-chip:hover { border-color: #bfd3ea; background: #f8fbff; }
+.weekday-chip.on {
+  background: linear-gradient(180deg, #3b82f6, #2563eb);
+  border-color: #2563eb; color: #fff;
+  box-shadow: 0 6px 14px -10px rgba(37, 99, 235, 0.8);
+}
+
+/* ---------- Schedules page ---------- */
+.schedules-page .schedule-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 1rem;
+}
+
+.schedule-card {
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  overflow: hidden;
+  border: 1px solid #dbe5ef;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.schedule-card.is-inactive {
+  opacity: 0.92;
+}
+
+.schedule-card-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem 0.75rem;
+  border-bottom: 1px solid #eef3f8;
+  background: linear-gradient(180deg, #f8fbff 0%, #ffffff 100%);
+}
+
+.schedule-card-badges {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.schedule-event-count {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 0.55rem;
+  border-radius: 999px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.75rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.schedule-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.95rem 1rem 1rem;
+}
+
+.schedule-card-title {
+  margin: 0;
+  font-size: 1.08rem;
+  line-height: 1.3;
+  letter-spacing: -0.01em;
+}
+
+.schedule-meta-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  padding: 0.75rem;
+  border: 1px solid #e8eef5;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.schedule-meta-item {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  align-items: start;
+  gap: 0.5rem;
+  font-size: 0.84rem;
+}
+
+.schedule-meta-label {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding-top: 0.15rem;
+}
+
+.schedule-days {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.schedule-day-chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 0.45rem;
+  border-radius: 999px;
+  background: #e0ecff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.schedule-card-actions {
+  display: flex;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  padding: 0.8rem 1rem 1rem;
+  border-top: 1px solid #eef3f8;
+  background: #fcfdff;
+  margin-top: auto;
+}
+
+.schedule-card-actions .btn {
+  flex: 1 1 auto;
+}
+
+.schedules-empty {
+  padding: 2.25rem 1.5rem;
+}
+
+@media (max-width: 640px) {
+  .schedules-page .schedule-grid {
+    grid-template-columns: 1fr;
+  }
+  .schedule-meta-item {
+    grid-template-columns: 1fr;
+    gap: 0.15rem;
+  }
+}
 
 /* ---------- Bulk add ---------- */
 .bulk-toolbar { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; margin: 0.85rem 0 0.5rem; }

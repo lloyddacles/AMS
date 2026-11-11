@@ -163,7 +163,7 @@ export default function Schedules() {
   const termCount = new Set(schedules.map((s) => s.termId).filter(Boolean)).size;
 
   return (
-    <div className="page">
+    <div className="page schedules-page">
       <PageHeader
         eyebrow="Recurring sessions"
         title="Class Schedules"
@@ -184,132 +184,176 @@ export default function Schedules() {
       {loading && schedules.length === 0 && <div className="card"><Spinner label="Loading schedules…" size="lg" variant="panel" /></div>}
 
       {!loading && schedules.length === 0 && (
-        <div className="empty card">
-          <p>No schedules yet. Create one (e.g. “CS101 — MWF 9:00–10:00”) to auto-generate its events.</p>
+        <div className="empty card schedules-empty">
+          <div className="events-empty-icon">❖</div>
+          <h3>No schedules yet</h3>
+          <p className="muted">Create a recurring schedule (e.g. “CS101 — MWF 9:00–10:00”) to auto-generate attendance events for the full date range.</p>
+          <button className="btn btn-primary" onClick={openCreate}>+ Create schedule</button>
         </div>
       )}
 
       {!loading && schedules.length > 0 && (
-        <div className="card table-card">
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Schedule</th>
-                <th>Term</th>
-                <th>Days</th>
-                <th>Time</th>
-                <th>Date range</th>
-                <th>Events</th>
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {schedules.map((s) => (
-                <tr key={s.id}>
-                  <td>
-                    <div className="name-cell">
-                      <span className="mini-avatar"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 4h18v18H3z M16 2v4 M8 2v4 M3 10h18" /></svg></span>
-                      <div>
-                        <div className="strong">
-                          {s.name}
-                          {Number(s.active) === 0 && <span className="pill pill-gray" style={{ marginLeft: '0.5rem' }}>inactive</span>}
-                        </div>
-                        {s.location ? <div className="muted small">{s.location}</div> : null}
+        <div className="schedule-grid">
+          {schedules.map((s) => {
+            const active = Number(s.active) !== 0;
+            const days = String(s.weekdayLabel || '').split(',').map((d) => d.trim()).filter(Boolean);
+            return (
+              <div key={s.id} className={`card schedule-card ${active ? '' : 'is-inactive'}`}>
+                <div className="schedule-card-top">
+                  <div className="schedule-card-badges">
+                    <span className={`pill ${active ? 'pill-green' : 'pill-gray'}`}>{active ? 'Active' : 'Inactive'}</span>
+                    {s.termName ? <span className="pill pill-purple">{s.termName}</span> : <span className="pill pill-gray">No term</span>}
+                    {Number(s.requireStudentConfirm) ? <span className="pill pill-blue">Kiosk · ID</span> : null}
+                  </div>
+                  <span className="schedule-event-count" title="Generated events">{s.eventCount} events</span>
+                </div>
+
+                <div className="schedule-card-body">
+                  <h3 className="schedule-card-title">{s.name}</h3>
+                  {s.description ? <p className="muted small clamp">{s.description}</p> : <p className="muted small">No description</p>}
+
+                  <div className="schedule-meta-grid">
+                    <div className="schedule-meta-item">
+                      <span className="schedule-meta-label">Days</span>
+                      <div className="schedule-days">
+                        {days.length ? days.map((d) => <span key={d} className="schedule-day-chip">{d}</span>) : <span className="muted">—</span>}
                       </div>
                     </div>
-                  </td>
-                  <td>{s.termName || <span className="muted">—</span>}</td>
-                  <td>{s.weekdayLabel || '—'}</td>
-                  <td className="mono">{s.startTime || '—'}{s.endTime ? `–${s.endTime}` : ''}</td>
-                  <td className="mono">{s.startDate} → {s.endDate}</td>
-                  <td>{s.eventCount}</td>
-                  <td className="right actions">
-                    <button className="btn btn-sm btn-primary" onClick={() => generate(s)} disabled={generating === s.id}>
-                      {generating === s.id ? 'Generating…' : 'Generate'}
-                    </button>
-                    <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                    <div className="schedule-meta-item">
+                      <span className="schedule-meta-label">Time</span>
+                      <span className="mono">{s.startTime || '—'}{s.endTime ? `–${s.endTime}` : ''}</span>
+                    </div>
+                    <div className="schedule-meta-item">
+                      <span className="schedule-meta-label">Date range</span>
+                      <span className="mono small">{s.startDate} → {s.endDate}</span>
+                    </div>
+                    <div className="schedule-meta-item">
+                      <span className="schedule-meta-label">Location</span>
+                      <span>{s.location || '—'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="schedule-card-actions">
+                  <button className="btn btn-sm btn-primary" onClick={() => generate(s)} disabled={generating === s.id}>
+                    {generating === s.id ? 'Generating…' : 'Generate events'}
+                  </button>
+                  <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                  <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
 
       {editing && (
         <Modal
+          wide
           title={editing.id ? 'Edit schedule' : 'New schedule'}
           onClose={() => setEditing(null)}
           footer={
             <>
               <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
-              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
+              <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save schedule'}</button>
             </>
           }
         >
-          <form className="form grid-form" onSubmit={save}>
-            <label className="span-2">
-              Schedule name *
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="CS101 — Data Structures" required />
-            </label>
-            <label>
-              Term
-              <select value={form.termId} onChange={(e) => onTermChange(e.target.value)}>
-                <option value="">— none —</option>
-                {terms.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-                ))}
-              </select>
-            </label>
-            <label>
-              Location
-              <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="Room 204" />
-            </label>
-            <div className="span-2">
-              <span className="field-label">Repeats on *</span>
-              <div className="weekday-picker">
-                {WEEKDAYS.map((d) => (
-                  <button
-                    type="button"
-                    key={d.value}
-                    className={`weekday-chip ${form.weekdays.includes(d.value) ? 'on' : ''}`}
-                    onClick={() => toggleWeekday(d.value)}
-                  >
-                    {d.label}
-                  </button>
-                ))}
+          <form className="form event-form" onSubmit={save}>
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Schedule details</h4>
+                <p className="muted small">Name this recurring session and where it takes place.</p>
               </div>
-            </div>
-            <label>
-              Start time
-              <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
-            </label>
-            <label>
-              End time
-              <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
-            </label>
-            <label>
-              From date *
-              <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
-            </label>
-            <label>
-              Until date *
-              <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
-            </label>
-            <label className="span-2">
-              Description
-              <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </label>
-            <label className="checkbox">
-              <input type="checkbox" checked={form.requireStudentConfirm} onChange={(e) => setForm({ ...form, requireStudentConfirm: e.target.checked })} />
-              Require student number confirmation
-            </label>
-            <label className="checkbox">
-              <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
-              Active
-            </label>
-            {formError && <div className="alert alert-error span-2">{formError}</div>}
+              <div className="form grid-form">
+                <label className="span-2">
+                  <span>Schedule name <span className="req">*</span></span>
+                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. CS101 — Data Structures" required />
+                </label>
+                <label>
+                  <span>Term</span>
+                  <select value={form.termId} onChange={(e) => onTermChange(e.target.value)}>
+                    <option value="">— none —</option>
+                    {terms.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Location</span>
+                  <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Room 204" />
+                </label>
+                <label className="span-2">
+                  <span>Description</span>
+                  <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes for generated events" />
+                </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Recurrence & time</h4>
+                <p className="muted small">Choose which days repeat and the session time window.</p>
+              </div>
+              <div className="form grid-form">
+                <div className="span-2">
+                  <span className="field-label">Repeats on <span className="req">*</span></span>
+                  <div className="weekday-picker">
+                    {WEEKDAYS.map((d) => (
+                      <button
+                        type="button"
+                        key={d.value}
+                        className={`weekday-chip ${form.weekdays.includes(d.value) ? 'on' : ''}`}
+                        onClick={() => toggleWeekday(d.value)}
+                      >
+                        {d.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <label>
+                  <span>Start time</span>
+                  <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
+                </label>
+                <label>
+                  <span>End time</span>
+                  <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+                </label>
+                <label>
+                  <span>From date <span className="req">*</span></span>
+                  <input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} required />
+                </label>
+                <label>
+                  <span>Until date <span className="req">*</span></span>
+                  <input type="date" value={form.endDate} onChange={(e) => setForm({ ...form, endDate: e.target.value })} required />
+                </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Options</h4>
+                <p className="muted small">Defaults applied to generated events and schedule status.</p>
+              </div>
+              <div className="event-form-options">
+                <label className={`event-option-card ${form.requireStudentConfirm ? 'is-on' : ''}`}>
+                  <input type="checkbox" checked={form.requireStudentConfirm} onChange={(e) => setForm({ ...form, requireStudentConfirm: e.target.checked })} />
+                  <span className="event-option-copy">
+                    <span className="event-option-title">Require student number confirmation</span>
+                    <span className="event-option-desc">Generated events will ask for student number confirmation during scanning (kiosk/anti-sharing mode).</span>
+                  </span>
+                </label>
+                <label className={`event-option-card ${form.active ? 'is-on' : ''}`}>
+                  <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
+                  <span className="event-option-copy">
+                    <span className="event-option-title">Active schedule</span>
+                    <span className="event-option-desc">Keep this schedule active for generating and managing recurring events.</span>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            {formError && <div className="alert alert-error">{formError}</div>}
           </form>
         </Modal>
       )}
