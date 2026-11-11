@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import { composeIdCard } from '../idCard.js';
@@ -38,9 +38,15 @@ export default function Students() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [selected, setSelected] = useState(() => new Set());
   const [regenBusy, setRegenBusy] = useState(false);
+  const [bulkEditOpen, setBulkEditOpen] = useState(false);
+  const [bulkForm, setBulkForm] = useState({ course: '', yearLevel: '', section: '' });
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkError, setBulkError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(25);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const focusId = searchParams.get('student');
 
   const sorted = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
@@ -62,6 +68,7 @@ export default function Students() {
 
   const pageIds = pageRows.map((s) => s.id);
   const allPageSelected = pageIds.length > 0 && pageIds.every((id) => selected.has(id));
+  const allMatchingSelected = total > 0 && sorted.every((s) => selected.has(s.id));
 
   function toggleSelect(id) {
     setSelected((prev) => {
@@ -77,6 +84,15 @@ export default function Students() {
       const next = new Set(prev);
       if (allPageSelected) pageIds.forEach((id) => next.delete(id));
       else pageIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
+  function toggleSelectAllMatching() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allMatchingSelected) sorted.forEach((s) => next.delete(s.id));
+      else sorted.forEach((s) => next.add(s.id));
       return next;
     });
   }
@@ -111,6 +127,30 @@ export default function Students() {
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
+
+  // Deep link from the command palette: /students?student=<id> opens the edit
+  // modal for that student, then cleans the query string so closing it sticks.
+  useEffect(() => {
+    if (!focusId) return undefined;
+    let cancelled = false;
+    (async () => {
+      try {
+        const student = await api.getStudent(focusId);
+        if (cancelled) return;
+        openEdit(student);
+        if (!students.some((s) => s.id === student.id)) setSearch('');
+        const next = new URLSearchParams(searchParams);
+        next.delete('student');
+        setSearchParams(next, { replace: true });
+      } catch (err) {
+        if (!cancelled) setError(err.message);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focusId]);
 
   function toggleSort(key) {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
@@ -195,6 +235,53 @@ export default function Students() {
     }
   }
 
+  function openBulkEdit() {
+    setBulkForm({ course: '', yearLevel: '', section: '' });
+    setBulkError('');
+    setBulkEditOpen(true);
+  }
+
+  async function saveBulkEdit(e) {
+    e.preventDefault();
+    const patch = {};
+    for (const key of ['course', 'yearLevel', 'section']) {
+      const value = String(bulkForm[key] || '').trim();
+      if (value) patch[key] = value;
+    }
+    if (Object.keys(patch).length === 0) {
+      setBulkError('Enter a course, year level, or section to set. Blank fields leave existing values untouched.');
+      return;
+    }
+    setBulkBusy(true);
+    setBulkError('');
+    try {
+      const res = await api.bulkUpdateStudents([...selected], patch);
+      setBulkEditOpen(false);
+      setSelected(new Set());
+      await load();
+      alert(`Updated ${res.count} student(s).`);
+    } catch (err) {
+      setBulkError(err.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  async function bulkRemove() {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} selected student(s)?\n\nTheir attendance records will also be removed.`)) return;
+    if (!confirm('This cannot be undone. Continue?')) return;
+    try {
+      const res = await api.bulkDeleteStudents(ids);
+      setSelected(new Set());
+      await load();
+      alert(`Deleted ${res.count} student(s).`);
+    } catch (e) {
+      alert(e.message);
+    }
+  }
+
   const courseCount = new Set(students.map((s) => s.course).filter(Boolean)).size;
   const sectionCount = new Set(students.map((s) => s.section).filter(Boolean)).size;
   const yearCount = new Set(students.map((s) => s.yearLevel).filter(Boolean)).size;
@@ -235,12 +322,23 @@ export default function Students() {
             onChange={(e) => setSearch(e.target.value)}
           />
           <div className="toolbar-right">
-            {isAdmin && selected.size > 0 && (
+            {selected.size > 0 && (
               <div className="sel-actions">
                 <span className="muted small">{selected.size} selected</span>
-                <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
-                  {regenBusy ? 'Working…' : 'Regenerate QR'}
-                </button>
+                {!allMatchingSelected && total > selected.size && (
+                  <button className="btn btn-sm" onClick={toggleSelectAllMatching}>
+                    Select all {total}
+                  </button>
+                )}
+                <button className="btn btn-sm" onClick={openBulkEdit}>Bulk edit</button>
+                {isAdmin && (
+                  <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
+                    {regenBusy ? 'Working…' : 'Regenerate QR'}
+                  </button>
+                )}
+                {isAdmin && (
+                  <button className="btn btn-sm btn-danger" onClick={bulkRemove}>Delete</button>
+                )}
                 <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
               </div>
             )}
@@ -260,16 +358,14 @@ export default function Students() {
         <table className="table">
           <thead>
             <tr>
-              {isAdmin && (
-                <th className="check-col">
-                  <input
-                    type="checkbox"
-                    aria-label="Select all on this page"
-                    checked={allPageSelected}
-                    onChange={toggleSelectPage}
-                  />
-                </th>
-              )}
+              <th className="check-col">
+                <input
+                  type="checkbox"
+                  aria-label="Select all on this page"
+                  checked={allPageSelected}
+                  onChange={toggleSelectPage}
+                />
+              </th>
               {COLUMNS.map((c) => (
                 <th key={c.key}>
                   <button
@@ -288,18 +384,16 @@ export default function Students() {
           </thead>
           <tbody>
             {loading && students.length === 0 && (
-              <tr><td colSpan={isAdmin ? 8 : 7} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
+              <tr><td colSpan={8} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
             )}
             {!loading && students.length === 0 && (
-              <tr><td colSpan={isAdmin ? 8 : 7} className="muted center">No students found.</td></tr>
+              <tr><td colSpan={8} className="muted center">No students found.</td></tr>
             )}
             {pageRows.map((s) => (
               <tr key={s.id} className={selected.has(s.id) ? 'row-selected' : ''}>
-                {isAdmin && (
-                  <td className="check-col">
-                    <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
-                  </td>
-                )}
+                <td className="check-col">
+                  <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
+                </td>
                 <td className="mono">{s.studentNo}</td>
                 <td>
                   <div className="name-cell">
@@ -382,6 +476,52 @@ export default function Students() {
               <input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" />
             </label>
             {formError && <div className="alert alert-error span-2">{formError}</div>}
+          </form>
+        </Modal>
+      )}
+
+      {bulkEditOpen && (
+        <Modal
+          title={`Bulk edit ${selected.size} student${selected.size === 1 ? '' : 's'}`}
+          onClose={() => setBulkEditOpen(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setBulkEditOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveBulkEdit} disabled={bulkBusy}>
+                {bulkBusy ? 'Updating…' : 'Apply changes'}
+              </button>
+            </>
+          }
+        >
+          <form className="form grid-form" onSubmit={saveBulkEdit}>
+            <p className="muted small span-2">
+              Only filled-in fields are changed. Blank fields keep each student's current value.
+            </p>
+            <label>
+              Course
+              <input
+                value={bulkForm.course}
+                onChange={(e) => setBulkForm({ ...bulkForm, course: e.target.value })}
+                placeholder="Leave blank to keep"
+              />
+            </label>
+            <label>
+              Year Level
+              <input
+                value={bulkForm.yearLevel}
+                onChange={(e) => setBulkForm({ ...bulkForm, yearLevel: e.target.value })}
+                placeholder="Leave blank to keep"
+              />
+            </label>
+            <label>
+              Section
+              <input
+                value={bulkForm.section}
+                onChange={(e) => setBulkForm({ ...bulkForm, section: e.target.value })}
+                placeholder="Leave blank to keep"
+              />
+            </label>
+            {bulkError && <div className="alert alert-error span-2">{bulkError}</div>}
           </form>
         </Modal>
       )}

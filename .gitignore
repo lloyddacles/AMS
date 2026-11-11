@@ -6,4 +6,8 @@ server/data/*.sqlite
 server/data/*.sqlite-journal
 server/data/*.sqlite-wal
 server/data/*.sqlite-shm
+server/data/test-*.sqlite
+server/data/test-*.sqlite-journal
+server/data/test-*.sqlite-wal
+server/data/test-*.sqlite-shm
 .DS_Store

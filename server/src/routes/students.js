@@ -16,6 +16,13 @@ function chunk(items, size) {
   return out;
 }
 
+function normalizeIds(raw, max = 5000) {
+  const ids = [...new Set((Array.isArray(raw) ? raw : []).map((v) => Number(v)))].filter(
+    (n) => Number.isInteger(n) && n > 0
+  );
+  return ids.length > max ? null : ids;
+}
+
 router.get('/', async (req, res) => {
   const { search } = req.query;
   let rows;
@@ -160,6 +167,84 @@ router.post('/bulk', async (req, res) => {
     updated,
     skipped,
   });
+});
+
+// Apply the same course / year / section change to many students at once.
+// Blank fields are left untouched, so a single request can update just one
+// attribute without clearing the rest.
+router.post('/bulk-update', async (req, res) => {
+  const ids = normalizeIds(req.body?.ids);
+  if (!ids) return res.status(400).json({ error: 'Too many students in one request (max 5000)' });
+  if (ids.length === 0) return res.status(400).json({ error: 'Select at least one student' });
+
+  const fields = [
+    ['course', 'course'],
+    ['yearLevel', 'year_level'],
+    ['section', 'section'],
+  ];
+  const patch = [];
+  for (const [key, column] of fields) {
+    if (!Object.prototype.hasOwnProperty.call(req.body || {}, key)) continue;
+    const value = String(req.body[key] ?? '').trim();
+    if (!value) continue;
+    patch.push({ key, column, value: value.slice(0, 120) });
+  }
+  if (patch.length === 0) {
+    return res.status(400).json({ error: 'Provide a course, year level, or section to set' });
+  }
+
+  const placeholders = ids.map(() => '?').join(',');
+  const targets = await all(`SELECT id FROM students WHERE id IN (${placeholders})`, ids);
+  if (targets.length === 0) return res.status(404).json({ error: 'No matching students found' });
+
+  const statements = targets.map((t) => ({
+    sql: `UPDATE students SET ${patch.map((p) => `${p.column} = ?`).join(', ')} WHERE id = ?`,
+    args: [...patch.map((p) => p.value), t.id],
+  }));
+  await batch(statements, 'write');
+
+  const changes = patch.map((p) => `${p.key} → ${p.value}`).join('; ');
+  await logAudit({
+    user: req.user,
+    action: 'student.bulk-update',
+    entity: 'student',
+    detail: `${targets.length} student(s) · ${changes}`,
+  });
+  res.json({ count: targets.length, ids: targets.map((t) => t.id) });
+});
+
+// Delete many students at once (their attendance rows cascade). Kept
+// admin-only because it is irreversible and affects historical reports.
+router.post('/bulk-delete', requireRole('admin'), async (req, res) => {
+  const ids = normalizeIds(req.body?.ids);
+  if (!ids) return res.status(400).json({ error: 'Too many students in one request (max 5000)' });
+  if (ids.length === 0) return res.status(400).json({ error: 'Select at least one student' });
+
+  const placeholders = ids.map(() => '?').join(',');
+  const targets = await all(
+    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName
+     FROM students WHERE id IN (${placeholders})`,
+    ids
+  );
+  if (targets.length === 0) return res.status(404).json({ error: 'No matching students found' });
+
+  await batch(
+    targets.map((t) => ({ sql: 'DELETE FROM students WHERE id = ?', args: [t.id] })),
+    'write'
+  );
+  await logAudit({
+    user: req.user,
+    action: 'student.bulk-delete',
+    entity: 'student',
+    detail:
+      `${targets.length} student(s) · ` +
+      targets
+        .slice(0, 10)
+        .map((t) => `${t.studentNo} ${t.lastName}`)
+        .join(', ') +
+      (targets.length > 10 ? ` +${targets.length - 10} more` : ''),
+  });
+  res.json({ count: targets.length, ids: targets.map((t) => t.id) });
 });
 
 router.put('/:id', async (req, res) => {

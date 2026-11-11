@@ -10,7 +10,9 @@
   "scripts": {
     "dev": "node --watch src/dev.js",
     "start": "node src/dev.js",
-    "seed": "node src/seed.js"
+    "seed": "node src/seed.js",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@libsql/client": "^0.18.0",
@@ -18,7 +20,13 @@
     "cors": "^2.8.5",
     "express": "^4.21.2",
     "express-async-errors": "^3.1.1",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.1.0",
     "jsonwebtoken": "^9.0.2",
     "nanoid": "^5.0.9"
+  },
+  "devDependencies": {
+    "supertest": "^7.1.0",
+    "vitest": "^3.1.1"
   }
 }

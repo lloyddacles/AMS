@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAuth, requireRole } from '../middleware/auth.js';
 import { exportData, importData, backupSummary } from '../services/backup.js';
 import { runAutomation } from '../services/automation.js';
+import { runDigestNow } from '../services/digest.js';
 import { logAudit } from '../services/audit.js';
 
 const router = Router();
@@ -31,6 +32,19 @@ router.get('/backup', async (req, res) => {
 // The same job runs on the daily Vercel cron and lazily on page loads.
 router.post('/automation/run', async (req, res) => {
   const result = await runAutomation();
+  res.json(result);
+});
+
+// Send the attendance digest immediately, regardless of the saved schedule.
+// Useful for checking recipients and the notification layout.
+router.post('/digest/run', async (req, res) => {
+  const result = await runDigestNow();
+  await logAudit({
+    user: req.user,
+    action: 'digest.run',
+    entity: 'system',
+    detail: `Manual digest ${result.digest?.from || ''}–${result.digest?.to || ''}`,
+  });
   res.json(result);
 });
 

@@ -32,6 +32,8 @@ export default function Events() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
+  const [selected, setSelected] = useState(() => new Set());
+  const [bulkBusy, setBulkBusy] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -127,8 +129,72 @@ export default function Events() {
     }
   }
 
+  function toggleSelect(id) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  async function runBulk(action) {
+    const ids = [...selected];
+    if (ids.length === 0) return;
+    const count = `${ids.length} event${ids.length === 1 ? '' : 's'}`;
+    if (action === 'close' && !confirm(`Close ${count}?\n\nMissing students will be marked absent and the event summary locked.`)) return;
+    if (action === 'reopen' && !confirm(`Reopen ${count}?\n\nAuto-recorded absences for those events will be cleared.`)) return;
+    if (action === 'archive' && !confirm(`Archive ${count}?\n\nOnly closed events can be archived.`)) return;
+
+    setBulkBusy(true);
+    try {
+      const res = await api.bulkEvents(ids, action);
+      setSelected(new Set());
+      await load();
+      const skipped = res.skipped || [];
+      let message = `${res.updated?.length || 0} event(s) updated.`;
+      if (skipped.length) {
+        message += `\n\nSkipped ${skipped.length}:\n` +
+          skipped.slice(0, 8).map((s) => `• ${s.name}: ${s.reason}`).join('\n') +
+          (skipped.length > 8 ? `\n…and ${skipped.length - 8} more` : '');
+      }
+      alert(message);
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   const list = view === 'archived' ? archivedEvents : events;
   const visible = termFilter ? list.filter((e) => String(e.termId) === termFilter) : list;
+  const visibleIds = visible.map((e) => e.id);
+  const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selected.has(id));
+
+  // Keep the selection limited to events that still exist, and clear it when
+  // switching between the events and archived tabs.
+  useEffect(() => {
+    setSelected((prev) => {
+      if (prev.size === 0) return prev;
+      const ids = new Set([...events, ...archivedEvents].map((e) => e.id));
+      const next = new Set([...prev].filter((id) => ids.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [events, archivedEvents]);
+
+  useEffect(() => {
+    setSelected(new Set());
+  }, [view]);
+
+  function toggleSelectVisible() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) visibleIds.forEach((id) => next.delete(id));
+      else visibleIds.forEach((id) => next.add(id));
+      return next;
+    });
+  }
+
   const activeCount = events.filter((e) => e.status === 'active').length;
   const recurringCount = events.filter((e) => e.scheduleId).length;
   const seriesCount = events.filter((e) => e.seriesId).length;
@@ -162,15 +228,47 @@ export default function Events() {
             Archived <span className="tab-count">{archivedEvents.length}</span>
           </button>
         </div>
-        {terms.length > 0 && (
-          <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-            <option value="">All terms</option>
-            {terms.map((t) => (
-              <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-            ))}
-          </select>
-        )}
+        <div className="listbar-right">
+          {visible.length > 0 && (
+            <label className="select-all">
+              <input type="checkbox" checked={allVisibleSelected} onChange={toggleSelectVisible} />
+              Select all
+            </label>
+          )}
+          {terms.length > 0 && (
+            <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+              <option value="">All terms</option>
+              {terms.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+              ))}
+            </select>
+          )}
+        </div>
       </div>
+
+      {selected.size > 0 && (
+        <div className="card bulk-bar">
+          <div className="bulk-bar-info">
+            <strong>{selected.size}</strong> event{selected.size === 1 ? '' : 's'} selected
+          </div>
+          <div className="bulk-bar-actions">
+            {view === 'archived' ? (
+              <button className="btn btn-sm" onClick={() => runBulk('unarchive')} disabled={bulkBusy}>
+                {bulkBusy ? 'Working…' : 'Unarchive'}
+              </button>
+            ) : (
+              <>
+                <button className="btn btn-sm btn-primary" onClick={() => runBulk('close')} disabled={bulkBusy}>
+                  {bulkBusy ? 'Working…' : 'Close'}
+                </button>
+                <button className="btn btn-sm" onClick={() => runBulk('reopen')} disabled={bulkBusy}>Reopen</button>
+                <button className="btn btn-sm" onClick={() => runBulk('archive')} disabled={bulkBusy}>Archive</button>
+              </>
+            )}
+            <button className="btn btn-sm" onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear</button>
+          </div>
+        </div>
+      )}
 
       {error && <div className="alert alert-error">{error}</div>}
 

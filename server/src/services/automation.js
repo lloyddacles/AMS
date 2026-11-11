@@ -4,6 +4,7 @@ import { cachedSettings } from './settings.js';
 import { consolidateEvent, nowUtc } from './eventSummary.js';
 import { logAudit } from './audit.js';
 import { notifyEventClosed, runBackgroundChecks } from './notifications.js';
+import { maybeRunDigest } from './digest.js';
 
 // Lazy maintenance runs at most once every five minutes per instance. The
 // daily Vercel cron is the safety net when nobody opens the app.
@@ -84,6 +85,14 @@ async function doRun() {
     console.error('automation notification checks failed:', err);
   }
 
+  // Scheduled attendance digest (in-app for admins, plus email when configured).
+  let digest = null;
+  try {
+    digest = await maybeRunDigest();
+  } catch (err) {
+    console.error('automation digest failed:', err);
+  }
+
   if (closed.length || archived.length) {
     await logAudit({
       user: { name: 'Automation' },
@@ -93,7 +102,7 @@ async function doRun() {
     });
   }
 
-  return { ok: true, startedAt, closed, archived };
+  return { ok: true, startedAt, closed, archived, digest };
 }
 
 // Run now, collapsing concurrent callers (cron + a page request) into one job.

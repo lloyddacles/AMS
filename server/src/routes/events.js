@@ -165,6 +165,88 @@ router.get('/live-board', async (req, res) => {
   res.json({ now: new Date().toISOString(), events: board });
 });
 
+// Apply one lifecycle action to many selected events. Invalid combinations are
+// reported per event instead of failing the whole request, so a mixed
+// selection (some active, some closed) still does the useful work.
+router.post('/bulk', async (req, res) => {
+  const action = String(req.body?.action || '');
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map((v) => Number(v)))]
+    .filter((n) => Number.isInteger(n) && n > 0);
+  if (!['close', 'reopen', 'archive', 'unarchive'].includes(action)) {
+    return res.status(400).json({ error: 'Unknown bulk action' });
+  }
+  if (ids.length === 0) return res.status(400).json({ error: 'Select at least one event' });
+  if (ids.length > 200) return res.status(400).json({ error: 'Select at most 200 events at a time' });
+
+  const placeholders = ids.map(() => '?').join(',');
+  const events = await all(
+    `SELECT id, name, status, archived FROM events WHERE id IN (${placeholders})`,
+    ids
+  );
+  if (events.length === 0) return res.status(404).json({ error: 'No matching events found' });
+
+  const updated = [];
+  const skipped = [];
+  for (const event of events) {
+    if (action === 'close') {
+      if (event.status !== 'active') {
+        skipped.push({ id: event.id, name: event.name, reason: 'Already closed' });
+        continue;
+      }
+      const summary = await consolidateEvent(event.id);
+      if (!summary) {
+        skipped.push({ id: event.id, name: event.name, reason: 'Event no longer exists' });
+        continue;
+      }
+      await notifyEventClosed(event, summary).catch(() => {});
+      updated.push({ id: event.id, name: event.name, rate: summary.rate });
+      continue;
+    }
+    if (action === 'archive') {
+      if (Number(event.archived)) {
+        skipped.push({ id: event.id, name: event.name, reason: 'Already archived' });
+        continue;
+      }
+      if (event.status !== 'closed') {
+        skipped.push({ id: event.id, name: event.name, reason: 'Close it first' });
+        continue;
+      }
+      await run('UPDATE events SET archived = 1, archived_at = ? WHERE id = ?', [nowUtc(), event.id]);
+      updated.push({ id: event.id, name: event.name });
+      continue;
+    }
+    if (action === 'unarchive') {
+      if (!Number(event.archived)) {
+        skipped.push({ id: event.id, name: event.name, reason: 'Not archived' });
+        continue;
+      }
+      await run('UPDATE events SET archived = 0, archived_at = NULL WHERE id = ?', [event.id]);
+      updated.push({ id: event.id, name: event.name });
+      continue;
+    }
+    // reopen
+    if (event.status !== 'closed') {
+      skipped.push({ id: event.id, name: event.name, reason: 'Event is already open' });
+      continue;
+    }
+    await run("DELETE FROM attendance WHERE event_id = ? AND method = 'auto' AND checked_in_at IS NULL", [event.id]);
+    await run(
+      "UPDATE events SET status = 'active', closed_at = NULL, report_summary = NULL, archived = 0, archived_at = NULL WHERE id = ?",
+      [event.id]
+    );
+    await notifyEventReopened(event).catch(() => {});
+    updated.push({ id: event.id, name: event.name });
+  }
+
+  await logAudit({
+    user: req.user,
+    action: `event.bulk-${action}`,
+    entity: 'event',
+    detail: `${updated.length} event(s) updated${skipped.length ? `, ${skipped.length} skipped` : ''}`,
+  });
+  res.json({ action, updated, skipped });
+});
+
 router.get('/:id', async (req, res) => {
   const event = await getEvent(req.params.id);
   if (!event) return res.status(404).json({ error: 'Event not found' });

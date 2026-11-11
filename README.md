@@ -123,6 +123,16 @@ npm run seed
 
 **Default login:** `admin` / `admin123` (change it after first login).
 
+### Testing and quality checks
+
+```sh
+npm test --prefix server   # Vitest + Supertest API smoke tests
+npm test --prefix client   # Vitest client smoke tests
+npm run build --prefix client
+```
+
+A CI workflow (`.github/workflows/ci.yml`) runs installs, server/client tests, and a client build on pushes and pull requests.
+
 ---
 
 ## Environment Variables

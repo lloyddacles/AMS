@@ -93,9 +93,13 @@ export const api = {
   changePassword: (currentPassword, newPassword) =>
     request('/auth/password', { method: 'POST', body: { currentPassword, newPassword } }),
 
+  search: (q) => request(`/search?q=${encodeURIComponent(q)}`),
   getStudents: (search) => request(`/students${search ? `?search=${encodeURIComponent(search)}` : ''}`),
+  getStudent: (id) => request(`/students/${id}`),
   createStudent: (data) => request('/students', { method: 'POST', body: data }),
   bulkCreateStudents: (students, updateExisting = false) => request('/students/bulk', { method: 'POST', body: { students, updateExisting } }),
+  bulkUpdateStudents: (ids, patch) => request('/students/bulk-update', { method: 'POST', body: { ids, ...patch } }),
+  bulkDeleteStudents: (ids) => request('/students/bulk-delete', { method: 'POST', body: { ids } }),
   updateStudent: (id, data) => request(`/students/${id}`, { method: 'PUT', body: data }),
   deleteStudent: (id) => request(`/students/${id}`, { method: 'DELETE' }),
   regenerateStudentQr: (id) => request(`/students/${id}/regenerate-qr`, { method: 'POST' }),
@@ -129,6 +133,7 @@ export const api = {
   regenerateEventCode: (id) => request(`/events/${id}/regenerate-code`, { method: 'POST' }),
   closeEvent: (id) => request(`/events/${id}/close`, { method: 'POST' }),
   reopenEvent: (id) => request(`/events/${id}/reopen`, { method: 'POST' }),
+  bulkEvents: (ids, action) => request('/events/bulk', { method: 'POST', body: { ids, action } }),
 
   getEventAttendance: (eventId) => request(`/attendance/event/${eventId}`),
   getTodayAttendance: () => request('/attendance/today'),
@@ -184,6 +189,7 @@ export const api = {
   getBackupSummary: () => request('/admin/backup/summary'),
   restoreBackup: (backup) => request('/admin/restore', { method: 'POST', body: { backup } }),
   runAutomation: () => request('/admin/automation/run', { method: 'POST' }),
+  runDigest: () => request('/admin/digest/run', { method: 'POST' }),
 
   correctionLookup: (studentNo, name) =>
     request('/corrections/lookup', { method: 'POST', body: { studentNo, name }, auth: false }),

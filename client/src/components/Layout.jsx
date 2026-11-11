@@ -6,6 +6,9 @@ import Footer from './Footer.jsx';
 import ChangePasswordModal from './ChangePasswordModal.jsx';
 import SyncBadge from './SyncBadge.jsx';
 import NotificationBell from './NotificationBell.jsx';
+import CommandPalette from './CommandPalette.jsx';
+
+const SEARCH_KEY = /Mac|iPhone|iPad/.test(navigator.platform || '') ? '⌘K' : 'Ctrl K';
 
 const links = [
   { to: '/', label: 'Dashboard', icon: '▦', end: true },
@@ -29,6 +32,7 @@ export default function Layout({ children }) {
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const [toast, setToast] = useState('');
 
   useEffect(() => {
@@ -38,6 +42,17 @@ export default function Layout({ children }) {
     if (open) document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
+
+  useEffect(() => {
+    function onKey(e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((v) => !v);
+      }
+    }
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   function handleLogout() {
     logout();
@@ -100,6 +115,11 @@ export default function Layout({ children }) {
             ☰
           </button>
           <span className="topbar-title">AttendX</span>
+          <button className="topbar-search" onClick={() => setPaletteOpen(true)} title="Search (⌘K)">
+            <span aria-hidden="true">⌕</span>
+            <span className="topbar-search-text">Search</span>
+            <kbd>{SEARCH_KEY}</kbd>
+          </button>
           <NotificationBell />
           <SyncBadge />
           <LiveClock className="topbar-clock" />
@@ -111,6 +131,7 @@ export default function Layout({ children }) {
       {showPassword && (
         <ChangePasswordModal onClose={() => setShowPassword(false)} onSuccess={handlePasswordChanged} />
       )}
+      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
       {toast && <div className="toast">{toast}</div>}
     </div>
   );

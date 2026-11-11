@@ -56,6 +56,10 @@ export const config = {
   // Shared secret Vercel Cron sends as `Authorization: Bearer <CRON_SECRET>`.
   // Required on production deployments that enable the cron job.
   cronSecret: process.env.CRON_SECRET || '',
+  // Optional email delivery for scheduled digests (Resend HTTP API). Without
+  // these, digests are still written as in-app notifications for admins.
+  resendApiKey: process.env.RESEND_API_KEY || '',
+  digestFrom: process.env.DIGEST_FROM || 'AttendX <onboarding@resend.dev>',
   // Timezone used to interpret event dates/times (event schedules are local).
   // The server (e.g. Vercel) runs in UTC, so this is required for correct
   // early/on-time/late classification and time-out windows.

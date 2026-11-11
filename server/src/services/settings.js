@@ -13,6 +13,10 @@ export const SETTING_DEFAULTS = {
   autoArchiveAfterDays: 0,
   lowCheckinRate: 50,
   lowCheckinGraceMin: 15,
+  // Scheduled digest. 0 = off; otherwise send at most once every N days.
+  digestEveryDays: 0,
+  digestHour: 8,
+  digestRecipients: '',
 };
 
 const BOUNDS = {
@@ -25,7 +29,26 @@ const BOUNDS = {
   autoArchiveAfterDays: { min: 0, max: 365 },
   lowCheckinRate: { min: 0, max: 100 },
   lowCheckinGraceMin: { min: 0, max: 240 },
+  digestEveryDays: { min: 0, max: 365 },
+  digestHour: { min: 0, max: 23 },
 };
+
+// Settings that hold free text rather than a number.
+const STRING_KEYS = new Set(['digestRecipients']);
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Normalize a comma/semicolon/whitespace-separated recipient list.
+function normalizeRecipients(raw) {
+  const parts = String(raw ?? '')
+    .split(/[\s,;]+/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+  if (parts.length > 20) return { ok: false, error: 'Use at most 20 digest recipients' };
+  for (const email of parts) {
+    if (!EMAIL_RE.test(email)) return { ok: false, error: `Invalid email address: ${email}` };
+  }
+  return { ok: true, value: parts.join(', ') };
+}
 
 // Serverless deployments run several warm instances, so a policy saved through
 // one instance must not stay stale in the others. Requests refresh the cache
@@ -45,9 +68,8 @@ export async function getSettings() {
   const rows = await all('SELECT key, value FROM settings');
   const map = { ...SETTING_DEFAULTS };
   for (const r of rows) {
-    if (Object.prototype.hasOwnProperty.call(SETTING_DEFAULTS, r.key)) {
-      map[r.key] = Number(r.value);
-    }
+    if (!Object.prototype.hasOwnProperty.call(SETTING_DEFAULTS, r.key)) continue;
+    map[r.key] = STRING_KEYS.has(r.key) ? String(r.value ?? '') : Number(r.value);
   }
   cached = map;
   cachedAt = Date.now();
@@ -67,6 +89,12 @@ export async function updateSettings(patch) {
   const next = { ...cached };
   for (const [key, raw] of Object.entries(patch || {})) {
     if (!Object.prototype.hasOwnProperty.call(SETTING_DEFAULTS, key)) continue;
+    if (STRING_KEYS.has(key)) {
+      const normalized = normalizeRecipients(raw);
+      if (!normalized.ok) return { ok: false, status: 400, error: normalized.error };
+      next[key] = normalized.value;
+      continue;
+    }
     const num = Number(raw);
     const { min, max } = BOUNDS[key];
     if (!Number.isFinite(num) || num < min || num > max) {

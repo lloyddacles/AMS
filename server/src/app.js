@@ -19,8 +19,10 @@ import termRoutes from './routes/terms.js';
 import scheduleRoutes from './routes/schedules.js';
 import correctionRoutes from './routes/corrections.js';
 import portalRoutes from './routes/portal.js';
+import searchRoutes from './routes/search.js';
 import cronRoutes from './routes/cron.js';
 import { getSettings, refreshSettingsIfStale } from './services/settings.js';
+import { securityHeaders, apiRateLimit, authRateLimit, publicWriteRateLimit } from './middleware/security.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -28,11 +30,17 @@ const allowedOrigins = (config.clientOrigin || '')
   .filter(Boolean);
 
 const app = express();
+// Correct client IPs and protocol when deployed behind a proxy (Vercel, etc.).
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(securityHeaders());
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
 // Backups can be large; give the admin routes a bigger body limit before the
 // global JSON parser (which stays small to guard the public endpoints).
 app.use('/api/admin', express.json({ limit: '25mb' }));
 app.use(express.json({ limit: '2mb' }));
+// Baseline abuse protection for the API surface.
+app.use('/api', apiRateLimit());
 
 // Run schema setup + admin seeding once per instance, before handling requests.
 let ready = null;
@@ -52,6 +60,10 @@ app.use((req, res, next) => {
 });
 
 app.get('/api/health', (req, res) => res.json({ ok: true }));
+app.use('/api/auth/login', authRateLimit());
+app.use('/api/student/login', authRateLimit());
+app.use('/api/student/setup', publicWriteRateLimit());
+app.use('/api/corrections', publicWriteRateLimit());
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/events', eventRoutes);
@@ -66,6 +78,7 @@ app.use('/api/terms', termRoutes);
 app.use('/api/schedules', scheduleRoutes);
 app.use('/api/corrections', correctionRoutes);
 app.use('/api/student', portalRoutes);
+app.use('/api/search', searchRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/cron', cronRoutes);
 
