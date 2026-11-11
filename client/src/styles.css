@@ -2280,10 +2280,24 @@ input[type="radio"] {
   gap: 0.8rem;
 }
 
-.event-form label > span:first-child {
+.event-form label > span:first-child,
+.event-form .event-label-row > span {
   font-size: 0.82rem;
   font-weight: 600;
   color: #334155;
+}
+
+.event-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.event-label-row .btn {
+  min-height: 30px;
+  padding: 0.25rem 0.6rem;
 }
 
 .event-form .req {
@@ -2364,6 +2378,63 @@ input[type="radio"] {
 @media (max-width: 640px) {
   .event-form-section {
     padding: 0.85rem;
+  }
+}
+
+/* ---------- Section bulk attendee management ---------- */
+.section-bulk-card {
+  padding: 0.95rem 1rem;
+}
+
+.section-bulk-head {
+  margin-bottom: 0.75rem;
+}
+
+.section-bulk-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.section-bulk-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.7rem 0.75rem;
+  border: 1px solid #e6edf5;
+  border-radius: 10px;
+  background: #f8fafc;
+}
+
+.section-bulk-info {
+  min-width: 180px;
+}
+
+.section-bulk-name {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.section-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 700px) {
+  .section-bulk-row {
+    align-items: flex-start;
+  }
+  .section-bulk-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+  .section-bulk-actions .btn {
+    flex: 1 1 auto;
   }
 }
 

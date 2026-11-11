@@ -351,6 +351,13 @@ export default function EventDetail() {
   const filteredAttendance = attendance.filter((a) => a.attending !== false);
   const sectionOptions = [...new Set(attendeeRows.map((s) => String(s.section || '').trim()).filter(Boolean))]
     .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  const sectionGroups = sectionOptions.map((sec) => {
+    const rows = attendeeRows.filter((s) => String(s.section || '').trim() === sec);
+    const ids = rows.map((s) => s.studentId);
+    const onIds = ids.filter((sid) => !offListIds.has(sid));
+    const offIds = ids.filter((sid) => offListIds.has(sid));
+    return { section: sec, ids, onIds, offIds, total: ids.length };
+  });
   const filteredAttendeeRows = attendeeRows.filter((s) => {
     const q = attendeeSearch.toLowerCase();
     const section = String(s.section || '').trim();
@@ -375,13 +382,14 @@ export default function EventDetail() {
     });
   }
 
-  async function onlySectionAttend() {
-    if (!attendeeSection || sectionIds.length === 0) return;
+  async function onlySectionAttend(sec = attendeeSection) {
+    const ids = sec === attendeeSection ? sectionIds : attendeeRows.filter((s) => String(s.section || '').trim() === sec).map((s) => s.studentId);
+    if (!sec || ids.length === 0) return;
     setBusy(true);
     setError('');
     try {
-      await api.setEventAttendeesOnly(Number(id), sectionIds);
-      setToast(`Only section ${attendeeSection} attends this event.`);
+      await api.setEventAttendeesOnly(Number(id), ids);
+      setToast(`Only section ${sec} attends this event.`);
       setTimeout(() => setToast(''), 2500);
       await load();
     } catch (e) {
@@ -734,23 +742,51 @@ export default function EventDetail() {
               </button>
             </div>
           </div>
+          {sectionGroups.length > 0 && (
+            <div className="card section-bulk-card">
+              <div className="section-bulk-head">
+                <div>
+                  <h4 style={{ margin: 0, fontSize: '0.95rem' }}>Manage by section</h4>
+                  <p className="muted small" style={{ margin: '0.15rem 0 0' }}>
+                    Add, remove, or limit attendees by whole section without selecting students one by one.
+                  </p>
+                </div>
+              </div>
+              <div className="section-bulk-list">
+                {sectionGroups.map((g) => (
+                  <div key={g.section} className="section-bulk-row">
+                    <div className="section-bulk-info">
+                      <div className="section-bulk-name">{g.section}</div>
+                      <div className="muted small">{g.total} student(s) · {g.onIds.length} attending · {g.offIds.length} not attending</div>
+                    </div>
+                    <div className="section-bulk-actions">
+                      <button className="btn btn-sm" disabled={busy || g.ids.length === 0} onClick={() => { setAttendeeSection(g.section); selectSectionIds(g.ids); }}>
+                        Select
+                      </button>
+                      <button className="btn btn-sm" disabled={busy || g.offIds.length === 0} onClick={() => updateAttendees(g.offIds, true)}>
+                        Add section
+                      </button>
+                      <button className="btn btn-sm" disabled={busy || g.onIds.length === 0} onClick={() => updateAttendees(g.onIds, false)}>
+                        Remove section
+                      </button>
+                      <button className="btn btn-sm btn-primary" disabled={busy || g.ids.length === 0} onClick={() => onlySectionAttend(g.section)}>
+                        Only this section
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {attendeeSection && (
             <div className="toolbar" style={{ marginTop: '-0.25rem' }}>
               <div className="muted small" style={{ alignSelf: 'center' }}>
-                Section <strong>{attendeeSection}</strong>: {sectionIds.length} student(s)
+                Filtered: Section <strong>{attendeeSection}</strong> ({sectionIds.length} student(s))
               </div>
               <div className="toolbar-actions">
                 <button className="btn btn-sm" disabled={busy || sectionIds.length === 0} onClick={() => selectSectionIds(sectionIds)}>
-                  Select section
-                </button>
-                <button className="btn btn-sm" disabled={busy || sectionOffIds.length === 0} onClick={() => updateAttendees(sectionOffIds, true)}>
-                  Add section
-                </button>
-                <button className="btn btn-sm" disabled={busy || sectionOnIds.length === 0} onClick={() => updateAttendees(sectionOnIds, false)}>
-                  Remove section
-                </button>
-                <button className="btn btn-sm btn-primary" disabled={busy || sectionIds.length === 0} onClick={onlySectionAttend} title="Make only this section attend this event">
-                  Only this section attends
+                  Select filtered section
                 </button>
               </div>
             </div>

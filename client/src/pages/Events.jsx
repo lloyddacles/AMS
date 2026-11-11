@@ -20,6 +20,44 @@ const emptyForm = {
   termId: '',
 };
 
+function formatEventTime(t) {
+  if (!t) return '';
+  const [h, m] = String(t).split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return String(t);
+  const d = new Date();
+  d.setHours(h, m, 0, 0);
+  return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function generateEventDescription(form) {
+  const name = String(form?.name || '').trim();
+  if (!name) return '';
+  const location = String(form?.location || '').trim();
+  const date = String(form?.eventDate || '').trim();
+  const start = formatEventTime(form?.startTime);
+  const end = formatEventTime(form?.endTime);
+  const lower = name.toLowerCase();
+
+  let purpose = 'attendance will be recorded for all expected participants';
+  if (/assembly|flag|ceremony/.test(lower)) purpose = 'students are expected to attend and participate in the scheduled program';
+  else if (/meeting|orientation|briefing|seminar|workshop|training/.test(lower)) purpose = 'participants are expected to attend for important updates and instructions';
+  else if (/exam|test|quiz|assessment/.test(lower)) purpose = 'attendance will be monitored to ensure all participants are accounted for';
+  else if (/class|lecture|lesson/.test(lower)) purpose = 'attendance and participation will be recorded for this session';
+  else if (/practice|rehearsal|drill/.test(lower)) purpose = 'participants are required to attend for preparation and coordination';
+  else if (/cleanup|outreach|activity|program|event|celebration/.test(lower)) purpose = 'participants are encouraged to attend and take part in the scheduled activities';
+
+  const parts = [`${name} is scheduled`];
+  if (date) parts.push(`on ${date}`);
+  if (start && end) parts.push(`from ${start} to ${end}`);
+  else if (start) parts.push(`starting at ${start}`);
+  if (location) parts.push(`at ${location}`);
+
+  const first = `${parts.join(' ')}.`;
+  const second = `During this event, ${purpose}.`;
+  const third = 'Please arrive on time, bring any required materials, and follow the instructions provided by the organizers or staff.';
+  return [first, second, third].join(' ');
+}
+
 export default function Events() {
   const [events, setEvents] = useState([]);
   const [archivedEvents, setArchivedEvents] = useState([]);
@@ -394,8 +432,25 @@ export default function Events() {
                   <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Morning Assembly" required />
                 </label>
                 <label className="span-2">
-                  <span>Description</span>
-                  <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes or instructions for this event" />
+                  <div className="event-label-row">
+                    <span>Description</span>
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => setForm((f) => ({ ...f, description: generateEventDescription(f) }))}
+                      disabled={!String(form.name || '').trim()}
+                      title="Generate a description from the event details"
+                    >
+                      ✨ Generate description
+                    </button>
+                  </div>
+                  <textarea
+                    rows={4}
+                    value={form.description}
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    placeholder="Optional notes or instructions for this event"
+                  />
+                  <span className="muted small">Tip: enter the event name first, then click Generate to draft a description.</span>
                 </label>
                 <label className="span-2">
                   <span>Location</span>
