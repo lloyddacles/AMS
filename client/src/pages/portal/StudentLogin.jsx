@@ -4,6 +4,14 @@ import { useStudent } from '../../studentAuth.jsx';
 import { takeIdleLogout } from '../../idle.js';
 import Footer from '../../components/Footer.jsx';
 import LiveClock from '../../components/LiveClock.jsx';
+import LoginArt from '../../components/LoginArt.jsx';
+
+const FEATURES = [
+  'View your attendance history and status details',
+  'Track attendance rate, upcoming events, and records',
+  'Submit and monitor attendance correction requests',
+  'Manage your student portal account securely',
+];
 
 export default function StudentLogin() {
   const { student, signIn, setup } = useStudent();
@@ -13,6 +21,7 @@ export default function StudentLogin() {
   const [name, setName] = useState('');
   const [password, setPassword] = useState('');
   const [confirm, setConfirm] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [idleNotice, setIdleNotice] = useState(() => takeIdleLogout());
@@ -32,26 +41,42 @@ export default function StudentLogin() {
     setError('');
     setPassword('');
     setConfirm('');
+    setShowPassword(false);
   }
 
   async function submit(e) {
     e.preventDefault();
     setError('');
-    if (mode === 'setup' && password !== confirm) {
-      setError('Passwords do not match');
+
+    const no = String(studentNo || '').trim();
+    if (!no) {
+      setError('Please enter your student number.');
       return;
     }
+    if (mode === 'setup' && !String(name || '').trim()) {
+      setError('Please enter your full name as registered.');
+      return;
+    }
+    if (String(password).length < 6) {
+      setError('Password must be at least 6 characters.');
+      return;
+    }
+    if (mode === 'setup' && password !== confirm) {
+      setError('Passwords do not match.');
+      return;
+    }
+
     setBusy(true);
     try {
-      if (mode === 'signin') await signIn(studentNo, password);
-      else await setup({ studentNo, name, password });
+      if (mode === 'signin') await signIn(no, password);
+      else await setup({ studentNo: no, name: String(name).trim(), password });
       navigate('/portal', { replace: true });
     } catch (err) {
       if (err.status === 403 && err.code === 'SETUP_REQUIRED' && mode === 'signin') {
         setMode('setup');
-        setError('Your account has no password yet — set one up to continue.');
+        setError('Your account is not set up yet. Verify your details and create a password to continue.');
       } else {
-        setError(err.message);
+        setError(err.message || 'Unable to sign in. Please try again.');
       }
     } finally {
       setBusy(false);
@@ -59,64 +84,158 @@ export default function StudentLogin() {
   }
 
   return (
-    <div className="public-page">
-      <div className="login-card wide-card">
-        <LiveClock className="public-clock" />
-        <div className="login-brand">
-          <span className="brand-mark lg">
-            <img src="/logo.png" alt="AttendX logo" />
-          </span>
-          <h1>Student Portal</h1>
-          <p className="muted">
-            {mode === 'signin'
-              ? 'Sign in to see your attendance history and correction requests.'
-              :               'First time here? Verify your details and choose a password.'}
-          </p>
-        </div>
-        {idleNotice && (
-          <div className="alert alert-warn">Signed out due to inactivity after 5 minutes.</div>
-        )}
-        <form className="form" onSubmit={submit}>
-          <label>
-            Student Number
-            <input value={studentNo} onChange={(e) => setStudentNo(e.target.value)} placeholder="e.g. 2024-0001" autoFocus required />
-          </label>
-          {mode === 'setup' && (
-            <label>
-              Full Name
-              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="As registered, e.g. Juan Dela Cruz" required />
-            </label>
-          )}
-          <label>
-            Password
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" required />
-          </label>
-          {mode === 'setup' && (
-            <label>
-              Confirm Password
-              <input type="password" value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder="••••••••" required />
-            </label>
-          )}
-          {error && <div className="alert alert-error">{error}</div>}
-          <button className="btn btn-primary btn-block" disabled={busy}>
-            {busy ? (mode === 'signin' ? 'Signing in…' : 'Setting up…') : mode === 'signin' ? 'Sign in' : 'Create account'}
-          </button>
-        </form>
-        <div className="portal-auth-switch">
-          {mode === 'signin' ? (
-            <button type="button" className="linklike" onClick={() => switchMode('setup')}>
-              First time? Set up your account →
+    <div className="login-page student-login-page">
+      <div className="login-shell student-login-shell">
+        <aside className="login-visual student-login-visual">
+          <div className="login-visual-brand">
+            <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
+            <div>
+              <h1>AttendX</h1>
+              <p>Student Portal</p>
+            </div>
+          </div>
+          <LoginArt className="login-art" />
+          <div className="login-visual-copy">
+            <p className="login-visual-tag">A secure student platform to view attendance, track progress, and request corrections.</p>
+            <ul className="login-features">
+              {FEATURES.map((f) => (
+                <li key={f}>
+                  <span className="login-feature-tick" aria-hidden="true">✓</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </aside>
+
+        <div className="login-card student-login-card">
+          <LiveClock className="public-clock" />
+          <div className="login-brand student-login-brand">
+            <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
+            <h1>Student Access</h1>
+            <p>{mode === 'signin' ? 'Sign in to access your attendance records and portal services.' : 'Set up your student account to access the portal for the first time.'}</p>
+          </div>
+
+          <div className="student-auth-tabs" role="tablist" aria-label="Student portal access">
+            <button
+              type="button"
+              className={mode === 'signin' ? 'active' : ''}
+              onClick={() => switchMode('signin')}
+              role="tab"
+              aria-selected={mode === 'signin'}
+            >
+              Sign in
             </button>
-          ) : (
-            <button type="button" className="linklike" onClick={() => switchMode('signin')}>
-              ← Already set up? Sign in
+            <button
+              type="button"
+              className={mode === 'setup' ? 'active' : ''}
+              onClick={() => switchMode('setup')}
+              role="tab"
+              aria-selected={mode === 'setup'}
+            >
+              First-time setup
             </button>
+          </div>
+
+          {idleNotice && (
+            <div className="alert alert-warn">Signed out due to inactivity after 5 minutes.</div>
           )}
-        </div>
-        <div className="portal-auth-switch muted">
-          <Link to="/login">Staff sign-in</Link>
-          <span aria-hidden="true">·</span>
-          <Link to="/corrections">Quick corrections lookup (no account)</Link>
+
+          <form className="form student-login-form" onSubmit={submit}>
+            <label>
+              <span>Student Number <span className="req">*</span></span>
+              <input
+                value={studentNo}
+                onChange={(e) => setStudentNo(e.target.value)}
+                placeholder="e.g. 2024-0001"
+                autoComplete="username"
+                autoFocus
+                required
+              />
+            </label>
+
+            {mode === 'setup' && (
+              <label>
+                <span>Full Name (as registered) <span className="req">*</span></span>
+                <input
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="e.g. Juan Dela Cruz"
+                  autoComplete="name"
+                  required
+                />
+                <span className="muted small">Used to verify your identity before creating your portal password.</span>
+              </label>
+            )}
+
+            <label>
+              <span>{mode === 'signin' ? 'Password' : 'Create Password'} <span className="req">*</span></span>
+              <div className="student-password-row">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
+                  required
+                />
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => setShowPassword((v) => !v)}
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              <span className="muted small">Minimum 6 characters. Choose a password you can remember.</span>
+            </label>
+
+            {mode === 'setup' && (
+              <label>
+                <span>Confirm Password <span className="req">*</span></span>
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  value={confirm}
+                  onChange={(e) => setConfirm(e.target.value)}
+                  placeholder="••••••••"
+                  autoComplete="new-password"
+                  required
+                />
+              </label>
+            )}
+
+            {error && <div className="alert alert-error">{error}</div>}
+
+            <button className="btn btn-primary btn-block" disabled={busy}>
+              {busy ? (mode === 'signin' ? 'Signing in…' : 'Setting up account…') : mode === 'signin' ? 'Sign in to Portal' : 'Create Student Account'}
+            </button>
+          </form>
+
+          <div className="student-login-help card">
+            <h4>{mode === 'signin' ? 'Need access?' : 'Setup instructions'}</h4>
+            {mode === 'signin' ? (
+              <ul>
+                <li>Use the student number and password you created for the portal.</li>
+                <li>If this is your first time, choose <strong>First-time setup</strong> to create your password.</li>
+                <li>If you forgot your password, contact your teacher/admin to reset your portal access.</li>
+              </ul>
+            ) : (
+              <ul>
+                <li>Enter your <strong>student number</strong> and <strong>full name</strong> exactly as registered.</li>
+                <li>Create a password (at least 6 characters) to secure your student account.</li>
+                <li>After setup, you can sign in anytime to view attendance and submit corrections.</li>
+              </ul>
+            )}
+          </div>
+
+          <div className="portal-auth-switch student-auth-links">
+            <Link to="/login">Staff/Admin sign-in</Link>
+            <span aria-hidden="true">·</span>
+            <Link to="/corrections">Quick corrections lookup</Link>
+            <span aria-hidden="true">·</span>
+            <Link to="/">Back to home</Link>
+          </div>
         </div>
       </div>
       <Footer compact />

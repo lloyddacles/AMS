@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import LiveClock from '../components/LiveClock.jsx';
@@ -130,6 +130,9 @@ export default function PublicCheckin() {
             </div>
           </>
         )}
+        <div className="portal-auth-switch" style={{ marginTop: '0.75rem', textAlign: 'center' }}>
+          <Link to="/portal/login">Student portal: view your attendance records →</Link>
+        </div>
       </div>
       <Footer compact />
     </div>

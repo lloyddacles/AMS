@@ -3639,3 +3639,124 @@ input[type="radio"] {
     align-items: flex-start;
   }
 }
+
+/* ---------- Student portal login ---------- */
+.student-login-page .login-shell {
+  max-width: 1040px;
+}
+
+.student-login-card {
+  gap: 0.2rem;
+}
+
+.student-login-brand {
+  margin-bottom: 1rem;
+}
+
+.student-auth-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+  padding: 0.25rem;
+  border: 1px solid var(--border);
+  border-radius: 11px;
+  background: #f8fafc;
+  margin-bottom: 0.9rem;
+}
+
+.student-auth-tabs button {
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  padding: 0.55rem 0.7rem;
+  border-radius: 8px;
+  cursor: pointer;
+}
+
+.student-auth-tabs button:hover {
+  color: var(--text);
+  background: #eef2f7;
+}
+
+.student-auth-tabs button.active {
+  background: #fff;
+  color: var(--primary);
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.12);
+}
+
+.student-login-form .req {
+  color: var(--red);
+}
+
+.student-password-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.student-password-row input {
+  flex: 1;
+}
+
+.student-login-help {
+  margin-top: 0.9rem;
+  padding: 0.85rem 0.95rem;
+  background: #f8fafc;
+  border: 1px solid #e8eef5;
+  box-shadow: none;
+}
+
+.student-login-help h4 {
+  margin: 0 0 0.35rem;
+  font-size: 0.9rem;
+}
+
+.student-login-help ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.25rem;
+  color: #334155;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.student-auth-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem 0.5rem;
+  margin-top: 0.85rem;
+  font-size: 0.82rem;
+}
+
+.alert-warn {
+  background: #fffbeb;
+  color: #92400e;
+  border: 1px solid #fde68a;
+  padding: 0.7rem 0.9rem;
+  border-radius: 9px;
+  font-size: 0.85rem;
+}
+
+.linklike {
+  border: none;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+@media (max-width: 900px) {
+  .student-login-page .login-shell {
+    grid-template-columns: 1fr;
+  }
+  .student-login-visual {
+    display: none;
+  }
+}
