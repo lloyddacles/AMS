@@ -10,6 +10,7 @@ export function OfflineProvider({ children }) {
   const [syncing, setSyncing] = useState(false);
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [lastError, setLastError] = useState('');
+  const [lastSyncResult, setLastSyncResult] = useState(null);
   const syncingRef = useRef(false);
 
   const refreshPending = useCallback(async () => {
@@ -28,6 +29,7 @@ export function OfflineProvider({ children }) {
     setLastError('');
     try {
       const res = await flushQueue();
+      setLastSyncResult(res);
       if (res?.total) setLastSyncAt(new Date());
       await refreshPending();
       return res;
@@ -64,7 +66,7 @@ export function OfflineProvider({ children }) {
     };
   }, [syncNow, refreshPending]);
 
-  const value = { online, pending, syncing, lastSyncAt, lastError, syncNow, refreshPending };
+  const value = { online, pending, syncing, lastSyncAt, lastError, lastSyncResult, syncNow, refreshPending };
   return <OfflineContext.Provider value={value}>{children}</OfflineContext.Provider>;
 }
 

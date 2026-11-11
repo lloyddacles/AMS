@@ -17,6 +17,7 @@ import {
   attendeeList,
 } from '../services/roster.js';
 import { config } from '../config.js';
+import { validate, schemas } from '../validate.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -168,15 +169,9 @@ router.get('/live-board', async (req, res) => {
 // Apply one lifecycle action to many selected events. Invalid combinations are
 // reported per event instead of failing the whole request, so a mixed
 // selection (some active, some closed) still does the useful work.
-router.post('/bulk', async (req, res) => {
-  const action = String(req.body?.action || '');
-  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : []).map((v) => Number(v)))]
-    .filter((n) => Number.isInteger(n) && n > 0);
-  if (!['close', 'reopen', 'archive', 'unarchive'].includes(action)) {
-    return res.status(400).json({ error: 'Unknown bulk action' });
-  }
-  if (ids.length === 0) return res.status(400).json({ error: 'Select at least one event' });
-  if (ids.length > 200) return res.status(400).json({ error: 'Select at most 200 events at a time' });
+router.post('/bulk', validate(schemas.eventBulk), async (req, res) => {
+  const { action } = req.body;
+  const ids = [...new Set(req.body.ids.map((v) => Number(v)))].filter((n) => Number.isInteger(n) && n > 0);
 
   const placeholders = ids.map(() => '?').join(',');
   const events = await all(
@@ -375,11 +370,8 @@ router.get('/:id/scan-pack', async (req, res) => {
   });
 });
 
-router.post('/', async (req, res) => {
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body || {};
-  if (!name || !eventDate) {
-    return res.status(400).json({ error: 'Event name and date are required' });
-  }
+router.post('/', validate(schemas.eventCreate), async (req, res) => {
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body;
   const info = await run(
     `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -410,10 +402,10 @@ router.post('/', async (req, res) => {
   res.status(201).json(created);
 });
 
-router.put('/:id', async (req, res) => {
+router.put('/:id', validate(schemas.eventUpdate), async (req, res) => {
   const existing = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body || {};
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body;
   const nextName = String(name ?? existing.name).trim();
   const nextDate = String(eventDate ?? existing.event_date).trim();
   if (!nextName || !nextDate) {

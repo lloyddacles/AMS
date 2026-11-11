@@ -67,7 +67,7 @@ function fmtTime(value) {
 
 export default function Scanner() {
   const { id } = useParams();
-  const { online, pending, syncing, syncNow, refreshPending } = useOffline();
+  const { online, pending, syncing, syncNow, refreshPending, lastSyncResult } = useOffline();
   const [event, setEvent] = useState(null);
   const [scanning, setScanning] = useState(false);
   const [error, setError] = useState('');
@@ -285,7 +285,14 @@ export default function Scanner() {
     else localMap[key] = { ...prev, in: prev.in || scan.scannedAt };
     await saveLocalState(eventId, localMap);
     await refreshPending();
-    if (navigator.onLine) syncNow();
+    if (navigator.onLine) {
+      syncNow().then((res) => {
+        if (res?.results?.some((r) => !r.ok)) {
+          const failed = res.results.filter((r) => !r.ok);
+          setNotice(`Some queued scans could not be applied: ${failed.slice(0, 2).map((r) => r.error || 'Failed').join('; ')}${failed.length > 2 ? '…' : ''}`);
+        }
+      });
+    }
   }
 
   async function commit() {

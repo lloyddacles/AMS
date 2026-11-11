@@ -23,6 +23,7 @@ import searchRoutes from './routes/search.js';
 import cronRoutes from './routes/cron.js';
 import { getSettings, refreshSettingsIfStale } from './services/settings.js';
 import { securityHeaders, apiRateLimit, authRateLimit, publicWriteRateLimit } from './middleware/security.js';
+import { requestId, requestLogger } from './middleware/requestLog.js';
 
 const allowedOrigins = (config.clientOrigin || '')
   .split(',')
@@ -33,6 +34,8 @@ const app = express();
 // Correct client IPs and protocol when deployed behind a proxy (Vercel, etc.).
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
+app.use(requestId);
+app.use(requestLogger);
 app.use(securityHeaders());
 app.use(cors({ origin: allowedOrigins.length ? allowedOrigins : true }));
 // Backups can be large; give the admin routes a bigger body limit before the
@@ -61,9 +64,23 @@ app.use((req, res, next) => {
 
 app.get('/api/health', async (req, res) => {
   try {
-    // Lightweight readiness signal (DB reachable/migrated enough to answer).
     await get('SELECT 1 AS ok');
-    res.json({ ok: true, db: 'up' });
+    res.json({ ok: true, db: 'up', time: new Date().toISOString() });
+  } catch (err) {
+    res.status(503).json({ ok: false, db: 'down', time: new Date().toISOString() });
+  }
+});
+
+app.get('/api/ready', async (req, res) => {
+  try {
+    await get('SELECT 1 AS ok');
+    const migration = await get("SELECT name FROM sqlite_master WHERE type='table' AND name='schema_migrations'").catch(() => null);
+    res.json({
+      ok: true,
+      db: 'up',
+      migrations: migration ? 'tracked' : 'legacy',
+      env: config.isProduction ? 'production' : 'development',
+    });
   } catch {
     res.status(503).json({ ok: false, db: 'down' });
   }
@@ -92,14 +109,16 @@ app.use('/api/cron', cronRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;
-  if (status >= 500) console.error(err);
+  if (status >= 500) {
+    console.error(JSON.stringify({ level: 'error', msg: 'request_error', requestId: req.id, status, path: req.originalUrl, error: err.message, stack: config.isProduction ? undefined : err.stack }));
+  }
   const message =
     status === 413
       ? 'The import is too large. Please split it into smaller files (max ~2 MB).'
       : status >= 500
         ? 'Something went wrong on the server'
         : err.message || 'Request failed';
-  res.status(status).json({ error: message });
+  res.status(status).json({ error: message, requestId: req.id });
 });
 
 export default app;

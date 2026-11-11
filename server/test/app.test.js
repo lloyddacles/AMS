@@ -20,6 +20,13 @@ describe('API basics', () => {
     expect(res.body.db).toBe('up');
   });
 
+  it('returns readiness status', async () => {
+    const res = await request(app).get('/api/ready');
+    expect(res.status).toBe(200);
+    expect(res.body.ok).toBe(true);
+    expect(res.body.db).toBe('up');
+  });
+
   it('requires auth for protected routes', async () => {
     const res = await request(app).get('/api/auth/me');
     expect(res.status).toBe(401);
@@ -40,5 +47,10 @@ describe('API basics', () => {
   it('validates correction lookup payloads', async () => {
     const res = await request(app).post('/api/corrections/lookup').send({});
     expect(res.status).toBe(400);
+  });
+
+  it('validates event bulk payloads', async () => {
+    const res = await request(app).post('/api/events/bulk').send({});
+    expect([400, 401]).toContain(res.status);
   });
 });

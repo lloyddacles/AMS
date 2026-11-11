@@ -57,6 +57,12 @@ export async function batch(statements, mode = 'write') {
   return client.batch(statements, mode);
 }
 
+// Run multiple statements atomically as a write batch/transaction.
+export async function transaction(statements) {
+  if (!statements || statements.length === 0) return [];
+  return batch(statements, 'write');
+}
+
 async function execute(sql) {
   const client = await getClient();
   return client.execute(sql);
@@ -300,6 +306,13 @@ export function initDb() {
 async function doInit() {
   await executeMultiple('PRAGMA foreign_keys = ON;');
   await executeMultiple(SCHEMA);
+  await executeMultiple(`
+    CREATE TABLE IF NOT EXISTS schema_migrations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
   await ensureColumn('events', 'require_student_confirm', 'require_student_confirm INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('events', 'auto_confirm', 'auto_confirm INTEGER NOT NULL DEFAULT 0');
   await ensureColumn('events', 'closed_at', 'closed_at TEXT');
@@ -327,4 +340,8 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_events_series ON events(series_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
   `);
+  // Record baseline/phase migrations so readiness checks can report status.
+  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms']) {
+    await run(`INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)`, [name]);
+  }
 }
