@@ -258,29 +258,52 @@ export default function Dashboard() {
           )}
         </section>
 
-        <section className="card dashboard-panel">
+        <section className="card dashboard-panel dash-top-attendees">
           <div className="dash-card-head">
             <div>
-              <h3>Top Attendees</h3>
-              <p className="muted small">Most consistent students</p>
+              <h3>Top 10 Attendees</h3>
+              <p className="muted small">Model students with excellent punctuality and little to no late/absent records</p>
             </div>
             <Link className="link" to="/reports">View reports</Link>
           </div>
+          <div className="dash-top-note muted small">
+            Qualified students have strong attendance, mostly on-time/present check-ins, minimal lates, and no past absences. End-of-semester badges and awards are shown for recognition.
+          </div>
           {stats.topAttendees.length ? (
             <ul className="dash-attendee-list">
-              {stats.topAttendees.map((s, i) => (
-                <li key={s.id} className="dash-attendee-row">
-                  <span className={`dash-rank ${i < 3 ? `rank-${i + 1}` : ''}`}>{i + 1}</span>
-                  <div className="dash-attendee-main">
-                    <div className="strong">{s.lastName}, {s.firstName}</div>
-                    <div className="muted small">{s.studentNo}</div>
-                  </div>
-                  <span className="pill pill-green">{s.attended} events</span>
-                </li>
-              ))}
+              {stats.topAttendees.map((s, i) => {
+                const rank = s.rank || i + 1;
+                const award = s.award || {};
+                return (
+                  <li key={s.id} className="dash-attendee-row dash-top-attendee-row">
+                    <span className={`dash-rank ${rank <= 3 ? `rank-${rank}` : ''}`}>{rank}</span>
+                    <div className="dash-attendee-main">
+                      <div className="dash-top-name-row">
+                        <div className="strong">{s.lastName}, {s.firstName}</div>
+                        <span className={`dash-award-badge badge-${String(award.badge || 'Award').toLowerCase()}`} title={award.title || 'End-of-semester awardee'}>
+                          {award.badge || 'Award'}
+                        </span>
+                      </div>
+                      <div className="muted small">
+                        {s.studentNo}{s.course ? ` · ${s.course}` : ''}
+                      </div>
+                      <div className="dash-top-metrics">
+                        <span className="pill pill-green">{s.punctual ?? ((s.early || 0) + (s.onTime || 0))} on-time/early</span>
+                        <span className="pill pill-blue">{s.attended}/{s.expected || s.attended} attended</span>
+                        <span className="pill pill-amber">{s.late || 0} late</span>
+                        <span className="pill pill-red">{s.absent || 0} absent</span>
+                      </div>
+                      <div className="muted small">{award.title || 'Excellence Awardee'} · End-of-semester recognition candidate</div>
+                    </div>
+                    <div className="dash-top-rate">
+                      <span className="rate-label">{s.rate}%</span>
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
-            <EmptyState label="No attendance yet." />
+            <EmptyState label="No qualified model students yet. Top attendees must have minimal/no late or absent records." />
           )}
         </section>
       </div>

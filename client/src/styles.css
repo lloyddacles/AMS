@@ -3385,3 +3385,82 @@ input[type="radio"] {
     justify-content: flex-start;
   }
 }
+
+/* ---------- Dashboard top attendees ---------- */
+.dash-top-attendees .dash-card-head {
+  margin-bottom: 0.35rem;
+}
+
+.dash-top-note {
+  margin: 0 0 0.6rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid #dbeafe;
+  background: #f8fbff;
+  border-radius: 10px;
+  line-height: 1.45;
+}
+
+.dash-top-attendee-row {
+  align-items: flex-start;
+}
+
+.dash-top-name-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.dash-top-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin: 0.3rem 0 0.2rem;
+}
+
+.dash-top-metrics .pill {
+  font-size: 0.68rem;
+  padding: 0.14rem 0.45rem;
+}
+
+.dash-top-rate .rate-label {
+  font-size: 0.9rem;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.dash-award-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border: 1px solid transparent;
+}
+
+.dash-award-badge.badge-gold {
+  background: #fef3c7;
+  color: #92400e;
+  border-color: #fcd34d;
+}
+
+.dash-award-badge.badge-silver {
+  background: #e2e8f0;
+  color: #334155;
+  border-color: #cbd5e1;
+}
+
+.dash-award-badge.badge-bronze {
+  background: #ffedd5;
+  color: #9a3412;
+  border-color: #fdba74;
+}
+
+.dash-award-badge.badge-award {
+  background: #ede9fe;
+  color: #6d28d9;
+  border-color: #ddd6fe;
+}

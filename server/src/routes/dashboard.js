@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
 import { displayStatus } from '../classify.js';
-import { buildAtRisk } from '../services/reports.js';
+import { buildAtRisk, buildOverview } from '../services/reports.js';
 import { maybeRunAutomation } from '../services/automation.js';
 
 const router = Router();
@@ -11,6 +11,13 @@ router.use(requireAuth);
 const ATTENDED_SQL = "('early','on-time','late','present')";
 // Students off an event's attendee list never count towards its numbers.
 const ON_LIST_SQL = `NOT EXISTS (SELECT 1 FROM event_exclusions x WHERE x.event_id = a.event_id AND x.student_id = a.student_id)`;
+
+function topAward(rank) {
+  if (rank === 1) return { title: 'Gold Model Student', badge: 'Gold' };
+  if (rank === 2) return { title: 'Silver Model Student', badge: 'Silver' };
+  if (rank === 3) return { title: 'Bronze Model Student', badge: 'Bronze' };
+  return { title: 'Excellence Awardee', badge: 'Award' };
+}
 
 router.get('/stats', async (req, res) => {
   await maybeRunAutomation().catch(() => {});
@@ -45,14 +52,6 @@ router.get('/stats', async (req, res) => {
     rate: e.totalStudents ? Math.round((e.attended / e.totalStudents) * 100) : 0,
   }));
 
-  const topAttendees = await all(
-    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
-            COUNT(a.id) AS attended
-     FROM students s JOIN attendance a ON a.student_id = s.id
-     WHERE a.status IN ${ATTENDED_SQL}
-     GROUP BY s.id ORDER BY attended DESC, s.last_name COLLATE NOCASE LIMIT 5`
-  );
-
   const trend = await all(
     `SELECT substr(e.event_date, 6) AS label, e.name,
             (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended
@@ -60,6 +59,56 @@ router.get('/stats', async (req, res) => {
   );
 
   const atRisk = await buildAtRisk({});
+
+  // Model students: consistent attendance with minimal/no absences and lates.
+  // Past absences disqualify students from being recognized as top attendees.
+  let topAttendees = [];
+  try {
+    const overview = await buildOverview({});
+    const eligibleEvents = Math.min(3, Number(overview.totalEvents || 0));
+    topAttendees = (overview.students || [])
+      .map((s) => {
+        const expected = Number(s.expected || 0);
+        const attended = Number(s.attended || 0);
+        const early = Number(s.early || 0);
+        const onTime = Number(s.onTime || 0);
+        const late = Number(s.late || 0);
+        const absent = Number(s.absent || 0);
+        const punctual = early + onTime;
+        const punctualRate = expected ? Math.round((punctual / expected) * 100) : 0;
+        return {
+          id: s.id,
+          studentNo: s.studentNo,
+          firstName: s.firstName,
+          lastName: s.lastName,
+          course: s.course || '',
+          yearLevel: s.yearLevel || '',
+          attended,
+          expected,
+          early,
+          onTime,
+          punctual,
+          late,
+          absent,
+          rate: Number(s.rate || 0),
+          punctualRate,
+        };
+      })
+      .filter((s) => s.expected >= eligibleEvents && s.absent === 0 && s.late <= 1 && s.rate >= 90)
+      .sort((a, b) =>
+        b.punctualRate - a.punctualRate ||
+        b.rate - a.rate ||
+        a.late - b.late ||
+        a.absent - b.absent ||
+        b.attended - a.attended ||
+        String(a.lastName || '').localeCompare(String(b.lastName || ''), undefined, { sensitivity: 'base' }) ||
+        String(a.firstName || '').localeCompare(String(b.firstName || ''), undefined, { sensitivity: 'base' })
+      )
+      .slice(0, 10)
+      .map((s, i) => ({ ...s, rank: i + 1, award: topAward(i + 1) }));
+  } catch {
+    topAttendees = [];
+  }
 
   // Every student × event slot except the ones taken off an attendee list.
   const expectedSlots = Math.max(0, totalStudents * totalEvents - totalExclusions);
