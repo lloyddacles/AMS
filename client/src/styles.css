@@ -2032,6 +2032,221 @@ input[type="radio"] {
   }
 }
 
+/* ---------- Command palette ---------- */
+.palette-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 8vh 1rem 1rem;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+}
+
+.palette {
+  width: 100%;
+  max-width: 720px;
+  max-height: min(72vh, 720px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1px solid #dbe5ef;
+  border-radius: 16px;
+  box-shadow: 0 28px 60px -24px rgba(15, 23, 42, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.5) inset;
+}
+
+.palette-input-row {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  padding: 0.85rem 0.9rem;
+  border-bottom: 1px solid #e7edf5;
+  background: linear-gradient(180deg, #ffffff, #fbfdff);
+}
+
+.palette-search-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--muted);
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.palette-input-row input {
+  flex: 1;
+  min-width: 0;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-size: 1rem;
+  color: var(--text);
+  box-shadow: none;
+}
+
+.palette-input-row input:focus {
+  outline: none;
+  border: none;
+  box-shadow: none;
+}
+
+.palette-esc {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  padding: 0 0.55rem;
+  border: 1px solid #dbe3ec;
+  border-bottom-width: 2px;
+  border-radius: 8px;
+  background: #f8fafc;
+  color: #64748b;
+  font: inherit;
+  font-size: 0.75rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.palette-list {
+  overflow: auto;
+  padding: 0.45rem;
+}
+
+.palette-empty,
+.palette-hint {
+  padding: 1.1rem 0.85rem;
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.palette-group {
+  padding: 0.55rem 0.6rem 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.palette-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0.6rem 0.65rem;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.palette-item:hover,
+.palette-item.active {
+  background: #f1f6ff;
+  border-color: #dbeafe;
+}
+
+.palette-icon {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+  flex-shrink: 0;
+  background: #eef2ff;
+  color: #4338ca;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.palette-icon.is-avatar {
+  border-radius: 50%;
+  background: #e0f2fe;
+  color: #0369a1;
+}
+
+.palette-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.palette-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.palette-subtitle {
+  font-size: 0.78rem;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.palette-enter {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  flex-shrink: 0;
+}
+
+.palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+  padding: 0.65rem 0.9rem;
+  border-top: 1px solid #e7edf5;
+  background: #f8fafc;
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.palette-foot kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 0.35rem;
+  margin-right: 0.2rem;
+  border: 1px solid #dbe3ec;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  background: #fff;
+  color: #475569;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+@media (max-width: 640px) {
+  .palette-overlay {
+    padding: 0.5rem;
+    align-items: stretch;
+  }
+
+  .palette {
+    max-height: 100%;
+    border-radius: 14px;
+  }
+
+  .palette-foot {
+    gap: 0.6rem;
+  }
+}
+
 /* ---------- Events page redesign ---------- */
 .events-page .event-grid {
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
@@ -2056,7 +2271,8 @@ input[type="radio"] {
 .events-controls-right {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
+  justify-content: flex-end;
+  gap: 0.65rem;
   flex-wrap: wrap;
   margin-left: auto;
 }
@@ -2065,11 +2281,49 @@ input[type="radio"] {
   display: inline-flex;
   align-items: center;
   gap: 0.45rem;
+  min-height: 40px;
+  padding: 0 0.75rem;
+  border: 1px solid #dbe5ef;
+  border-radius: 10px;
+  background: #f8fafc;
   font-size: 0.85rem;
   font-weight: 600;
   color: #334155;
   cursor: pointer;
   user-select: none;
+  white-space: nowrap;
+}
+
+.events-term-filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 40px;
+  padding: 0 0.4rem 0 0.7rem;
+  border: 1px solid #dbe5ef;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.events-filter-label {
+  font-size: 0.76rem;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.events-term-filter .term-filter {
+  min-height: 32px;
+  height: 32px;
+  border: none;
+  background: transparent;
+  padding: 0 1.6rem 0 0.1rem;
+  box-shadow: none;
+}
+
+.events-term-filter .term-filter:focus {
+  box-shadow: none;
 }
 
 .events-select-all input,
@@ -2277,6 +2531,19 @@ input[type="radio"] {
 
   .events-bulk-actions {
     width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .events-select-all,
+  .events-term-filter {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .events-term-filter .term-filter {
+    flex: 1;
+    min-width: 0;
   }
 }
 

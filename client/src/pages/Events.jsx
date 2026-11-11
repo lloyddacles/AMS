@@ -237,12 +237,15 @@ export default function Events() {
               </label>
             )}
             {terms.length > 0 && (
-              <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
-                <option value="">All terms</option>
-                {terms.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-                ))}
-              </select>
+              <label className="events-term-filter">
+                <span className="events-filter-label">Term</span>
+                <select className="term-filter" value={termFilter} onChange={(e) => setTermFilter(e.target.value)}>
+                  <option value="">All terms</option>
+                  {terms.map((t) => (
+                    <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+                  ))}
+                </select>
+              </label>
             )}
           </div>
         </div>
