@@ -370,6 +370,7 @@ export default function Events() {
 
       {editing && (
         <Modal
+          wide
           title={editing.id ? 'Edit Event' : 'Add Event'}
           onClose={() => setEditing(null)}
           footer={
@@ -381,68 +382,101 @@ export default function Events() {
             </>
           }
         >
-          <form className="form grid-form" onSubmit={save}>
-            <label className="span-2">
-              Event Name *
-              <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
-            </label>
-            <label className="span-2">
-              Description
-              <textarea rows={2} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
-            </label>
-            <label>
-              Date *
-              <input type="date" value={form.eventDate} onChange={(e) => setForm({ ...form, eventDate: e.target.value })} required />
-            </label>
-            <label>
-              Location
-              <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} />
-            </label>
-            <label>
-              Start Time
-              <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
-            </label>
-            <label>
-              End Time
-              <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
-            </label>
-            <label>
-              Status
-              <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                <option value="active">active (check-in open)</option>
-                <option value="closed">closed (check-in closed)</option>
-              </select>
-            </label>
-            <label>
-              Term
-              <select value={form.termId} onChange={(e) => setForm({ ...form, termId: e.target.value })}>
-                <option value="">— none —</option>
-                {terms.map((t) => (
-                  <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
-                ))}
-              </select>
-            </label>
-            <label className="checkbox span-2">
-              <input
-                type="checkbox"
-                checked={form.requireStudentConfirm}
-                onChange={(e) => setForm({ ...form, requireStudentConfirm: e.target.checked })}
-              />
-              <span>Require student number confirmation when scanning (anti-sharing / kiosk mode)</span>
-            </label>
-            <label className="checkbox span-2">
-              <input
-                type="checkbox"
-                checked={form.autoConfirm}
-                disabled={form.requireStudentConfirm}
-                onChange={(e) => setForm({ ...form, autoConfirm: e.target.checked })}
-              />
-              <span>
-                Auto-confirm scans (staff is monitoring — each matched scan is saved without clicking Confirm)
-                {form.requireStudentConfirm && ' · not available in kiosk mode'}
-              </span>
-            </label>
-            {formError && <div className="alert alert-error span-2">{formError}</div>}
+          <form className="form event-form" onSubmit={save}>
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Event details</h4>
+                <p className="muted small">Basic information shown to staff and used for attendance records.</p>
+              </div>
+              <div className="form grid-form">
+                <label className="span-2">
+                  <span>Event Name <span className="req">*</span></span>
+                  <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="e.g. Morning Assembly" required />
+                </label>
+                <label className="span-2">
+                  <span>Description</span>
+                  <textarea rows={3} value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes or instructions for this event" />
+                </label>
+                <label className="span-2">
+                  <span>Location</span>
+                  <input value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Main Hall, Room 101" />
+                </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Schedule & status</h4>
+                <p className="muted small">Set when the event happens and whether check-in is open.</p>
+              </div>
+              <div className="form grid-form">
+                <label>
+                  <span>Date <span className="req">*</span></span>
+                  <input type="date" value={form.eventDate} onChange={(e) => setForm({ ...form, eventDate: e.target.value })} required />
+                </label>
+                <label>
+                  <span>Term</span>
+                  <select value={form.termId} onChange={(e) => setForm({ ...form, termId: e.target.value })}>
+                    <option value="">— none —</option>
+                    {terms.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Start Time</span>
+                  <input type="time" value={form.startTime} onChange={(e) => setForm({ ...form, startTime: e.target.value })} />
+                </label>
+                <label>
+                  <span>End Time</span>
+                  <input type="time" value={form.endTime} onChange={(e) => setForm({ ...form, endTime: e.target.value })} />
+                </label>
+                <label className="span-2">
+                  <span>Check-in Status</span>
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    <option value="active">Active — check-in open</option>
+                    <option value="closed">Closed — check-in closed</option>
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Attendance options</h4>
+                <p className="muted small">Control how scans are verified and confirmed for this event.</p>
+              </div>
+              <div className="event-form-options">
+                <label className={`event-option-card ${form.requireStudentConfirm ? 'is-on' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={form.requireStudentConfirm}
+                    onChange={(e) => setForm({ ...form, requireStudentConfirm: e.target.checked })}
+                  />
+                  <span className="event-option-copy">
+                    <span className="event-option-title">Require student number confirmation</span>
+                    <span className="event-option-desc">Ask for the student number after scanning (anti-sharing / kiosk mode).</span>
+                  </span>
+                </label>
+                <label className={`event-option-card ${form.autoConfirm ? 'is-on' : ''} ${form.requireStudentConfirm ? 'is-disabled' : ''}`}>
+                  <input
+                    type="checkbox"
+                    checked={form.autoConfirm}
+                    disabled={form.requireStudentConfirm}
+                    onChange={(e) => setForm({ ...form, autoConfirm: e.target.checked })}
+                  />
+                  <span className="event-option-copy">
+                    <span className="event-option-title">Auto-confirm scans</span>
+                    <span className="event-option-desc">
+                      Save matched scans immediately without clicking Confirm when staff is monitoring.
+                      {form.requireStudentConfirm ? ' Not available when student number confirmation is required.' : ''}
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </section>
+
+            {formError && <div className="alert alert-error">{formError}</div>}
           </form>
         </Modal>
       )}
