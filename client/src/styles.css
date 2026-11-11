@@ -1620,3 +1620,414 @@ button.risk-pill { cursor: pointer; }
 .series-chip.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
 .series-chip-date { font-weight: 600; }
 .series-chip-name { font-size: 0.78rem; color: var(--muted); }
+
+/* =========================================================
+   UI polish / theme consistency overrides
+   ========================================================= */
+:root {
+  --ring: 0 0 0 3px rgba(37, 99, 235, 0.14);
+  --surface-soft: #f8fafc;
+  --surface-raised: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+body {
+  background:
+    radial-gradient(1200px 400px at 100% -10%, rgba(37, 99, 235, 0.08), transparent 60%),
+    radial-gradient(900px 300px at 0% 0%, rgba(124, 58, 237, 0.06), transparent 55%),
+    var(--bg);
+}
+
+.content {
+  max-width: 1280px;
+  padding: 1.5rem 1.75rem 2rem;
+}
+
+.page {
+  gap: 1rem;
+}
+
+.card {
+  background: var(--surface-raised);
+  border-color: #dfe7f1;
+  box-shadow: 0 8px 24px -20px rgba(15, 23, 42, 0.45);
+}
+
+.card-head,
+.section-head,
+.listbar,
+.toolbar,
+.head-actions,
+.dash-hero-actions,
+.toolbar-actions,
+.modal-foot,
+.confirm-actions,
+.event-card-actions,
+.live-card-actions,
+.scanner-controls,
+.scanner-meta,
+.scanner-meta-tools {
+  gap: 0.5rem;
+}
+
+.page-head,
+.dash-hero,
+.card-head,
+.listbar {
+  align-items: center;
+}
+
+.page-head .muted,
+.card-head .muted {
+  margin: 0;
+}
+
+.head-actions,
+.dash-hero-actions,
+.toolbar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  margin-left: auto;
+}
+
+.toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.toolbar .search,
+.toolbar input[type="search"],
+.toolbar input[type="text"],
+.toolbar input[type="date"],
+.toolbar select {
+  min-height: 40px;
+}
+
+.toolbar .search {
+  flex: 1 1 260px;
+  max-width: 420px;
+}
+
+.toolbar > .btn,
+.toolbar-actions > .btn,
+.head-actions > .btn,
+.dash-hero-actions > .btn {
+  flex: 0 0 auto;
+}
+
+input,
+select,
+textarea,
+.btn {
+  min-height: 40px;
+}
+
+.btn-sm,
+.seg-btn,
+.tabs button,
+.page-size select,
+.threshold-form input,
+.date-field input {
+  min-height: 34px;
+}
+
+select,
+.toolbar select,
+.filter-bar select {
+  width: auto;
+  min-width: 150px;
+  padding-right: 2rem;
+  background-color: #fff;
+}
+
+input[type="checkbox"],
+input[type="radio"] {
+  min-height: auto;
+}
+
+.tabs {
+  background: #eef3f8;
+  border-color: #dce5ee;
+}
+
+.tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+}
+
+.seg {
+  align-items: stretch;
+}
+
+.seg-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.table-card {
+  border-color: #dfe7f1;
+}
+
+.table th,
+.table td {
+  vertical-align: middle;
+}
+
+.table th {
+  white-space: nowrap;
+}
+
+.table td .btn-sm,
+.table td .pill,
+.table td .seg {
+  vertical-align: middle;
+}
+
+.table .actions,
+.actions {
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.stat-grid,
+.grid-2,
+.dash-charts,
+.event-grid,
+.live-grid {
+  gap: 1rem;
+}
+
+.stat-card,
+.dash-stat {
+  border-color: #dfe7f1;
+}
+
+.topbar {
+  min-height: 58px;
+  gap: 0.6rem;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+}
+
+.topbar-search {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 36px;
+  padding: 0.35rem 0.6rem 0.35rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f8fafc;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.topbar-search:hover {
+  border-color: #cbd5e1;
+  color: var(--text);
+  background: #fff;
+}
+
+.topbar-search kbd {
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #64748b;
+  background: #fff;
+  border: 1px solid #dbe3ec;
+  border-bottom-width: 2px;
+  border-radius: 6px;
+  padding: 0.05rem 0.35rem;
+}
+
+.topbar-clock {
+  margin-left: 0;
+}
+
+.sidebar {
+  border-right: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.nav {
+  gap: 0.2rem;
+  overflow-y: auto;
+  padding-right: 0.15rem;
+}
+
+.nav-link {
+  min-height: 40px;
+}
+
+.sidebar-footer {
+  gap: 0.5rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid rgba(148, 163, 184, 0.15);
+}
+
+.user-chip {
+  width: 100%;
+}
+
+.modal-head,
+.modal-foot {
+  background: #fbfcfe;
+}
+
+.modal-body .form,
+.form {
+  gap: 0.85rem;
+}
+
+.form .grid-form {
+  gap: 0.85rem;
+}
+
+.alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  line-height: 1.45;
+}
+
+.empty {
+  border: 1px dashed #d7e0ea;
+  border-radius: var(--radius);
+  background: #fbfcfe;
+}
+
+.pagination,
+.pager,
+.page-size {
+  align-items: center;
+}
+
+.page-size select,
+.threshold-form input,
+.date-field input {
+  min-width: 72px;
+}
+
+.search {
+  background: #fff;
+}
+
+.filter-bar,
+.toolbar {
+  border-color: #dfe7f1;
+}
+
+.dash-hero.page-hero {
+  align-items: flex-end;
+}
+
+.dash-hero-actions .btn,
+.head-actions .btn {
+  box-shadow: 0 1px 0 rgba(15, 23, 42, 0.02);
+}
+
+.event-card-top,
+.live-card-top {
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.event-card-actions,
+.live-card-actions {
+  flex-wrap: wrap;
+}
+
+.event-card-actions .btn,
+.live-card-actions .btn {
+  min-width: 0;
+}
+
+.scanner-top,
+.scanner-stage-head,
+.feed-head {
+  align-items: center;
+}
+
+.scanner-controls .btn {
+  min-width: 140px;
+}
+
+.feed-row,
+.dash-event-row,
+.dash-attendee-row,
+.dash-risk-row,
+.list-row {
+  gap: 0.75rem;
+}
+
+@media (max-width: 900px) {
+  .content {
+    padding: 1rem;
+  }
+
+  .topbar {
+    flex-wrap: wrap;
+  }
+
+  .topbar-title {
+    flex: 1;
+  }
+
+  .topbar-search {
+    order: 4;
+    margin-left: 0;
+  }
+
+  .topbar-clock {
+    order: 5;
+  }
+
+  .head-actions,
+  .dash-hero-actions,
+  .toolbar-actions {
+    margin-left: 0;
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .toolbar .search {
+    max-width: none;
+    width: 100%;
+  }
+
+  .dash-hero.page-hero {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 640px) {
+  .topbar-search-text {
+    display: none;
+  }
+
+  .toolbar > *,
+  .toolbar-actions > *,
+  .head-actions > *,
+  .dash-hero-actions > * {
+    max-width: 100%;
+  }
+
+  .toolbar select,
+  .filter-bar select {
+    width: 100%;
+  }
+
+  .tabs {
+    width: 100%;
+  }
+
+  .tabs button {
+    flex: 1 1 auto;
+  }
+}
