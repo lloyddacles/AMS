@@ -157,6 +157,7 @@ export const api = {
   getStudentRisk: (id) => request(`/reports/risk/${id}`),
 
   getDashboard: () => request('/dashboard/stats'),
+  getDashboardBriefing: () => request('/dashboard/briefing'),
 
   getTerms: () => request('/terms'),
   createTerm: (data) => request('/terms', { method: 'POST', body: data }),

@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { displayStatus } from '../classify.js';
 import { buildAtRisk, buildOverview } from '../services/reports.js';
 import { maybeRunAutomation } from '../services/automation.js';
+import { buildDailyBriefing } from '../services/briefing.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -129,6 +130,17 @@ router.get('/stats', async (req, res) => {
       top: atRisk.students.slice(0, 5),
     },
   });
+});
+
+// Daily attendance assistant: briefing, watchlist, and intervention queue.
+router.get('/briefing', async (req, res) => {
+  await maybeRunAutomation().catch(() => {});
+  try {
+    const briefing = await buildDailyBriefing();
+    res.json(briefing);
+  } catch (e) {
+    res.status(500).json({ error: e.message || 'Could not generate briefing' });
+  }
 });
 
 export default router;

@@ -63,10 +63,16 @@ function dateParts(value) {
 export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
+  const [briefing, setBriefing] = useState(null);
+  const [briefingLoading, setBriefingLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     api.getDashboard().then(setStats).catch((e) => setError(e.message));
+    api.getDashboardBriefing()
+      .then(setBriefing)
+      .catch(() => setBriefing(null))
+      .finally(() => setBriefingLoading(false));
   }, []);
 
   if (error) return <div className="alert alert-error">{error}</div>;
@@ -96,11 +102,12 @@ export default function Dashboard() {
         <div className="dash-hero-copy">
           <span className="dash-eyebrow">Attendance Overview</span>
           <h2>{greeting()}, {greetingName}</h2>
-          <p className="muted">Welcome back. Here’s your latest attendance snapshot for today and across recent events.</p>
+          <p className="muted">Welcome back. Here’s your daily attendance briefing, early warnings, and latest snapshot.</p>
           <div className="dashboard-hero-meta">
             <span className="dashboard-meta-chip">{todayLabel}</span>
             <span className="dashboard-meta-chip">Overall rate: {stats.overallRate}%</span>
             <span className="dashboard-meta-chip">{stats.totalRecords} check-ins recorded</span>
+            {briefing?.summary && <span className="dashboard-meta-chip">{briefing.summary.todayEvents} event{briefing.summary.todayEvents === 1 ? '' : 's'} today</span>}
           </div>
         </div>
         <div className="dash-hero-actions dashboard-hero-actions">
@@ -109,6 +116,118 @@ export default function Dashboard() {
           <Link to="/students" className="btn">Students</Link>
           <Link to="/reports" className="btn">Reports</Link>
         </div>
+      </section>
+
+      <section className="card dashboard-panel dash-assistant">
+        <div className="dash-card-head">
+          <div>
+            <h3>Daily Attendance Assistant</h3>
+            <p className="muted small">Briefing, likely absences/lateness watchlist, and early-warning intervention queue for today</p>
+          </div>
+          <Link className="link" to="/reports?view=at-risk">Open at-risk report</Link>
+        </div>
+
+        {briefingLoading ? (
+          <div className="card" style={{ boxShadow: 'none', border: '1px solid #e8eef5' }}>
+            <Spinner label="Preparing daily briefing…" size="sm" variant="panel" />
+          </div>
+        ) : !briefing ? (
+          <EmptyState label="Daily briefing is unavailable right now. You can still review reports and at-risk students." />
+        ) : (
+          <div className="dash-assistant-grid">
+            <div className="dash-assistant-main">
+              <div className="dash-assistant-focus">
+                <div className="ai-badge">AI Briefing</div>
+                <div className="dash-assistant-focus-list">
+                  {(briefing.focus || []).map((line, i) => (
+                    <p key={i} className="dash-assistant-focus-line">{line}</p>
+                  ))}
+                </div>
+                <div className="muted small" style={{ marginTop: '0.35rem' }}>
+                  Confidence: {briefing.confidence?.level || '—'} · {briefing.confidence?.note}
+                </div>
+              </div>
+
+              <div className="dash-assistant-summary-grid">
+                <div className="dash-mini-stat"><span>Today's events</span><strong>{briefing.summary.todayEvents}</strong><small>{briefing.summary.openEvents} open · {briefing.summary.upcomingEvents} upcoming</small></div>
+                <div className="dash-mini-stat"><span>Expected today</span><strong>{briefing.summary.expectedToday}</strong><small>{briefing.summary.checkedInToday} checked in</small></div>
+                <div className="dash-mini-stat"><span>Still to check in</span><strong>{briefing.summary.remainingToday}</strong><small>Across active/upcoming events</small></div>
+                <div className="dash-mini-stat"><span>Interventions</span><strong>{briefing.summary.interventions}</strong><small>{briefing.summary.highPriorityInterventions} high priority</small></div>
+              </div>
+
+              <div className="dash-assistant-subsection">
+                <div className="dash-subhead"><h4>Today's events</h4><span className="muted small">{briefing.todayEvents.length} scheduled</span></div>
+                {briefing.todayEvents.length === 0 ? (
+                  <p className="muted small">No events scheduled for today.</p>
+                ) : (
+                  <ul className="dash-brief-list">
+                    {briefing.todayEvents.map((e) => (
+                      <li key={e.id} className="dash-brief-row">
+                        <div className="dash-brief-main">
+                          <Link className="dash-event-name" to={`/events/${e.id}`}>{e.name}</Link>
+                          <div className="muted small">
+                            {[e.startTime, e.endTime ? `–${e.endTime}` : null, e.location || null].filter(Boolean).join(' · ') || 'Schedule not set'}
+                          </div>
+                        </div>
+                        <div className="dash-brief-meta">
+                          <span className={`pill ${e.phase === 'active' ? 'pill-green' : e.phase === 'upcoming' ? 'pill-blue' : 'pill-gray'}`}>{e.phase}</span>
+                          <span className="muted small">{e.attended}/{e.expected} in · {e.remaining} remaining</span>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+
+            <div className="dash-assistant-side">
+              <div className="dash-assistant-subsection">
+                <div className="dash-subhead"><h4>Early warning intervention queue</h4><span className="muted small">Top {briefing.interventionQueue.length}</span></div>
+                {briefing.interventionQueue.length === 0 ? (
+                  <p className="muted small">No urgent interventions detected. Continue monitoring attendance patterns.</p>
+                ) : (
+                  <ul className="dash-intervention-list">
+                    {briefing.interventionQueue.map((i) => (
+                      <li key={`${i.studentId}-${i.category}`} className="dash-intervention-item">
+                        <div className="dash-intervention-top">
+                          <div>
+                            <div className="strong">{i.name}</div>
+                            <div className="muted small">{i.studentNo}{i.course ? ` · ${i.course}` : ''} · {i.rate}% rate{typeof i.risk === 'number' ? ` · ${i.risk}% risk` : ''}</div>
+                          </div>
+                          <span className={`ai-priority ${i.priority === 'High' ? 'priority-high' : i.priority === 'Medium' ? 'priority-medium' : 'priority-low'}`}>{i.priority}</span>
+                        </div>
+                        <div className="dash-intervention-title">{i.title}</div>
+                        <div className="muted small">{i.action}</div>
+                        {i.reasons?.length > 0 && <div className="dash-intervention-reasons">Reasons: {i.reasons.join(' · ')}</div>}
+                        <div className="muted small">Confidence: {i.confidence} · Review context before formal action.</div>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+
+              <div className="dash-assistant-subsection">
+                <div className="dash-subhead"><h4>Likely absent/late watchlist</h4><span className="muted small">For today's events</span></div>
+                {briefing.watchlist.length === 0 ? (
+                  <p className="muted small">No strong absence/lateness patterns detected for today.</p>
+                ) : (
+                  <ul className="dash-watch-list">
+                    {briefing.watchlist.map((w) => (
+                      <li key={w.studentId} className="dash-watch-item">
+                        <div className="dash-watch-top">
+                          <strong>{w.name}</strong>
+                          <span className={`pill ${w.likelihood === 'High' ? 'pill-red' : w.likelihood === 'Medium' ? 'pill-amber' : 'pill-blue'}`}>{w.likelihood} likelihood</span>
+                        </div>
+                        <div className="muted small">{w.studentNo}{w.course ? ` · ${w.course}` : ''} · {w.rate}% rate · absent {w.absent} · late {w.late}</div>
+                        {w.reasons?.length > 0 && <div className="muted small">Why: {w.reasons.join(' · ')}</div>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </section>
 
       <div className="stat-grid dashboard-stat-grid">
