@@ -2585,6 +2585,128 @@ input[type="radio"] {
   gap: 1rem;
 }
 
+/* ---------- Students page ---------- */
+.students-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 1rem;
+}
+
+.students-toolbar {
+  align-items: center;
+}
+
+.students-toolbar .search {
+  flex: 1 1 320px;
+  max-width: none;
+}
+
+.students-bulk-bar {
+  margin: 0;
+}
+
+.students-table-card {
+  overflow: hidden;
+}
+
+.students-table-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  padding: 0.9rem 1rem;
+  border-bottom: 1px solid #e8eef5;
+  background: linear-gradient(180deg, #fbfdff, #ffffff);
+}
+
+.students-table td,
+.students-table th {
+  white-space: nowrap;
+}
+
+.students-table td:nth-child(3),
+.students-table td:nth-child(8) {
+  white-space: normal;
+}
+
+@media (max-width: 900px) {
+  .students-toolbar {
+    align-items: stretch;
+  }
+  .students-toolbar .page-size {
+    width: 100%;
+    justify-content: space-between;
+  }
+}
+
+/* ---------- Live page ---------- */
+.live-page .dash-hero-actions {
+  align-items: center;
+}
+
+.live-updated {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.6rem;
+  border-radius: 999px;
+  background: #f1f5f9;
+  color: #475569;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.live-updated.is-refreshing {
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+
+.live-empty {
+  padding: 2.25rem 1.5rem;
+}
+
+.live-page .live-grid {
+  gap: 1rem;
+}
+
+.live-page .live-card {
+  border: 1px solid #dbe5ef;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.live-page .live-card.live-today {
+  border-color: #86efac;
+  box-shadow: 0 0 0 1px rgba(134, 239, 172, 0.7) inset, 0 12px 28px -22px rgba(22, 163, 74, 0.35);
+}
+
+/* ---------- Dashboard polish ---------- */
+.dashboard-page .dash-hero {
+  border-color: #dbe5ef;
+}
+
+.dashboard-page .dash-chart-card,
+.dashboard-page .card {
+  border-color: #dbe5ef;
+}
+
+.dashboard-page .grid-2 {
+  gap: 1rem;
+}
+
+.dashboard-page .dash-card-head {
+  padding-bottom: 0.15rem;
+}
+
+.dashboard-hero .dash-hero-copy p {
+  max-width: 62ch;
+}
+
+.dashboard-stat-grid .dash-stat {
+  min-height: 100%;
+}
+
 .events-controls {
   display: flex;
   flex-direction: column;

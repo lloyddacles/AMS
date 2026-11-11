@@ -287,11 +287,11 @@ export default function Students() {
   const yearCount = new Set(students.map((s) => s.yearLevel).filter(Boolean)).size;
 
   return (
-    <div className="page">
+    <div className="page students-page">
       <PageHeader
         eyebrow="Directory"
         title="Students"
-        subtitle={`${students.length} student${students.length === 1 ? '' : 's'} in view`}
+        subtitle={`${total} student${total === 1 ? '' : 's'}${search ? ' matching your search' : ' in the directory'}`}
         actions={
           <>
             <Link className="btn" to="/students/qr-sheet">Print ID Cards</Link>
@@ -313,109 +313,113 @@ export default function Students() {
         <StatCard icon="star" accent="amber" label="Year levels" value={yearCount} hint="Distinct year levels" />
       </div>
 
-      <div className="filter-bar">
-        <div className="toolbar">
+      <div className="card students-controls">
+        <div className="toolbar students-toolbar">
           <input
             className="search"
-            placeholder="Search by name, student no, or course…"
+            placeholder="Search by name, student no, course, section, or email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <div className="toolbar-right">
-            {selected.size > 0 && (
-              <div className="sel-actions">
-                <span className="muted small">{selected.size} selected</span>
-                {!allMatchingSelected && total > selected.size && (
-                  <button className="btn btn-sm" onClick={toggleSelectAllMatching}>
-                    Select all {total}
-                  </button>
-                )}
-                <button className="btn btn-sm" onClick={openBulkEdit}>Bulk edit</button>
-                {isAdmin && (
-                  <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
-                    {regenBusy ? 'Working…' : 'Regenerate QR'}
-                  </button>
-                )}
-                {isAdmin && (
-                  <button className="btn btn-sm btn-danger" onClick={bulkRemove}>Delete</button>
-                )}
-                <button className="btn btn-sm" onClick={() => setSelected(new Set())}>Clear</button>
-              </div>
-            )}
-            <label className="page-size">
-              Rows
-              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
-              </select>
-            </label>
-          </div>
+          <label className="page-size">
+            Rows
+            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+            </select>
+          </label>
         </div>
+        {selected.size > 0 && (
+          <div className="events-bulk-bar students-bulk-bar">
+            <div className="events-bulk-info">
+              <span className="events-bulk-count">{selected.size}</span>
+              <span>student{selected.size === 1 ? '' : 's'} selected</span>
+            </div>
+            <div className="events-bulk-actions">
+              {!allMatchingSelected && total > selected.size && (
+                <button className="btn btn-sm" onClick={toggleSelectAllMatching}>Select all {total}</button>
+              )}
+              <button className="btn btn-sm" onClick={openBulkEdit}>Bulk edit</button>
+              {isAdmin && (
+                <button className="btn btn-sm" onClick={regenerateSelected} disabled={regenBusy}>
+                  {regenBusy ? 'Working…' : 'Regenerate QR'}
+                </button>
+              )}
+              {isAdmin && <button className="btn btn-sm btn-danger" onClick={bulkRemove}>Delete</button>}
+              <button className="btn btn-sm btn-ghost-light" onClick={() => setSelected(new Set())}>Clear</button>
+            </div>
+          </div>
+        )}
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="card table-card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th className="check-col">
-                <input
-                  type="checkbox"
-                  aria-label="Select all on this page"
-                  checked={allPageSelected}
-                  onChange={toggleSelectPage}
-                />
-              </th>
-              {COLUMNS.map((c) => (
-                <th key={c.key}>
-                  <button
-                    type="button"
-                    className={`sortable ${sort.key === c.key ? 'active' : ''}`}
-                    onClick={() => toggleSort(c.key)}
-                    title={`Sort by ${c.label}`}
-                  >
-                    {c.label}
-                    <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
-                  </button>
-                </th>
-              ))}
-              <th className="right">Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {loading && students.length === 0 && (
-              <tr><td colSpan={8} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
-            )}
-            {!loading && students.length === 0 && (
-              <tr><td colSpan={8} className="muted center">No students found.</td></tr>
-            )}
-            {pageRows.map((s) => (
-              <tr key={s.id} className={selected.has(s.id) ? 'row-selected' : ''}>
-                <td className="check-col">
-                  <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
-                </td>
-                <td className="mono">{s.studentNo}</td>
-                <td>
-                  <div className="name-cell">
-                    <span className="mini-avatar">
-                      {(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}
-                    </span>
-                    <span className="strong">{s.lastName}, {s.firstName}</span>
-                  </div>
-                </td>
-                <td>{s.course || '—'}</td>
-                <td>{s.yearLevel || '—'}</td>
-                <td>{s.section || '—'}</td>
-                <td className="muted">{s.email || '—'}</td>
-                <td className="right actions">
-                  <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
-                  <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                  <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
-                </td>
+      <div className="card table-card students-table-card">
+        <div className="students-table-head">
+          <div>
+            <h3 style={{ margin: 0, fontSize: '1rem' }}>Student directory</h3>
+            <p className="muted small" style={{ margin: '0.15rem 0 0' }}>
+              {loading ? 'Loading…' : `${pageRows.length} shown on this page · ${total} total`}
+            </p>
+          </div>
+          <label className="events-select-all" style={{ margin: 0 }}>
+            <input type="checkbox" aria-label="Select all on this page" checked={allPageSelected} onChange={toggleSelectPage} />
+            <span>Select page</span>
+          </label>
+        </div>
+        <div className="scroll-x">
+          <table className="table students-table">
+            <thead>
+              <tr>
+                <th className="check-col"></th>
+                {COLUMNS.map((c) => (
+                  <th key={c.key}>
+                    <button
+                      type="button"
+                      className={`sortable ${sort.key === c.key ? 'active' : ''}`}
+                      onClick={() => toggleSort(c.key)}
+                      title={`Sort by ${c.label}`}
+                    >
+                      {c.label}
+                      <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                    </button>
+                  </th>
+                ))}
+                <th className="right">Actions</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {loading && students.length === 0 && (
+                <tr><td colSpan={8} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
+              )}
+              {!loading && students.length === 0 && (
+                <tr><td colSpan={8} className="muted center">No students found. Try adjusting your search or add students.</td></tr>
+              )}
+              {pageRows.map((s) => (
+                <tr key={s.id} className={selected.has(s.id) ? 'row-selected' : ''}>
+                  <td className="check-col">
+                    <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
+                  </td>
+                  <td className="mono">{s.studentNo}</td>
+                  <td>
+                    <div className="name-cell">
+                      <span className="mini-avatar">{(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}</span>
+                      <span className="strong">{s.lastName}, {s.firstName}</span>
+                    </div>
+                  </td>
+                  <td>{s.course || <span className="muted">—</span>}</td>
+                  <td>{s.yearLevel || <span className="muted">—</span>}</td>
+                  <td>{s.section || <span className="muted">—</span>}</td>
+                  <td className="muted">{s.email || '—'}</td>
+                  <td className="right actions">
+                    <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
+                    <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       {total > 0 && (
@@ -435,53 +439,63 @@ export default function Students() {
 
       {editing && (
         <Modal
+          wide
           title={editing.id ? 'Edit Student' : 'Add Student'}
           onClose={() => setEditing(null)}
           footer={
             <>
               <button className="btn" onClick={() => setEditing(null)}>Cancel</button>
               <button className="btn btn-primary" onClick={save} disabled={saving}>
-                {saving ? 'Saving…' : 'Save'}
+                {saving ? 'Saving…' : 'Save student'}
               </button>
             </>
           }
         >
-          <form className="form grid-form" onSubmit={save}>
-            <label>
-              Student No *
-              <input value={form.studentNo} onChange={(e) => setForm({ ...form, studentNo: e.target.value })} required />
-            </label>
-            <label>
-              First Name *
-              <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
-            </label>
-            <label>
-              Last Name *
-              <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
-            </label>
-            <label>
-              Email
-              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-            </label>
-            <label>
-              Course
-              <input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} />
-            </label>
-            <label>
-              Year Level
-              <input value={form.yearLevel} onChange={(e) => setForm({ ...form, yearLevel: e.target.value })} />
-            </label>
-            <label>
-              Section
-              <input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" />
-            </label>
-            {formError && <div className="alert alert-error span-2">{formError}</div>}
+          <form className="form event-form" onSubmit={save}>
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Student information</h4>
+                <p className="muted small">Enter the student’s identity and academic details.</p>
+              </div>
+              <div className="form grid-form">
+                <label>
+                  <span>Student No <span className="req">*</span></span>
+                  <input value={form.studentNo} onChange={(e) => setForm({ ...form, studentNo: e.target.value })} required />
+                </label>
+                <label>
+                  <span>Email</span>
+                  <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="optional" />
+                </label>
+                <label>
+                  <span>First Name <span className="req">*</span></span>
+                  <input value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} required />
+                </label>
+                <label>
+                  <span>Last Name <span className="req">*</span></span>
+                  <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
+                </label>
+                <label>
+                  <span>Course</span>
+                  <input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} placeholder="e.g. BSIT" />
+                </label>
+                <label>
+                  <span>Year Level</span>
+                  <input value={form.yearLevel} onChange={(e) => setForm({ ...form, yearLevel: e.target.value })} placeholder="e.g. 1st Year" />
+                </label>
+                <label className="span-2">
+                  <span>Section</span>
+                  <input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" />
+                </label>
+              </div>
+            </section>
+            {formError && <div className="alert alert-error">{formError}</div>}
           </form>
         </Modal>
       )}
 
       {bulkEditOpen && (
         <Modal
+          wide
           title={`Bulk edit ${selected.size} student${selected.size === 1 ? '' : 's'}`}
           onClose={() => setBulkEditOpen(false)}
           footer={
@@ -493,45 +507,105 @@ export default function Students() {
             </>
           }
         >
-          <form className="form grid-form" onSubmit={saveBulkEdit}>
-            <p className="muted small span-2">
-              Only filled-in fields are changed. Blank fields keep each student's current value.
-            </p>
-            <label>
-              Course
-              <input
-                value={bulkForm.course}
-                onChange={(e) => setBulkForm({ ...bulkForm, course: e.target.value })}
-                placeholder="Leave blank to keep"
-              />
-            </label>
-            <label>
-              Year Level
-              <input
-                value={bulkForm.yearLevel}
-                onChange={(e) => setBulkForm({ ...bulkForm, yearLevel: e.target.value })}
-                placeholder="Leave blank to keep"
-              />
-            </label>
-            <label>
-              Section
-              <input
-                value={bulkForm.section}
-                onChange={(e) => setBulkForm({ ...bulkForm, section: e.target.value })}
-                placeholder="Leave blank to keep"
-              />
-            </label>
-            {bulkError && <div className="alert alert-error span-2">{bulkError}</div>}
+          <form className="form event-form" onSubmit={saveBulkEdit}>
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Update selected students</h4>
+                <p className="muted small">Only filled-in fields are changed. Blank fields keep each student's current value.</p>
+              </div>
+              <div className="form grid-form">
+                <label>
+                  <span>Course</span>
+                  <input
+                    value={bulkForm.course}
+                    onChange={(e) => setBulkForm({ ...bulkForm, course: e.target.value })}
+                    placeholder="Leave blank to keep"
+                  />
+                </label>
+                <label>
+                  <span>Year Level</span>
+                  <input
+                    value={bulkForm.yearLevel}
+                    onChange={(e) => setBulkForm({ ...bulkForm, yearLevel: e.target.value })}
+                    placeholder="Leave blank to keep"
+                  />
+                </label>
+                <label className="span-2">
+                  <span>Section</span>
+                  <input
+                    value={bulkForm.section}
+                    onChange={(e) => setBulkForm({ ...bulkForm, section: e.target.value })}
+                    placeholder="Leave blank to keep"
+                  />
+                </label>
+              </div>
+            </section>
+            {bulkError && <div className="alert alert-error">{bulkError}</div>}
           </form>
         </Modal>
       )}
 
-      {qrStudent && <StudentQrModal student={qrStudent} onClose={() => setQrStudent(null)} onRegenerate={async () => {
-        try {
-          const updated = await api.regenerateStudentQr(qrStudent.id);
-          setQrStudent(updated);
-          await load();
-        } catch (e) { alert(e.message); }
+      {bulkOpen && (
+        <BulkAddStudents
+          onClose={() => setBulkOpen(false)}
+          onDone={() => { setBulkOpen(false); load(); }}
+        />
+      )}
+
+      {qrStudent && (
+        <StudentQrModal
+          student={qrStudent}
+          onClose={() => setQrStudent(null)}
+          onRegenerate={async () => {
+            try {
+              const updated = await api.regenerateStudentQr(qrStudent.id);
+              setQrStudent(updated);
+              await load();
+            } catch (e) {
+              alert(e.message);
+            }
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function StudentQrModal({ student, onClose, onRegenerate }) {
+  const wrapRef = useRef(null);
+
+  function download() {
+    const qrCanvas = wrapRef.current?.querySelector('.id-card canvas');
+    if (!qrCanvas) return;
+    const cardCanvas = composeIdCard(student, qrCanvas);
+    const url = cardCanvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${student.studentNo}-id-card.png`;
+    a.click();
+  }
+
+  return (
+    <Modal
+      title="Student ID Card"
+      onClose={onClose}
+      footer={
+        <>
+          <button className="btn" onClick={onRegenerate}>Regenerate QR</button>
+          <button className="btn" onClick={() => window.print()}>Print</button>
+          <button className="btn btn-primary" onClick={download}>Download PNG</button>
+        </>
+      }
+    >
+      <div className="qr-display" ref={wrapRef}>
+        <StudentIdCard student={student} />
+      </div>
+      <p className="muted small center">
+        ID size 85.6 × 54 mm. Have the student present this card — staff scan the QR at the event to record attendance.
+      </p>
+    </Modal>
+  );
+}
       }} />}
 
       {bulkOpen && (

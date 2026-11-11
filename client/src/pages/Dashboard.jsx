@@ -88,11 +88,11 @@ export default function Dashboard() {
 
   return (
     <div className="page dashboard-page">
-      <section className="dash-hero">
+      <section className="dash-hero dashboard-hero">
         <div className="dash-hero-copy">
           <span className="dash-eyebrow">Overview</span>
           <h2>{greeting()}, {firstName}</h2>
-          <p className="muted">Here’s the latest snapshot of attendance across your events.</p>
+          <p className="muted">Here’s the latest snapshot of attendance across your events, students, and recent activity.</p>
         </div>
         <div className="dash-hero-actions">
           <Link to="/live" className="btn btn-primary">Live scan</Link>
@@ -101,35 +101,11 @@ export default function Dashboard() {
         </div>
       </section>
 
-      <div className="stat-grid">
-        <StatCard
-          icon="students"
-          accent="blue"
-          label="Students"
-          value={stats.totalStudents}
-          hint="Enrolled in the system"
-        />
-        <StatCard
-          icon="events"
-          accent="purple"
-          label="Events"
-          value={stats.totalEvents}
-          hint="Recorded across all terms"
-        />
-        <StatCard
-          icon="checkins"
-          accent="green"
-          label="Check-ins"
-          value={stats.totalRecords}
-          hint="Time-ins recorded"
-        />
-        <StatCard
-          icon="rate"
-          accent="amber"
-          label="Overall rate"
-          value={`${stats.overallRate}%`}
-          hint="Average attendance"
-        />
+      <div className="stat-grid dashboard-stat-grid">
+        <StatCard icon="students" accent="blue" label="Students" value={stats.totalStudents} hint="Enrolled in the system" />
+        <StatCard icon="events" accent="purple" label="Events" value={stats.totalEvents} hint="Recorded across all terms" />
+        <StatCard icon="checkins" accent="green" label="Check-ins" value={stats.totalRecords} hint="Time-ins recorded" />
+        <StatCard icon="rate" accent="amber" label="Overall rate" value={`${stats.overallRate}%`} hint="Average attendance" />
       </div>
 
       <div className="dash-charts">

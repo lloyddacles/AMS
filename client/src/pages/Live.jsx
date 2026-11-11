@@ -132,14 +132,14 @@ export default function Live() {
   const updated = fmtTime(board.now);
 
   return (
-    <div className="page">
+    <div className="page live-page">
       <PageHeader
         eyebrow="Check-in"
         title="Live Scan"
-        subtitle="Watch check-ins in real time, spot low turnout, and close events when they end."
+        subtitle="Monitor check-ins in real time, track turnout, and close events when they end."
         actions={
           <>
-            <span className="muted small">{updated ? `Updated ${updated}` : 'Live'}</span>
+            <span className={`live-updated ${refreshing ? 'is-refreshing' : ''}`}>{updated ? `Updated ${updated}` : 'Live'}</span>
             <button className="btn" onClick={() => load()} disabled={refreshing}>
               {refreshing ? 'Refreshing…' : 'Refresh'}
             </button>
@@ -160,12 +160,18 @@ export default function Live() {
       )}
 
       {events.length === 0 && (
-        <div className="empty card">
+        <div className="empty card live-empty">
+          <div className="events-empty-icon">◉</div>
           <h3>No live events</h3>
-          <p className="muted">There are no open events to monitor right now. Create one from Events to start scanning.</p>
-          <Link className="btn btn-primary" to="/events">Go to Events</Link>
+          <p className="muted">There are no open events to monitor right now. Create or open an event to start scanning attendance.</p>
+          <div className="head-actions" style={{ justifyContent: 'center', marginLeft: 0 }}>
+            <Link className="btn btn-primary" to="/events">Go to Events</Link>
+            <Link className="btn" to="/schedules">View Schedules</Link>
+          </div>
         </div>
       )}
+
+
 
       <div className="live-grid">
         {events.map((ev) => {
