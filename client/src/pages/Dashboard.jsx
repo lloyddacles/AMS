@@ -84,7 +84,10 @@ export default function Dashboard() {
     value: s.count,
   }));
   const statusTotal = statusData.reduce((sum, s) => sum + s.value, 0);
-  const accountName = String(user?.name || '').trim() || 'there';
+  const rawName = String(user?.name || '').trim();
+  const accountName = rawName || 'there';
+  const hasSalutation = /^(sir|mr\.?|mrs\.?|ms\.?|dr\.?|prof\.?)\b/i.test(rawName);
+  const greetingName = rawName ? (hasSalutation ? rawName : `Sir ${rawName}`) : 'Sir';
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   return (
@@ -92,7 +95,7 @@ export default function Dashboard() {
       <section className="dash-hero dashboard-hero dashboard-hero-v2">
         <div className="dash-hero-copy">
           <span className="dash-eyebrow">Attendance Overview</span>
-          <h2>{greeting()}, Sir {accountName}</h2>
+          <h2>{greeting()}, {greetingName}</h2>
           <p className="muted">Welcome back. Here’s your latest attendance snapshot for today and across recent events.</p>
           <div className="dashboard-hero-meta">
             <span className="dashboard-meta-chip">{todayLabel}</span>
