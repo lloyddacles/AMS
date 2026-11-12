@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { get, all } from '../db.js';
 import { requireAuth } from '../middleware/auth.js';
-import { displayStatus } from '../classify.js';
+import { displayStatus, todayInTz } from '../classify.js';
 import { buildAtRisk, buildOverview } from '../services/reports.js';
 import { maybeRunAutomation } from '../services/automation.js';
 import { buildDailyBriefing } from '../services/briefing.js';
@@ -18,6 +18,66 @@ function topAward(rank) {
   if (rank === 2) return { title: 'Silver Model Student', badge: 'Silver' };
   if (rank === 3) return { title: 'Bronze Model Student', badge: 'Bronze' };
   return { title: 'Excellence Awardee', badge: 'Award' };
+}
+
+function toYmd(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function monthBounds(ymd) {
+  const [y, m] = String(ymd).slice(0, 7).split('-').map(Number);
+  const start = new Date(Date.UTC(y, m - 1, 1));
+  const end = new Date(Date.UTC(y, m, 0));
+  return { year: y, month: m, startYmd: toYmd(start), endYmd: toYmd(end), daysInMonth: end.getUTCDate() };
+}
+
+function weekIndexForDate(startYmd, dateYmd) {
+  const start = new Date(`${startYmd}T00:00:00Z`);
+  const d = new Date(`${dateYmd}T00:00:00Z`);
+  const diffDays = Math.floor((d - start) / 86400000);
+  return Math.max(0, Math.floor(diffDays / 7));
+}
+
+function formatShortMd(ymd) {
+  const d = new Date(`${ymd}T00:00:00Z`);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+function buildCurrentMonthWeeklyTrend(eventsInMonth, monthStartYmd, monthEndYmd, daysInMonth) {
+  const weekCount = Math.ceil(daysInMonth / 7);
+  const buckets = Array.from({ length: weekCount }, (_, i) => {
+    const ws = new Date(`${monthStartYmd}T00:00:00Z`);
+    ws.setUTCDate(ws.getUTCDate() + i * 7);
+    const we = new Date(ws);
+    we.setUTCDate(ws.getUTCDate() + 6);
+    const monthEnd = new Date(`${monthEndYmd}T00:00:00Z`);
+    if (we > monthEnd) we.setTime(monthEnd.getTime());
+    const wsYmd = toYmd(ws);
+    const weYmd = toYmd(we);
+    return {
+      key: `week-${i + 1}`,
+      label: `Week ${i + 1}`,
+      name: `Week ${i + 1} (${formatShortMd(wsYmd)}–${formatShortMd(weYmd)})`,
+      startDate: wsYmd,
+      endDate: weYmd,
+      events: 0,
+      attended: 0,
+    };
+  });
+
+  for (const e of eventsInMonth) {
+    const idx = weekIndexForDate(monthStartYmd, e.eventDate);
+    if (!buckets[idx]) continue;
+    buckets[idx].events += 1;
+    buckets[idx].attended += Number(e.attended || 0);
+  }
+
+  // Keep the chart readable by focusing on weeks up to the current week in the month
+  // (and include future weeks in-month that already have scheduled events).
+  const today = todayInTz();
+  const currentIdx = today >= monthStartYmd && today <= monthEndYmd ? weekIndexForDate(monthStartYmd, today) : weekCount - 1;
+  const lastRelevant = buckets.reduce((acc, b, i) => (b.events > 0 ? i : acc), currentIdx);
+  return buckets.slice(0, Math.max(currentIdx, lastRelevant) + 1);
 }
 
 router.get('/stats', async (req, res) => {
@@ -53,11 +113,18 @@ router.get('/stats', async (req, res) => {
     rate: e.totalStudents ? Math.round((e.attended / e.totalStudents) * 100) : 0,
   }));
 
-  const trend = await all(
-    `SELECT substr(e.event_date, 6) AS label, e.name,
+  const today = todayInTz();
+  const { startYmd: monthStartYmd, endYmd: monthEndYmd, daysInMonth, month, year } = monthBounds(today);
+  const monthEvents = await all(
+    `SELECT e.id, e.name, e.event_date AS eventDate,
             (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended
-     FROM events e ORDER BY e.event_date ASC, e.id ASC LIMIT 8`
+     FROM events e
+     WHERE e.event_date >= ? AND e.event_date <= ?
+     ORDER BY e.event_date ASC, e.start_time ASC, e.id ASC`,
+    [monthStartYmd, monthEndYmd]
   );
+  const trend = buildCurrentMonthWeeklyTrend(monthEvents, monthStartYmd, monthEndYmd, daysInMonth);
+  const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
   const atRisk = await buildAtRisk({});
 
@@ -123,6 +190,14 @@ router.get('/stats', async (req, res) => {
     recentEvents,
     topAttendees,
     trend,
+    trendMeta: {
+      granularity: 'week',
+      month: `${year}-${String(month).padStart(2, '0')}`,
+      monthLabel,
+      startDate: monthStartYmd,
+      endDate: monthEndYmd,
+      scope: 'current-month',
+    },
     atRisk: {
       threshold: atRisk.threshold,
       minEvents: atRisk.minEvents,

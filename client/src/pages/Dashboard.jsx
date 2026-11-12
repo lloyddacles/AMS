@@ -55,7 +55,36 @@ export default function Dashboard() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    api.getDashboard().then(setStats).catch((e) => setError(e.message));
+    let alive = true;
+    let busy = false;
+    const load = async ({ silent = false } = {}) => {
+      if (busy) return;
+      busy = true;
+      try {
+        const data = await api.getDashboard();
+        if (alive) {
+          setStats(data);
+          setError('');
+        }
+      } catch (e) {
+        if (alive && !silent) setError(e.message);
+      } finally {
+        busy = false;
+      }
+    };
+
+    load();
+    const interval = setInterval(() => load({ silent: true }), 30000);
+    const onFocus = () => load({ silent: true });
+    const onVisibility = () => { if (document.visibilityState === 'visible') load({ silent: true }); };
+    window.addEventListener('focus', onFocus);
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+      window.removeEventListener('focus', onFocus);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   if (error) return <div className="alert alert-error">{error}</div>;
@@ -111,34 +140,46 @@ export default function Dashboard() {
         <section className="card dash-chart-card dashboard-panel">
           <div className="dash-card-head">
             <div>
-              <h3>Attendance per Event</h3>
-              <p className="muted small">Recent events (general visual summary)</p>
+              <h3>Attendance per Week</h3>
+              <p className="muted small">
+                {stats.trendMeta?.monthLabel
+                  ? `${stats.trendMeta.monthLabel} · Weekly totals for events/classes this month (real-time)`
+                  : 'Weekly attendance summary (real-time)'}
+              </p>
             </div>
             <Link className="link" to="/reports?view=trends">Detailed trends</Link>
           </div>
           {stats.trend?.length ? (
-            <ResponsiveContainer width="100%" height={270}>
-              <BarChart data={stats.trend} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
-                <defs>
-                  <linearGradient id="dashBarFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#60a5fa" />
-                    <stop offset="100%" stopColor="#2563eb" />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#eef2f7" vertical={false} />
-                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={6} />
-                <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                <Tooltip
-                  cursor={{ fill: 'rgba(37, 99, 235, 0.06)' }}
-                  contentStyle={TOOLTIP_STYLE}
-                  labelFormatter={(label, payload) => payload?.[0]?.payload?.name || label}
-                  formatter={(value) => [value, 'Attended']}
-                />
-                <Bar dataKey="attended" fill="url(#dashBarFill)" radius={[8, 8, 0, 0]} maxBarSize={46} />
-              </BarChart>
-            </ResponsiveContainer>
+            <>
+              <ResponsiveContainer width="100%" height={270}>
+                <BarChart data={stats.trend} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="dashBarFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#60a5fa" />
+                      <stop offset="100%" stopColor="#2563eb" />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid stroke="#eef2f7" vertical={false} />
+                  <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={6} />
+                  <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(37, 99, 235, 0.06)' }}
+                    contentStyle={TOOLTIP_STYLE}
+                    labelFormatter={(label, payload) => payload?.[0]?.payload?.name || label}
+                    formatter={(value, _name, props) => {
+                      const events = props?.payload?.events;
+                      return [value, Number.isFinite(events) ? `Attended (${events} event${events === 1 ? '' : 's'})` : 'Attended'];
+                    }}
+                  />
+                  <Bar dataKey="attended" fill="url(#dashBarFill)" radius={[8, 8, 0, 0]} maxBarSize={46} />
+                </BarChart>
+              </ResponsiveContainer>
+              <p className="muted small" style={{ margin: '0.35rem 0 0' }}>
+                Shows weekly attendance totals for {stats.trendMeta?.monthLabel || 'the current month'}. Weeks with no events/classes show 0.
+              </p>
+            </>
           ) : (
-            <EmptyState label="No events yet. Create events to see attendance visuals." />
+            <EmptyState label={`No events/classes found for ${stats.trendMeta?.monthLabel || 'this month'} yet.`} />
           )}
         </section>
 
