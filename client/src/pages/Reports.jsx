@@ -115,16 +115,16 @@ export default function Reports() {
     return () => { alive = false; };
   }, [from, to, termId]);
 
-  // Load trend points for visual summaries even when not on the Trends tab.
+  // Load overall daily trend points for visual summaries (all courses, archived + active events).
   useEffect(() => {
     let alive = true;
     setVisualTrends(null);
     api
-      .getReportTrends({ course, granularity: 'day', ...rangeParams })
+      .getReportTrends({ granularity: 'day', ...rangeParams })
       .then((d) => { if (alive) setVisualTrends(d); })
       .catch(() => { if (alive) setVisualTrends(null); });
     return () => { alive = false; };
-  }, [course, from, to, termId]);
+  }, [from, to, termId]);
 
   useEffect(() => {
     if (view !== 'matrix') return undefined;
@@ -403,9 +403,10 @@ export default function Reports() {
   }, [overview]);
 
   const trendVisualData = useMemo(() => {
-    const src = trends || visualTrends;
+    // Prefer the overall total daily trend (archived + active, all courses) for the visual summary.
+    const src = visualTrends || trends;
     const points = src?.points || [];
-    return points.slice(-12);
+    return points.slice(-30);
   }, [trends, visualTrends]);
 
   const STATUS_COLORS = {
@@ -644,9 +645,9 @@ export default function Reports() {
                 )}
               </div>
               <div className="ai-visual-card ai-visual-card-wide" ref={chartRefs.trend}>
-                <div className="ai-visual-title">Attendance rate trend (recent periods)</div>
+                <div className="ai-visual-title">Attendance rate trend (daily total)</div>
                 <p className="muted small" style={{ margin: '0 0 0.5rem' }}>
-                  This graph shows if more or fewer students came over time. If the line goes up, attendance is getting better. If it goes down, fewer students are coming.
+                  This graph shows if more or fewer students came each day, using all events in the selected range (including archived and active). If the line goes up, attendance is getting better. If it goes down, fewer students are coming.
                 </p>
                 {trendVisualData.length === 0 ? (
                   <div className="muted small" style={{ padding: '0.5rem 0' }}>
