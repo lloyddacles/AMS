@@ -34,8 +34,6 @@ const STATUS_LABELS = {
   absent: 'Absent',
 };
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
 const ICONS = {
   students:
     'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2 M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8 M23 21v-2a4 4 0 0 0-3-3.87 M16 3.13a4 4 0 0 1 0 7.75',
@@ -51,28 +49,13 @@ function greeting() {
   return 'Good evening';
 }
 
-function dateParts(value) {
-  const parts = String(value || '').split('-');
-  const month = Number(parts[1]);
-  return {
-    day: parts[2] || '—',
-    month: MONTHS[month - 1] || '',
-  };
-}
-
 export default function Dashboard() {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
-  const [briefing, setBriefing] = useState(null);
-  const [briefingLoading, setBriefingLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
     api.getDashboard().then(setStats).catch((e) => setError(e.message));
-    api.getDashboardBriefing()
-      .then(setBriefing)
-      .catch(() => setBriefing(null))
-      .finally(() => setBriefingLoading(false));
   }, []);
 
   if (error) return <div className="alert alert-error">{error}</div>;
@@ -84,17 +67,18 @@ export default function Dashboard() {
     );
   }
 
-  const statusData = stats.statusBreakdown.map((s) => ({
+  const statusData = (stats.statusBreakdown || []).map((s) => ({
     key: s.status,
     name: STATUS_LABELS[s.status] || s.status,
     value: s.count,
   }));
   const statusTotal = statusData.reduce((sum, s) => sum + s.value, 0);
   const rawName = String(user?.name || '').trim();
-  const accountName = rawName || 'there';
   const hasSalutation = /^(sir|mr\.?|mrs\.?|ms\.?|dr\.?|prof\.?)\b/i.test(rawName);
   const greetingName = rawName ? (hasSalutation ? rawName : `Sir ${rawName}`) : 'Sir';
   const todayLabel = new Date().toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const atRiskCount = Number(stats?.atRisk?.count || 0);
+  const threshold = Number(stats?.atRisk?.threshold || 0);
 
   return (
     <div className="page dashboard-page">
@@ -102,138 +86,24 @@ export default function Dashboard() {
         <div className="dash-hero-copy">
           <span className="dash-eyebrow">Attendance Overview</span>
           <h2>{greeting()}, {greetingName}</h2>
-          <p className="muted">Welcome back. Here’s your daily attendance briefing, early warnings, and latest snapshot.</p>
+          <p className="muted">A quick snapshot of attendance. Open Reports for detailed insights, trends, and student-level summaries.</p>
           <div className="dashboard-hero-meta">
             <span className="dashboard-meta-chip">{todayLabel}</span>
             <span className="dashboard-meta-chip">Overall rate: {stats.overallRate}%</span>
             <span className="dashboard-meta-chip">{stats.totalRecords} check-ins recorded</span>
-            {briefing?.summary && <span className="dashboard-meta-chip">{briefing.summary.todayEvents} event{briefing.summary.todayEvents === 1 ? '' : 's'} today</span>}
           </div>
         </div>
         <div className="dash-hero-actions dashboard-hero-actions">
           <Link to="/live" className="btn btn-primary">Open Live Scan</Link>
-          <Link to="/events" className="btn">Manage Events</Link>
-          <Link to="/students" className="btn">Students</Link>
-          <Link to="/reports" className="btn">Reports</Link>
+          <Link to="/events" className="btn">Events</Link>
+          <Link to="/reports" className="btn">Reports & Details</Link>
         </div>
-      </section>
-
-      <section className="card dashboard-panel dash-assistant">
-        <div className="dash-card-head">
-          <div>
-            <h3>Daily Attendance Assistant</h3>
-            <p className="muted small">Briefing, likely absences/lateness watchlist, and early-warning intervention queue for today</p>
-          </div>
-          <Link className="link" to="/reports?view=at-risk">Open at-risk report</Link>
-        </div>
-
-        {briefingLoading ? (
-          <div className="card" style={{ boxShadow: 'none', border: '1px solid #e8eef5' }}>
-            <Spinner label="Preparing daily briefing…" size="sm" variant="panel" />
-          </div>
-        ) : !briefing ? (
-          <EmptyState label="Daily briefing is unavailable right now. You can still review reports and at-risk students." />
-        ) : (
-          <div className="dash-assistant-grid">
-            <div className="dash-assistant-main">
-              <div className="dash-assistant-focus">
-                <div className="ai-badge">AI Briefing</div>
-                <div className="dash-assistant-focus-list">
-                  {(briefing.focus || []).map((line, i) => (
-                    <p key={i} className="dash-assistant-focus-line">{line}</p>
-                  ))}
-                </div>
-                <div className="muted small" style={{ marginTop: '0.35rem' }}>
-                  Confidence: {briefing.confidence?.level || '—'} · {briefing.confidence?.note}
-                </div>
-              </div>
-
-              <div className="dash-assistant-summary-grid">
-                <div className="dash-mini-stat"><span>Today's events</span><strong>{briefing.summary.todayEvents}</strong><small>{briefing.summary.openEvents} open · {briefing.summary.upcomingEvents} upcoming</small></div>
-                <div className="dash-mini-stat"><span>Expected today</span><strong>{briefing.summary.expectedToday}</strong><small>{briefing.summary.checkedInToday} checked in</small></div>
-                <div className="dash-mini-stat"><span>Still to check in</span><strong>{briefing.summary.remainingToday}</strong><small>Across active/upcoming events</small></div>
-                <div className="dash-mini-stat"><span>Interventions</span><strong>{briefing.summary.interventions}</strong><small>{briefing.summary.highPriorityInterventions} high priority</small></div>
-              </div>
-
-              <div className="dash-assistant-subsection">
-                <div className="dash-subhead"><h4>Today's events</h4><span className="muted small">{briefing.todayEvents.length} scheduled</span></div>
-                {briefing.todayEvents.length === 0 ? (
-                  <p className="muted small">No events scheduled for today.</p>
-                ) : (
-                  <ul className="dash-brief-list">
-                    {briefing.todayEvents.map((e) => (
-                      <li key={e.id} className="dash-brief-row">
-                        <div className="dash-brief-main">
-                          <Link className="dash-event-name" to={`/events/${e.id}`}>{e.name}</Link>
-                          <div className="muted small">
-                            {[e.startTime, e.endTime ? `–${e.endTime}` : null, e.location || null].filter(Boolean).join(' · ') || 'Schedule not set'}
-                          </div>
-                        </div>
-                        <div className="dash-brief-meta">
-                          <span className={`pill ${e.phase === 'active' ? 'pill-green' : e.phase === 'upcoming' ? 'pill-blue' : 'pill-gray'}`}>{e.phase}</span>
-                          <span className="muted small">{e.attended}/{e.expected} in · {e.remaining} remaining</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-
-            <div className="dash-assistant-side">
-              <div className="dash-assistant-subsection">
-                <div className="dash-subhead"><h4>Early warning intervention queue</h4><span className="muted small">Top {briefing.interventionQueue.length}</span></div>
-                {briefing.interventionQueue.length === 0 ? (
-                  <p className="muted small">No urgent interventions detected. Continue monitoring attendance patterns.</p>
-                ) : (
-                  <ul className="dash-intervention-list">
-                    {briefing.interventionQueue.map((i) => (
-                      <li key={`${i.studentId}-${i.category}`} className="dash-intervention-item">
-                        <div className="dash-intervention-top">
-                          <div>
-                            <div className="strong">{i.name}</div>
-                            <div className="muted small">{i.studentNo}{i.course ? ` · ${i.course}` : ''} · {i.rate}% rate{typeof i.risk === 'number' ? ` · ${i.risk}% risk` : ''}</div>
-                          </div>
-                          <span className={`ai-priority ${i.priority === 'High' ? 'priority-high' : i.priority === 'Medium' ? 'priority-medium' : 'priority-low'}`}>{i.priority}</span>
-                        </div>
-                        <div className="dash-intervention-title">{i.title}</div>
-                        <div className="muted small">{i.action}</div>
-                        {i.reasons?.length > 0 && <div className="dash-intervention-reasons">Reasons: {i.reasons.join(' · ')}</div>}
-                        <div className="muted small">Confidence: {i.confidence} · Review context before formal action.</div>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-
-              <div className="dash-assistant-subsection">
-                <div className="dash-subhead"><h4>Likely absent/late watchlist</h4><span className="muted small">For today's events</span></div>
-                {briefing.watchlist.length === 0 ? (
-                  <p className="muted small">No strong absence/lateness patterns detected for today.</p>
-                ) : (
-                  <ul className="dash-watch-list">
-                    {briefing.watchlist.map((w) => (
-                      <li key={w.studentId} className="dash-watch-item">
-                        <div className="dash-watch-top">
-                          <strong>{w.name}</strong>
-                          <span className={`pill ${w.likelihood === 'High' ? 'pill-red' : w.likelihood === 'Medium' ? 'pill-amber' : 'pill-blue'}`}>{w.likelihood} likelihood</span>
-                        </div>
-                        <div className="muted small">{w.studentNo}{w.course ? ` · ${w.course}` : ''} · {w.rate}% rate · absent {w.absent} · late {w.late}</div>
-                        {w.reasons?.length > 0 && <div className="muted small">Why: {w.reasons.join(' · ')}</div>}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
       </section>
 
       <div className="stat-grid dashboard-stat-grid">
-        <StatCard icon="students" accent="blue" label="Students" value={stats.totalStudents} hint="Enrolled in the system" />
-        <StatCard icon="events" accent="purple" label="Events" value={stats.totalEvents} hint="Recorded across all terms" />
-        <StatCard icon="checkins" accent="green" label="Check-ins" value={stats.totalRecords} hint="Time-ins recorded" />
+        <StatCard icon="students" accent="blue" label="Students" value={stats.totalStudents} hint="Total enrolled" />
+        <StatCard icon="events" accent="purple" label="Events" value={stats.totalEvents} hint="Recorded events" />
+        <StatCard icon="checkins" accent="green" label="Check-ins" value={stats.totalRecords} hint="Total time-ins" />
         <StatCard icon="rate" accent="amber" label="Overall rate" value={`${stats.overallRate}%`} hint="Average attendance" />
       </div>
 
@@ -242,11 +112,11 @@ export default function Dashboard() {
           <div className="dash-card-head">
             <div>
               <h3>Attendance per Event</h3>
-              <p className="muted small">Check-ins for the latest events</p>
+              <p className="muted small">Recent events (general visual summary)</p>
             </div>
-            <Link className="link" to="/reports?view=trends">View trend</Link>
+            <Link className="link" to="/reports?view=trends">Detailed trends</Link>
           </div>
-          {stats.trend.length ? (
+          {stats.trend?.length ? (
             <ResponsiveContainer width="100%" height={270}>
               <BarChart data={stats.trend} margin={{ top: 8, right: 8, left: -12, bottom: 0 }}>
                 <defs>
@@ -256,19 +126,8 @@ export default function Dashboard() {
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="#eef2f7" vertical={false} />
-                <XAxis
-                  dataKey="label"
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                  dy={6}
-                />
-                <YAxis
-                  allowDecimals={false}
-                  tickLine={false}
-                  axisLine={false}
-                  tick={{ fontSize: 11, fill: '#64748b' }}
-                />
+                <XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} dy={6} />
+                <YAxis allowDecimals={false} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                 <Tooltip
                   cursor={{ fill: 'rgba(37, 99, 235, 0.06)' }}
                   contentStyle={TOOLTIP_STYLE}
@@ -279,7 +138,7 @@ export default function Dashboard() {
               </BarChart>
             </ResponsiveContainer>
           ) : (
-            <EmptyState label="No events yet." />
+            <EmptyState label="No events yet. Create events to see attendance visuals." />
           )}
         </section>
 
@@ -287,23 +146,16 @@ export default function Dashboard() {
           <div className="dash-card-head">
             <div>
               <h3>Status Breakdown</h3>
-              <p className="muted small">All recorded check-ins</p>
+              <p className="muted small">Overall check-in statuses</p>
             </div>
+            <Link className="link" to="/reports">Full reports</Link>
           </div>
           {statusData.length ? (
             <>
               <div className="dash-donut">
                 <ResponsiveContainer width="100%" height={230}>
                   <PieChart>
-                    <Pie
-                      data={statusData}
-                      dataKey="value"
-                      nameKey="name"
-                      innerRadius={64}
-                      outerRadius={94}
-                      paddingAngle={2}
-                      stroke="none"
-                    >
+                    <Pie data={statusData} dataKey="value" nameKey="name" innerRadius={64} outerRadius={94} paddingAngle={2} stroke="none">
                       {statusData.map((entry) => (
                         <Cell key={entry.key} fill={STATUS_COLORS[entry.key] || '#94a3b8'} />
                       ))}
@@ -321,10 +173,7 @@ export default function Dashboard() {
                   const pct = statusTotal ? Math.round((entry.value / statusTotal) * 100) : 0;
                   return (
                     <li key={entry.key}>
-                      <span
-                        className="dash-legend-dot"
-                        style={{ background: STATUS_COLORS[entry.key] || '#94a3b8' }}
-                      />
+                      <span className="dash-legend-dot" style={{ background: STATUS_COLORS[entry.key] || '#94a3b8' }} />
                       <span className="dash-legend-label">{entry.name}</span>
                       <span className="dash-legend-value">{entry.value}</span>
                       <span className="dash-legend-pct">{pct}%</span>
@@ -334,148 +183,45 @@ export default function Dashboard() {
               </ul>
             </>
           ) : (
-            <EmptyState label="No records yet." />
+            <EmptyState label="No attendance records yet." />
           )}
         </section>
       </div>
 
-      <div className="grid-2 dashboard-lower-grid">
-        <section className="card dashboard-panel">
-          <div className="dash-card-head">
-            <div>
-              <h3>Recent Events</h3>
-              <p className="muted small">Latest attendance activity</p>
-            </div>
-            <Link className="link" to="/events">View all</Link>
-          </div>
-          {stats.recentEvents.length ? (
-            <ul className="dash-event-list">
-              {stats.recentEvents.map((e) => {
-                const { day, month } = dateParts(e.eventDate);
-                return (
-                  <li key={e.id} className="dash-event-row">
-                    <span className="dash-date">
-                      <strong>{day}</strong>
-                      <span>{month}</span>
-                    </span>
-                    <div className="dash-event-main">
-                      <Link className="dash-event-name" to={`/events/${e.id}`}>{e.name}</Link>
-                      <div className="muted small">{e.attended} of {e.totalStudents} attended</div>
-                    </div>
-                    <div className="dash-event-rate">
-                      <div className="rate-bar">
-                        <span style={{ width: `${e.rate}%` }} />
-                      </div>
-                      <span className="rate-label">{e.rate}%</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <EmptyState label="No events yet." />
-          )}
-        </section>
-
-        <section className="card dashboard-panel dash-top-attendees">
-          <div className="dash-card-head">
-            <div>
-              <h3>Top 10 Attendees</h3>
-              <p className="muted small">Model students with excellent punctuality and little to no late/absent records</p>
-            </div>
-            <Link className="link" to="/reports">View reports</Link>
-          </div>
-          <div className="dash-top-note muted small">
-            Qualified students have strong attendance, mostly on-time/present check-ins, minimal lates, and no past absences. End-of-semester badges and awards are shown for recognition.
-          </div>
-          {stats.topAttendees.length ? (
-            <ul className="dash-attendee-list">
-              {stats.topAttendees.map((s, i) => {
-                const rank = s.rank || i + 1;
-                const award = s.award || {};
-                return (
-                  <li key={s.id} className="dash-attendee-row dash-top-attendee-row">
-                    <span className={`dash-rank ${rank <= 3 ? `rank-${rank}` : ''}`}>{rank}</span>
-                    <div className="dash-attendee-main">
-                      <div className="dash-top-name-row">
-                        <div className="strong">{s.lastName}, {s.firstName}</div>
-                        <span className={`dash-award-badge badge-${String(award.badge || 'Award').toLowerCase()}`} title={award.title || 'End-of-semester awardee'}>
-                          {award.badge || 'Award'}
-                        </span>
-                      </div>
-                      <div className="muted small">
-                        {s.studentNo}{s.course ? ` · ${s.course}` : ''}
-                      </div>
-                      <div className="dash-top-metrics">
-                        <span className="pill pill-green">{s.punctual ?? ((s.early || 0) + (s.onTime || 0))} on-time/early</span>
-                        <span className="pill pill-blue">{s.attended}/{s.expected || s.attended} attended</span>
-                        <span className="pill pill-amber">{s.late || 0} late</span>
-                        <span className="pill pill-red">{s.absent || 0} absent</span>
-                      </div>
-                      <div className="muted small">{award.title || 'Excellence Awardee'} · End-of-semester recognition candidate</div>
-                    </div>
-                    <div className="dash-top-rate">
-                      <span className="rate-label">{s.rate}%</span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
-          ) : (
-            <EmptyState label="No qualified model students yet. Top attendees must have minimal/no late or absent records." />
-          )}
-        </section>
-      </div>
-
-      <section className="card dash-risk dashboard-panel">
+      <section className="card dashboard-panel">
         <div className="dash-card-head">
           <div>
-            <h3>At-Risk Students</h3>
-            <p className="muted small">Students below {stats.atRisk.threshold}% attendance</p>
+            <h3>Need details?</h3>
+            <p className="muted small">Detailed summaries, student lists, trends, risks, and compliance are available in Reports.</p>
           </div>
-          <Link className="link" to="/reports?view=at-risk">View all</Link>
+          <Link className="link" to="/reports">Open Reports</Link>
         </div>
-        {stats.atRisk.count === 0 ? (
-          <EmptyState
-            label={
-              stats.totalEvents === 0
-                ? 'No students below the threshold yet — add events to start tracking.'
-                : `No students below ${stats.atRisk.threshold}% attendance.`
-            }
-          />
-        ) : (
-          <>
-            <div className="dash-risk-summary">
-              <span className="dash-risk-badge">{stats.atRisk.count}</span>
-              <span>
-                student{stats.atRisk.count === 1 ? '' : 's'} below {stats.atRisk.threshold}% attendance
-              </span>
-            </div>
-            <ul className="dash-risk-list">
-              {stats.atRisk.top.map((s) => (
-                <li key={s.id} className="dash-risk-row">
-                  <div className="dash-attendee-main">
-                    <div className="strong">{s.lastName}, {s.firstName}</div>
-                    <div className="muted small">
-                      {s.studentNo} · {s.attended} attended · {s.absent} absent
-                    </div>
-                  </div>
-                  <div className="at-risk-right">
-                    {typeof s.risk === 'number' && (
-                      <span className={`risk-pill risk-${s.riskLevel}`} title="Explainable risk score">
-                        {s.risk}%
-                      </span>
-                    )}
-                    <div className="rate-wrap">
-                      <div className="rate-bar danger"><span style={{ width: `${s.rate}%` }} /></div>
-                      <span className="rate-label">{s.rate}%</span>
-                    </div>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </>
-        )}
+        <div className="stat-grid" style={{ marginTop: '0.25rem' }}>
+          <div className="dash-mini-stat">
+            <span>At-risk students</span>
+            <strong>{atRiskCount}</strong>
+            <small>{threshold ? `Below ${threshold}% threshold` : 'Threshold not set'}</small>
+            <div style={{ marginTop: '0.5rem' }}><Link className="link" to="/reports?view=at-risk">View details</Link></div>
+          </div>
+          <div className="dash-mini-stat">
+            <span>Attendance trends</span>
+            <strong>View</strong>
+            <small>Daily, weekly, monthly charts</small>
+            <div style={{ marginTop: '0.5rem' }}><Link className="link" to="/reports?view=trends">Open trends</Link></div>
+          </div>
+          <div className="dash-mini-stat">
+            <span>Student summary</span>
+            <strong>View</strong>
+            <small>Per-student rates and totals</small>
+            <div style={{ marginTop: '0.5rem' }}><Link className="link" to="/reports?view=summary">Open summary</Link></div>
+          </div>
+          <div className="dash-mini-stat">
+            <span>Compliance</span>
+            <strong>View</strong>
+            <small>Minimum attendance tracking</small>
+            <div style={{ marginTop: '0.5rem' }}><Link className="link" to="/reports?view=compliance">Open compliance</Link></div>
+          </div>
+        </div>
       </section>
     </div>
   );
