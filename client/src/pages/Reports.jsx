@@ -645,8 +645,13 @@ export default function Reports() {
               </div>
               <div className="ai-visual-card ai-visual-card-wide" ref={chartRefs.trend}>
                 <div className="ai-visual-title">Attendance rate trend (recent periods)</div>
+                <p className="muted small" style={{ margin: '0 0 0.5rem' }}>
+                  This graph shows if more or fewer students came over time. If the line goes up, attendance is getting better. If it goes down, fewer students are coming.
+                </p>
                 {trendVisualData.length === 0 ? (
-                  <div className="muted small">No trend data available for the selected range.</div>
+                  <div className="muted small" style={{ padding: '0.5rem 0' }}>
+                    No trend data yet for the dates you picked. Try a different date range or term to see the line.
+                  </div>
                 ) : (
                   <ResponsiveContainer width="100%" height={220}>
                     <AreaChart data={trendVisualData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
