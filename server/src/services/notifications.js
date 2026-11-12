@@ -11,23 +11,49 @@ export function audiencesFor(role) {
   return ['all'];
 }
 
+function normalizeScopeId(value) {
+  const n = Number(value);
+  return Number.isInteger(n) && n > 0 ? n : null;
+}
+
+function notificationScopeFilter(user) {
+  // Admins and unassigned staff see all notifications in their audiences.
+  if (!user || user.role === 'admin') return { where: '', params: [] };
+  const departmentId = normalizeScopeId(user.departmentId);
+  const programId = normalizeScopeId(user.programId);
+  if (!departmentId && !programId) return { where: '', params: [] };
+  // Scoped staff: global/unscoped notifications + notifications matching their scope.
+  if (programId) {
+    return {
+      where: ' AND ( (n.department_id IS NULL AND n.program_id IS NULL) OR n.program_id = ? OR (n.program_id IS NULL AND n.department_id = ?) )',
+      params: [programId, departmentId],
+    };
+  }
+  return {
+    where: ' AND ( (n.department_id IS NULL AND n.program_id IS NULL) OR n.department_id = ? )',
+    params: [departmentId],
+  };
+}
+
 // Insert a notification. With a dedupe_key, repeated calls collapse to one row.
 // Returns true when a new row was written. `data` is an optional structured
 // payload (stored as JSON) that lets the UI render a friendlier layout.
-export async function createNotification({ type, title, body = null, severity = 'info', audience = 'all', link = null, dedupeKey = null, data = null }) {
+export async function createNotification({ type, title, body = null, severity = 'info', audience = 'all', link = null, dedupeKey = null, data = null, departmentId = null, programId = null }) {
   const dataJson = data == null ? null : JSON.stringify(data);
+  const deptId = normalizeScopeId(departmentId);
+  const progId = normalizeScopeId(programId);
   if (dedupeKey) {
     const info = await run(
-      `INSERT OR IGNORE INTO notifications (type, title, body, severity, audience, link, data, dedupe_key)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [type, title, body, severity, audience, link, dataJson, dedupeKey]
+      `INSERT OR IGNORE INTO notifications (type, title, body, severity, audience, link, data, dedupe_key, department_id, program_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [type, title, body, severity, audience, link, dataJson, dedupeKey, deptId, progId]
     );
     return info.changes > 0;
   }
   await run(
-    `INSERT INTO notifications (type, title, body, severity, audience, link, data)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
-    [type, title, body, severity, audience, link, dataJson]
+    `INSERT INTO notifications (type, title, body, severity, audience, link, data, department_id, program_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    [type, title, body, severity, audience, link, dataJson, deptId, progId]
   );
   return true;
 }
@@ -44,12 +70,14 @@ function parseData(value) {
 export async function listNotifications(user, { limit = 30, unreadOnly = false } = {}) {
   const aud = audiencesFor(user?.role);
   const placeholders = aud.map(() => '?').join(', ');
-  const args = [user.id, ...aud];
+  const scope = notificationScopeFilter(user);
+  const args = [user.id, ...aud, ...scope.params];
   let sql = `SELECT n.id, n.type, n.title, n.body, n.severity, n.audience, n.link, n.data,
+                    n.department_id AS departmentId, n.program_id AS programId,
                     n.created_at AS createdAt, (r.read_at IS NOT NULL) AS isRead
              FROM notifications n
              LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = ?
-             WHERE n.audience IN (${placeholders})`;
+             WHERE n.audience IN (${placeholders}) ${scope.where}`;
   if (unreadOnly) sql += ' AND r.read_at IS NULL';
   sql += ' ORDER BY n.created_at DESC, n.id DESC LIMIT ?';
   args.push(limit);
@@ -60,11 +88,12 @@ export async function listNotifications(user, { limit = 30, unreadOnly = false }
 export async function unreadCount(user) {
   const aud = audiencesFor(user?.role);
   const placeholders = aud.map(() => '?').join(', ');
+  const scope = notificationScopeFilter(user);
   const row = await get(
     `SELECT COUNT(*) AS c FROM notifications n
      LEFT JOIN notification_reads r ON r.notification_id = n.id AND r.user_id = ?
-     WHERE n.audience IN (${placeholders}) AND r.read_at IS NULL`,
-    [user.id, ...aud]
+     WHERE n.audience IN (${placeholders}) ${scope.where} AND r.read_at IS NULL`,
+    [user.id, ...aud, ...scope.params]
   );
   return row?.c ?? 0;
 }
@@ -72,7 +101,11 @@ export async function unreadCount(user) {
 export async function markRead(user, id) {
   const aud = audiencesFor(user?.role);
   const placeholders = aud.map(() => '?').join(', ');
-  const n = await get(`SELECT id FROM notifications WHERE id = ? AND audience IN (${placeholders})`, [id, ...aud]);
+  const scope = notificationScopeFilter(user);
+  const n = await get(
+    `SELECT id FROM notifications n WHERE n.id = ? AND n.audience IN (${placeholders}) ${scope.where}`,
+    [id, ...aud, ...scope.params]
+  );
   if (!n) return { ok: false, status: 404, error: 'Notification not found' };
   await run('INSERT OR IGNORE INTO notification_reads (notification_id, user_id) VALUES (?, ?)', [id, user.id]);
   return { ok: true };
@@ -81,12 +114,13 @@ export async function markRead(user, id) {
 export async function markAllRead(user) {
   const aud = audiencesFor(user?.role);
   const placeholders = aud.map(() => '?').join(', ');
+  const scope = notificationScopeFilter(user);
   await run(
     `INSERT OR IGNORE INTO notification_reads (notification_id, user_id)
-     SELECT id, ? FROM notifications
-     WHERE audience IN (${placeholders})
-       AND id NOT IN (SELECT notification_id FROM notification_reads WHERE user_id = ?)`,
-    [user.id, ...aud, user.id]
+     SELECT n.id, ? FROM notifications n
+     WHERE n.audience IN (${placeholders}) ${scope.where}
+       AND n.id NOT IN (SELECT notification_id FROM notification_reads WHERE user_id = ?)`,
+    [user.id, ...aud, ...scope.params, user.id]
   );
   return { ok: true };
 }
@@ -95,6 +129,8 @@ export async function markAllRead(user) {
 
 const evtDate = (e) => e.eventDate || e.event_date;
 const evtStart = (e) => e.startTime || e.start_time;
+const evtDept = (e) => e?.departmentId ?? e?.department_id ?? null;
+const evtProg = (e) => e?.programId ?? e?.program_id ?? null;
 
 export async function notifyEventOpened(event) {
   if (!event) return false;
@@ -108,6 +144,8 @@ export async function notifyEventOpened(event) {
     audience: 'all',
     link: `/events/${event.id}`,
     dedupeKey: `event-opened:${event.id}`,
+    departmentId: evtDept(event),
+    programId: evtProg(event),
   });
 }
 
@@ -123,6 +161,8 @@ export async function notifyEventClosed(event, summary) {
     audience: 'all',
     link: `/events/${event.id}`,
     dedupeKey: `event-closed:${event.id}`,
+    departmentId: evtDept(event),
+    programId: evtProg(event),
   });
 }
 
@@ -135,6 +175,8 @@ export async function notifyEventReopened(event) {
     severity: 'info',
     audience: 'all',
     link: `/events/${event.id}`,
+    departmentId: evtDept(event),
+    programId: evtProg(event),
   });
 }
 
@@ -144,14 +186,18 @@ export async function notifyCorrectionRequested(correction, event, student) {
   if (!correction || !event || !student) return false;
   const reason = String(correction.reason || '').slice(0, 90);
   const suffix = reason ? ` · "${reason}${reason.length >= 90 ? '…' : ''}"` : '';
+  const deptId = student.department_id ?? student.departmentId ?? null;
+  const progId = student.program_id ?? student.programId ?? null;
   return createNotification({
     type: 'correction-requested',
-    title: `Correction requested: ${student.first_name} ${student.last_name}`,
+    title: `Correction requested: ${student.first_name ?? student.firstName ?? ''} ${student.last_name ?? student.lastName ?? ''}`.trim(),
     body: `${event.name} · wants ${correction.requestedStatus ?? correction.requested_status}${suffix}`,
     severity: 'info',
     audience: 'all',
     link: '/corrections/review',
     dedupeKey: `correction-requested:${correction.id}`,
+    departmentId: deptId,
+    programId: progId,
   });
 }
 
@@ -161,106 +207,181 @@ function dateInTzOffset(days, base = new Date()) {
   return todayInTz(new Date(base.getTime() - days * 86400000));
 }
 
+function studentScopeKey(student) {
+  const programId = normalizeScopeId(student.programId ?? student.program_id);
+  const departmentId = normalizeScopeId(student.departmentId ?? student.department_id);
+  if (programId) return `prog:${programId}`;
+  if (departmentId) return `dept:${departmentId}`;
+  return 'unscoped';
+}
+
+function scopeMetaFromKey(key, sample) {
+  if (key.startsWith('prog:')) {
+    return { departmentId: normalizeScopeId(sample?.departmentId ?? sample?.department_id), programId: Number(key.slice(5)) };
+  }
+  if (key.startsWith('dept:')) {
+    return { departmentId: Number(key.slice(5)), programId: null };
+  }
+  return { departmentId: null, programId: null };
+}
+
+function scopeLabel(scope) {
+  if (scope?.programId) return 'program';
+  if (scope?.departmentId) return 'department';
+  return 'unassigned scope';
+}
+
 // One aggregated alert per day when students fall below the attendance
-// threshold. The body stays short and readable; the structured `data` payload
-// carries the explainable risk summary (scores, drivers) for the UI.
+// threshold. Student-related notifications are generated per department/program
+// scope so scoped staff only see students from their own scope.
 export async function evaluateAtRisk() {
   const { threshold, students } = await buildAtRisk({});
   if (!students.length) return false;
 
-  const scored = students.filter((s) => typeof s.risk === 'number');
-  const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s.risk, 0) / scored.length) : null;
-  const worst = scored.reduce((m, s) => (s.risk > m ? s.risk : m), 0);
-
-  // Group-level driver importance: mean |SHAP contribution| per feature.
-  const importance = new Map();
-  for (const s of scored) {
-    for (const d of s.drivers || []) {
-      importance.set(d.key, (importance.get(d.key) || 0) + Math.abs(d.contribution));
-    }
+  const groups = new Map();
+  for (const s of students) {
+    const key = studentScopeKey(s);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
   }
-  const topDrivers = [...importance.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 3)
-    .map(([key]) => featureLabel(key));
 
-  const count = students.length;
-  const noun = count === 1 ? 'student is' : 'students are';
-  const reasons = topDrivers.length ? ` Mainly due to ${topDrivers.join(', ').toLowerCase()}.` : '';
-  const body = `${count} ${noun} below ${threshold}% attendance${avg != null ? ` (avg risk ${avg}%)` : ''}.${reasons}`;
+  let created = false;
+  for (const [key, list] of groups.entries()) {
+    const scope = scopeMetaFromKey(key, list[0]);
+    // Unscoped-student notifications: visible to admins and unrestricted staff.
+    // Scoped staff cannot see these (no matching scope, and null-scope student
+    // alerts are treated as admin-only to avoid leaking across departments).
+    const isUnscoped = key === 'unscoped';
+    const audience = isUnscoped ? 'admin' : 'all';
 
-  const data = {
-    kind: 'at-risk',
-    threshold,
-    count,
-    averageRisk: avg,
-    drivers: topDrivers,
-    students: scored
-      .slice(0, 5)
-      .sort((a, b) => b.risk - a.risk)
-      .map((s) => ({
-        id: s.id,
-        name: `${s.lastName}, ${s.firstName}`,
-        studentNo: s.studentNo,
-        risk: s.risk,
-        riskLevel: s.riskLevel,
-      })),
-    more: Math.max(0, scored.length - 5),
-  };
+    const scored = list.filter((s) => typeof s.risk === 'number');
+    const avg = scored.length ? Math.round(scored.reduce((a, s) => a + s.risk, 0) / scored.length) : null;
+    const worst = scored.reduce((m, s) => (s.risk > m ? s.risk : m), 0);
 
-  return createNotification({
-    type: 'at-risk',
-    title: `Attendance risk: ${count} student${count === 1 ? '' : 's'} below ${threshold}%`,
-    body,
-    severity: worst >= 75 ? 'critical' : 'warning',
-    audience: 'all',
-    link: '/reports',
-    dedupeKey: `at-risk:${todayInTz()}`,
-    data,
-  });
+    const importance = new Map();
+    for (const s of scored) {
+      for (const d of s.drivers || []) {
+        importance.set(d.key, (importance.get(d.key) || 0) + Math.abs(d.contribution));
+      }
+    }
+    const topDrivers = [...importance.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([k]) => featureLabel(k));
+
+    const count = list.length;
+    const noun = count === 1 ? 'student is' : 'students are';
+    const reasons = topDrivers.length ? ` Mainly due to ${topDrivers.join(', ').toLowerCase()}.` : '';
+    const body = `${count} ${noun} below ${threshold}% attendance${avg != null ? ` (avg risk ${avg}%)` : ''}.${reasons}`;
+
+    const data = {
+      kind: 'at-risk',
+      threshold,
+      count,
+      averageRisk: avg,
+      drivers: topDrivers,
+      scope: key,
+      students: scored
+        .slice()
+        .sort((a, b) => b.risk - a.risk)
+        .slice(0, 5)
+        .map((s) => ({
+          id: s.id,
+          name: `${s.lastName}, ${s.firstName}`,
+          studentNo: s.studentNo,
+          risk: s.risk,
+          riskLevel: s.riskLevel,
+          departmentId: s.departmentId || null,
+          programId: s.programId || null,
+          departmentName: s.departmentName || null,
+          programName: s.programName || null,
+        })),
+      more: Math.max(0, scored.length - 5),
+    };
+
+    const scopePart = isUnscoped ? 'unscoped' : `d${scope.departmentId || 0}-p${scope.programId || 0}`;
+    const ok = await createNotification({
+      type: 'at-risk',
+      title: `Attendance risk: ${count} student${count === 1 ? '' : 's'} below ${threshold}%`,
+      body,
+      severity: worst >= 75 ? 'critical' : 'warning',
+      audience,
+      link: '/reports',
+      dedupeKey: `at-risk:${todayInTz()}:${scopePart}`,
+      data,
+      departmentId: isUnscoped ? null : scope.departmentId,
+      programId: isUnscoped ? null : scope.programId,
+    });
+    created = created || ok;
+  }
+  return created;
 }
 
 // Alert once a day when students fall below their current term's minimum
-// attendance percentage. Carries a structured payload for a tidy summary.
+// attendance percentage. Generated per scope so student-related details are
+// only visible to staff in the same department/program.
 export async function evaluateCompliance() {
   const term = await get(
     'SELECT id, name, min_attendance AS minAttendance FROM terms WHERE is_current = 1 LIMIT 1'
   );
   if (!term) return false;
 
-  const { minimum, totalStudents, below, totalEvents, students } = await buildCompliance({ termId: term.id });
-  if (!below) return false;
+  const { minimum, totalEvents, students } = await buildCompliance({ termId: term.id });
+  if (!students.length) return false;
 
-  const noun = below === 1 ? 'student is' : 'students are';
-  const body = `${below} of ${totalStudents} ${noun} below ${minimum}% for ${term.name} (${totalEvents} event${totalEvents === 1 ? '' : 's'}).`;
-  const data = {
-    kind: 'compliance',
-    termId: term.id,
-    termName: term.name,
-    minimum,
-    count: below,
-    totalStudents,
-    totalEvents,
-    students: students.slice(0, 5).map((s) => ({
-      id: s.id,
-      name: `${s.lastName}, ${s.firstName}`,
-      studentNo: s.studentNo,
-      rate: s.rate,
-      needed: s.needed,
-    })),
-    more: Math.max(0, below - 5),
-  };
+  const groups = new Map();
+  for (const s of students) {
+    const key = studentScopeKey(s);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(s);
+  }
 
-  return createNotification({
-    type: 'compliance',
-    title: `Below minimum: ${below} student${below === 1 ? '' : 's'} under ${minimum}%`,
-    body,
-    severity: below >= totalStudents / 2 ? 'critical' : 'warning',
-    audience: 'all',
-    link: '/reports?view=compliance',
-    dedupeKey: `compliance:${term.id}:${todayInTz()}`,
-    data,
-  });
+  let created = false;
+  for (const [key, list] of groups.entries()) {
+    const scope = scopeMetaFromKey(key, list[0]);
+    const isUnscoped = key === 'unscoped';
+    const audience = isUnscoped ? 'admin' : 'all';
+    const count = list.length;
+    const noun = count === 1 ? 'student is' : 'students are';
+    const body = `${count} ${noun} below ${minimum}% for ${term.name} (${totalEvents} event${totalEvents === 1 ? '' : 's'}).`;
+    const data = {
+      kind: 'compliance',
+      termId: term.id,
+      termName: term.name,
+      minimum,
+      count,
+      totalStudents: count,
+      totalEvents,
+      scope: key,
+      students: list.slice(0, 5).map((s) => ({
+        id: s.id,
+        name: `${s.lastName}, ${s.firstName}`,
+        studentNo: s.studentNo,
+        rate: s.rate,
+        needed: s.needed,
+        departmentId: s.departmentId || null,
+        programId: s.programId || null,
+        departmentName: s.departmentName || null,
+        programName: s.programName || null,
+      })),
+      more: Math.max(0, count - 5),
+    };
+    const scopePart = isUnscoped ? 'unscoped' : `d${scope.departmentId || 0}-p${scope.programId || 0}`;
+    const ok = await createNotification({
+      type: 'compliance',
+      title: `Below minimum: ${count} student${count === 1 ? '' : 's'} under ${minimum}%`,
+      body,
+      severity: count >= 10 ? 'critical' : 'warning',
+      audience,
+      link: '/reports?view=compliance',
+      dedupeKey: `compliance:${term.id}:${todayInTz()}:${scopePart}`,
+      data,
+      departmentId: isUnscoped ? null : scope.departmentId,
+      programId: isUnscoped ? null : scope.programId,
+    });
+    created = created || ok;
+  }
+  return created;
 }
 
 // Alert once per active event when very few students have checked in after it starts.
@@ -268,7 +389,8 @@ export async function evaluateLowCheckins() {
   const { lowCheckinRate, lowCheckinGraceMin } = cachedSettings();
   const date = todayInTz();
   const events = await all(
-    `SELECT id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, status
+    `SELECT id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, status,
+            department_id AS departmentId, program_id AS programId
      FROM events WHERE event_date = ? AND status = 'active'`,
     [date]
   );
@@ -311,6 +433,8 @@ export async function evaluateLowCheckins() {
       audience: 'all',
       link: `/events/${e.id}`,
       dedupeKey: `low-checkin:${e.id}`,
+      departmentId: e.departmentId,
+      programId: e.programId,
     });
     created = created || ok;
   }

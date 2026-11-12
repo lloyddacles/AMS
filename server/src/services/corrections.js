@@ -157,7 +157,16 @@ export async function createForStudent({ student, eventId, requestedStatus, reas
     student_no: student.student_no ?? student.studentNo,
     first_name: student.first_name ?? student.firstName,
     last_name: student.last_name ?? student.lastName,
+    department_id: student.department_id ?? student.departmentId ?? null,
+    program_id: student.program_id ?? student.programId ?? null,
   };
+  if (!row.department_id && !row.program_id) {
+    const srow = await get('SELECT department_id, program_id FROM students WHERE id = ?', [row.id]);
+    if (srow) {
+      row.department_id = srow.department_id;
+      row.program_id = srow.program_id;
+    }
+  }
 
   const event = await get('SELECT * FROM events WHERE id = ?', [numericId]);
   if (!event) return { error: 'Event not found', status: 404 };

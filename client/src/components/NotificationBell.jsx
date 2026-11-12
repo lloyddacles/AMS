@@ -89,19 +89,31 @@ export default function NotificationBell() {
     api.markAllNotificationsRead().catch(() => {});
   }
 
+  const TYPE_LABELS = {
+    'event-opened': 'Event',
+    'event-closed': 'Event',
+    'event-reopened': 'Event',
+    'correction-requested': 'Correction',
+    'at-risk': 'Risk',
+    'compliance': 'Compliance',
+    'low-checkin': 'Check-in',
+    'daily-summary': 'Summary',
+  };
+
   return (
     <div className="notif-wrap" ref={wrapRef}>
       <button
-        className={`notif-bell ${open ? 'open' : ''}`}
+        className={`notif-bell ${open ? 'open' : ''} ${unread > 0 ? 'has-unread' : ''}`}
         onClick={toggle}
-        aria-label="Notifications"
+        aria-label={unread > 0 ? `Notifications, ${unread} unread` : 'Notifications'}
+        aria-expanded={open}
         title="Notifications"
       >
         <svg
           className="notif-bell-icon"
           viewBox="0 0 24 24"
-          width="17"
-          height="17"
+          width="18"
+          height="18"
           fill="none"
           stroke="currentColor"
           strokeWidth="2"
@@ -112,36 +124,56 @@ export default function NotificationBell() {
           <path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9" />
           <path d="M13.7 21a2 2 0 0 1-3.4 0" />
         </svg>
-        {unread > 0 && <span className="notif-badge">{unread > 9 ? '9+' : unread}</span>}
+        {unread > 0 && <span className="notif-badge">{unread > 99 ? '99+' : unread}</span>}
       </button>
 
       {open && (
-        <div className="notif-panel">
+        <div className="notif-panel" role="dialog" aria-label="Notifications">
           <div className="notif-head">
-            <strong>Notifications</strong>
-            {unread > 0 && (
-              <button className="notif-mark-all" onClick={handleMarkAll}>
-                Mark all read
-              </button>
-            )}
+            <div className="notif-head-left">
+              <strong>Notifications</strong>
+              {unread > 0 && <span className="notif-unread-pill">{unread} new</span>}
+            </div>
+            <div className="notif-head-actions">
+              {unread > 0 && (
+                <button className="notif-mark-all" onClick={handleMarkAll}>
+                  Mark all read
+                </button>
+              )}
+            </div>
           </div>
           <div className="notif-list">
             {loading && !items.length ? (
-              <div className="notif-empty">Loading…</div>
+              <div className="notif-empty">
+                <div className="notif-empty-title">Loading notifications…</div>
+                <div className="notif-empty-sub">Checking for updates</div>
+              </div>
             ) : items.length === 0 ? (
-              <div className="notif-empty">You're all caught up.</div>
+              <div className="notif-empty">
+                <div className="notif-empty-icon" aria-hidden="true">✓</div>
+                <div className="notif-empty-title">You&apos;re all caught up</div>
+                <div className="notif-empty-sub">No new notifications right now.</div>
+              </div>
             ) : (
               items.map((n) => (
                 <button
                   key={n.id}
-                  className={`notif-item sev-${n.severity} ${n.isRead ? 'is-read' : ''}`}
+                  className={`notif-item sev-${n.severity || 'info'} ${n.isRead ? 'is-read' : 'is-unread'}`}
                   onClick={() => handleItem(n)}
                 >
-                  <div className="notif-item-top">
-                    <span className="notif-item-title">{n.title}</span>
-                    <span className="notif-item-time">{timeAgo(n.createdAt)}</span>
+                  <span className={`notif-sev-dot sev-${n.severity || 'info'}`} aria-hidden="true" />
+                  <div className="notif-item-main">
+                    <div className="notif-item-top">
+                      <span className="notif-type-chip">{TYPE_LABELS[n.type] || 'Update'}</span>
+                      <span className="notif-item-time">{timeAgo(n.createdAt)}</span>
+                    </div>
+                    <div className="notif-item-title-row">
+                      <span className="notif-item-title">{n.title}</span>
+                      {!n.isRead && <span className="notif-new-dot" title="Unread" aria-label="Unread" />}
+                    </div>
+                    <NotifBody n={n} />
+                    {n.link && <div className="notif-item-linkhint">Open details →</div>}
                   </div>
-                  <NotifBody n={n} />
                 </button>
               ))
             )}
