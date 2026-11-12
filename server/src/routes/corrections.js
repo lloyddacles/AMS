@@ -47,7 +47,7 @@ router.use(requireAuth);
 
 router.get('/', async (req, res) => {
   const { status = 'pending', limit = 50, offset = 0 } = req.query;
-  res.json(await listRequests({ status, limit: Number(limit) || 50, offset: Number(offset) || 0 }));
+  res.json(await listRequests({ status, limit: Number(limit) || 50, offset: Number(offset) || 0, user: req.user }));
 });
 
 router.post('/:id/approve', validate(schemas.correctionDecision), async (req, res) => {

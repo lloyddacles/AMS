@@ -352,8 +352,8 @@ router.post('/bulk-delete', requireRole('admin'), async (req, res) => {
 });
 
 router.put('/:id', async (req, res) => {
-  const existing = await get('SELECT * FROM students WHERE id = ?', [req.params.id]);
-  if (!existing || !canManageStudentForUser(req.user, existing)) return res.status(404).json({ error: 'Student not found' });
+  const existing = await getScopedStudent(req.user, req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Student not found' });
   const { studentNo, firstName, lastName, email, course, yearLevel, section, status, programId } = req.body || {};
   const nextStudentNo = String(studentNo ?? existing.student_no).trim();
   const nextFirstName = String(firstName ?? existing.first_name).trim();
@@ -384,7 +384,7 @@ router.put('/:id', async (req, res) => {
         nextLastName,
         email ?? existing.email,
         link.course || null,
-        yearLevel ?? existing.year_level,
+        yearLevel ?? existing.yearLevel,
         section ?? existing.section,
         nextStatus,
         link.programId,
@@ -430,8 +430,8 @@ router.post('/:id/portal-reset', requireRole('admin'), async (req, res) => {
 });
 
 router.post('/:id/regenerate-qr', async (req, res) => {
-  const existing = await get('SELECT id, program_id, department_id FROM students WHERE id = ?', [req.params.id]);
-  if (!existing || !canManageStudentForUser(req.user, existing)) return res.status(404).json({ error: 'Student not found' });
+  const existing = await getScopedStudent(req.user, req.params.id);
+  if (!existing) return res.status(404).json({ error: 'Student not found' });
   await run('UPDATE students SET qr_token = ? WHERE id = ?', [newToken(), req.params.id]);
   const row = await getScopedStudent(req.user, req.params.id);
   await logAudit({ user: req.user, action: 'student.regenerate-qr', entity: 'student', entityId: row.id, detail: `${row.studentNo} ${row.lastName}, ${row.firstName}` });

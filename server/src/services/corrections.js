@@ -4,6 +4,7 @@ import { isExcluded, includeStudents, exclusionsByEvent } from './roster.js';
 import { refreshClosedSummary } from './eventSummary.js';
 import { logAudit } from './audit.js';
 import { notifyCorrectionRequested } from './notifications.js';
+import { studentScopeFilter } from './academic.js';
 
 // Statuses a student may ask for. "Absent" is deliberately not requestable —
 // there is nothing to gain from asking to be marked absent.
@@ -210,29 +211,49 @@ export async function createForStudent({ student, eventId, requestedStatus, reas
   return { correction: created };
 }
 
+function correctionScope(user) {
+  const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_corr_scope' });
+  return scope;
+}
+
 // Staff review queue with per-status counts for the tabs.
-export async function listRequests({ status = 'pending', limit = 50, offset = 0 } = {}) {
-  const where = ['c.status = ?'];
+export async function listRequests({ status = 'pending', limit = 50, offset = 0, user = null } = {}) {
+  const scope = correctionScope(user);
+  const where = [];
   const args = [];
-  if (status && status !== 'all') args.push(String(status));
-  else where.length = 0;
-  const clause = where.length ? `WHERE ${where.join(' AND ')}` : '';
+  if (status && status !== 'all') {
+    where.push('c.status = ?');
+    args.push(String(status));
+  }
+  const baseWhere = where.length ? `WHERE ${where.join(' AND ')} ${scope.where}` : (scope.where ? `WHERE 1=1 ${scope.where}` : '');
+  const joins = `${correctionJoins} ${scope.join}`;
   const rows = (await all(
-    `SELECT ${correctionSelect} ${correctionJoins} ${clause} ORDER BY c.id DESC LIMIT ? OFFSET ?`,
-    [...args, Number(limit) || 50, Number(offset) || 0]
+    `SELECT ${correctionSelect} ${joins} ${baseWhere} ORDER BY c.id DESC LIMIT ? OFFSET ?`,
+    [...args, ...scope.params, Number(limit) || 50, Number(offset) || 0]
   )).map(withClassification);
-  const total = (await get(`SELECT COUNT(*) AS c FROM attendance_corrections c ${clause}`, args)).c;
+  const total = (await get(`SELECT COUNT(*) AS c FROM attendance_corrections c JOIN students s ON s.id = c.student_id ${scope.join} ${baseWhere}`, [...args, ...scope.params]))?.c || 0;
 
   const counts = { pending: 0, approved: 0, rejected: 0, all: 0 };
-  for (const row of await all('SELECT status, COUNT(*) AS c FROM attendance_corrections GROUP BY status')) {
+  const countBaseWhere = scope.where ? `WHERE 1=1 ${scope.where}` : '';
+  for (const row of await all(
+    `SELECT c.status, COUNT(*) AS c
+     FROM attendance_corrections c
+     JOIN students s ON s.id = c.student_id
+     ${scope.join}
+     ${countBaseWhere}
+     GROUP BY c.status`,
+    [...scope.params]
+  )) {
     counts[row.status] = row.c;
     counts.all += row.c;
   }
   return { rows, total, counts };
 }
 
-export async function getCorrection(id) {
-  return withClassification(await get(`SELECT ${correctionSelect} ${correctionJoins} WHERE c.id = ?`, [id]));
+export async function getCorrection(id, user = null) {
+  const scope = correctionScope(user);
+  const where = `WHERE c.id = ? ${scope.where}`;
+  return withClassification(await get(`SELECT ${correctionSelect} ${correctionJoins} ${scope.join} ${where}`, [id, ...scope.params]));
 }
 
 // One student's own requests with per-status counts for their portal tabs.
@@ -264,7 +285,7 @@ export async function listForStudent({ studentId, status = 'all', limit = 50, of
 // Apply an approved correction: put the student back on the attendee list if
 // needed, upsert their attendance, then refresh a closed event's frozen summary.
 export async function approveRequest({ id, user, note = null }) {
-  const correction = await getCorrection(id);
+  const correction = await getCorrection(id, user);
   if (!correction) return { error: 'Correction request not found', status: 404 };
   if (correction.status !== 'pending') return { error: 'This request has already been reviewed', status: 400 };
 
@@ -321,12 +342,12 @@ export async function approveRequest({ id, user, note = null }) {
     detail,
   });
 
-  return { correction: await getCorrection(id), summary };
+  return { correction: await getCorrection(id, user), summary };
 }
 
 // Reject with a required note explaining why.
 export async function rejectRequest({ id, user, note }) {
-  const correction = await getCorrection(id);
+  const correction = await getCorrection(id, user);
   if (!correction) return { error: 'Correction request not found', status: 404 };
   if (correction.status !== 'pending') return { error: 'This request has already been reviewed', status: 400 };
   const resolutionNote = String(note || '').trim();
@@ -343,5 +364,5 @@ export async function rejectRequest({ id, user, note }) {
     entityId: id,
     detail: `${correction.studentNo} ${correction.lastName}, ${correction.firstName} · ${correction.eventName} · wanted ${correction.requestedStatus} · ${resolutionNote}`,
   });
-  return { correction: await getCorrection(id) };
+  return { correction: await getCorrection(id, user) };
 }
