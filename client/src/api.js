@@ -121,16 +121,12 @@ export const api = {
   resetEventAttendees: (id) => request(`/events/${id}/attendees/reset`, { method: 'POST' }),
   archiveEvent: (id) => request(`/events/${id}/archive`, { method: 'POST' }),
   unarchiveEvent: (id) => request(`/events/${id}/unarchive`, { method: 'POST' }),
-  getSeriesList: () => request('/events/series/list'),
-  createSeries: (data) => request('/events/series', { method: 'POST', body: data }),
   getSeries: (id) => request(`/events/series/${id}`),
   addContinuationDay: (eventId, data) => request(`/events/${eventId}/continue`, { method: 'POST', body: data }),
-  detachFromSeries: (seriesId, eventId) => request(`/events/series/${seriesId}/detach`, { method: 'POST', body: { eventId } }),
   getScanPack: (id) => request(`/events/${id}/scan-pack`),
   createEvent: (data) => request('/events', { method: 'POST', body: data }),
   updateEvent: (id, data) => request(`/events/${id}`, { method: 'PUT', body: data }),
   deleteEvent: (id) => request(`/events/${id}`, { method: 'DELETE' }),
-  regenerateEventCode: (id) => request(`/events/${id}/regenerate-code`, { method: 'POST' }),
   closeEvent: (id) => request(`/events/${id}/close`, { method: 'POST' }),
   reopenEvent: (id) => request(`/events/${id}/reopen`, { method: 'POST' }),
   bulkEvents: (ids, action) => request('/events/bulk', { method: 'POST', body: { ids, action } }),
@@ -162,7 +158,6 @@ export const api = {
   createIntervention: (data) => request('/interventions', { method: 'POST', body: data }),
 
   getDashboard: () => request('/dashboard/stats'),
-  getDashboardBriefing: () => request('/dashboard/briefing'),
 
   getTerms: () => request('/terms'),
   createTerm: (data) => request('/terms', { method: 'POST', body: data }),
@@ -197,7 +192,6 @@ export const api = {
   getBackupSummary: () => request('/admin/backup/summary'),
   restoreBackup: (backup) => request('/admin/restore', { method: 'POST', body: { backup } }),
   runAutomation: () => request('/admin/automation/run', { method: 'POST' }),
-  runDigest: () => request('/admin/digest/run', { method: 'POST' }),
 
   correctionLookup: (studentNo, name) =>
     request('/corrections/lookup', { method: 'POST', body: { studentNo, name }, auth: false }),
@@ -221,7 +215,6 @@ export const api = {
   studentCreateCorrection: (data) => studentRequest('/student/corrections', { method: 'POST', body: data }),
   studentChangePassword: (currentPassword, newPassword) =>
     studentRequest('/student/password', { method: 'POST', body: { currentPassword, newPassword } }),
-  resetStudentPortal: (id) => request(`/students/${id}/portal-reset`, { method: 'POST' }),
 };
 
 export async function exportCsv(type, eventId, extra = {}) {  const params = new URLSearchParams({ type });

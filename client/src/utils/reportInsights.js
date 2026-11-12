@@ -1,9 +1,3 @@
-export function clampPct(value) {
-  const n = Number(value);
-  if (!Number.isFinite(n)) return 0;
-  return Math.max(0, Math.min(100, Math.round(n)));
-}
-
 function avg(nums) {
   const list = nums.filter((n) => Number.isFinite(n));
   if (!list.length) return 0;

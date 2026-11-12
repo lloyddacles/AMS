@@ -115,7 +115,10 @@ export default function Dashboard() {
         <div className="dash-hero-copy">
           <span className="dash-eyebrow">Attendance Overview</span>
           <h2>{greeting()}, {greetingName}</h2>
-          <p className="muted">A quick snapshot of attendance. Open Reports for detailed insights, trends, and student-level summaries.</p>
+          <p className="muted">
+            A quick snapshot of attendance.
+            {user?.role === 'admin' ? ' Open Reports for detailed insights, trends, and student-level summaries.' : ''}
+          </p>
           <div className="dashboard-hero-meta">
             <span className="dashboard-meta-chip">{todayLabel}</span>
             <span className="dashboard-meta-chip">Overall rate: {stats.overallRate}%</span>
