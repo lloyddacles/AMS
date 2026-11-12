@@ -12,6 +12,7 @@ import Spinner from '../components/Spinner.jsx';
 import RiskExplainer from '../components/RiskExplainer.jsx';
 import Modal from '../components/Modal.jsx';
 import { buildReportInsights } from '../utils/reportInsights.js';
+import { useDialog } from '../dialogs.jsx';
 
 const SUMMARY_COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
