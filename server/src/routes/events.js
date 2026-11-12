@@ -127,15 +127,19 @@ router.get('/live-board', async (req, res) => {
   if (!events.length) return res.json({ now: new Date().toISOString(), events: [] });
 
   const ids = events.map((e) => e.id);
+  const sScope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const records = await all(
     `SELECT a.event_id AS eventId, a.student_id AS studentId, a.status, a.method,
             a.checked_in_at AS checkedInAt, a.checked_out_at AS checkedOutAt,
             s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName
      FROM attendance a
      JOIN students s ON s.id = a.student_id
-     WHERE a.event_id IN (${ids.map(() => '?').join(',')})
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE a.event_id IN (${ids.map(() => '?').join(',')}) ${sScope.where}
      ORDER BY COALESCE(a.checked_in_at, a.checked_out_at, '') DESC, a.id DESC`,
-    ids
+    [...ids, ...sScope.params]
   );
 
   const byEvent = new Map();
