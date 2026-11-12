@@ -2,6 +2,7 @@ import { all, get, run } from '../db.js';
 import { buildRiskModel } from './risk.js';
 import { buildOverview } from './reports.js';
 import { logAudit } from './audit.js';
+import { studentScopeFilter } from './academic.js';
 
 export const CAUSE_CATEGORIES = [
   'Medical Issues',
@@ -164,8 +165,8 @@ async function latestInterventionMap(studentIds = []) {
   return map;
 }
 
-export async function listFlaggedForIntervention({ search = '', course = '' } = {}) {
-  const [model, overview] = await Promise.all([buildRiskModel(), buildOverview({ search, course })]);
+export async function listFlaggedForIntervention({ search = '', course = '', user = null } = {}) {
+  const [model, overview] = await Promise.all([buildRiskModel({ user }), buildOverview({ search, course, user })]);
   const ovById = new Map((overview.students || []).map((s) => [s.id, s]));
   const ids = [];
   const base = [];
@@ -212,12 +213,22 @@ export async function listFlaggedForIntervention({ search = '', course = '' } = 
   return { students, causeCategories: CAUSE_CATEGORIES, rules: FLAG_RULES, generatedAt: new Date().toISOString() };
 }
 
-export async function listInterventions(studentId) {
-  const student = await get(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel, section, status
-     FROM students WHERE id = ?`,
-    [studentId]
+async function getScopedStudentBasic(studentId, user) {
+  const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
+  return get(
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.section, s.status,
+            s.program_id AS programId, s.department_id AS departmentId
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE s.id = ? ${scope.where}`,
+    [studentId, ...scope.params]
   );
+}
+
+export async function listInterventions(studentId, { user = null } = {}) {
+  const student = await getScopedStudentBasic(studentId, user);
   if (!student) return null;
   const interventions = await all(
     `SELECT id, student_id AS studentId, intervention_date AS interventionDate, flagged_triggers AS flaggedTriggers,
@@ -230,11 +241,7 @@ export async function listInterventions(studentId) {
 }
 
 export async function createIntervention({ studentId, interventionDate, causeCategory, causeDetails, actionTaken, status, flaggedTriggers }, user) {
-  const student = await get(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel, section, status
-     FROM students WHERE id = ?`,
-    [studentId]
-  );
+  const student = await getScopedStudentBasic(studentId, user);
   if (!student) return { error: 'Student not found', status: 404 };
   const action = String(actionTaken || '').trim();
   if (!action) return { error: 'Please describe the intervention/action taken as proof.', status: 400 };
@@ -245,7 +252,7 @@ export async function createIntervention({ studentId, interventionDate, causeCat
   // Compute flags for context/summary
   let flags = { triggers: [], totals: {} };
   try {
-    const model = await buildRiskModel();
+    const model = await buildRiskModel({ user });
     const r = model.byStudent.get(Number(studentId));
     if (r) flags = computeInterventionFlags(r.raw || {});
   } catch {
@@ -285,16 +292,12 @@ export async function createIntervention({ studentId, interventionDate, causeCat
   return { intervention: row, summary };
 }
 
-export async function buildSummaryDraft(studentId, { causeCategory, causeDetails, actionTaken, interventionDate } = {}) {
-  const student = await get(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel, section, status
-     FROM students WHERE id = ?`,
-    [studentId]
-  );
+export async function buildSummaryDraft(studentId, { causeCategory, causeDetails, actionTaken, interventionDate } = {}, user = null) {
+  const student = await getScopedStudentBasic(studentId, user);
   if (!student) return null;
   let flags = { triggers: [], totals: {} };
   try {
-    const model = await buildRiskModel();
+    const model = await buildRiskModel({ user });
     const r = model.byStudent.get(Number(studentId));
     if (r) flags = computeInterventionFlags(r.raw || {});
   } catch {

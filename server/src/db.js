@@ -278,6 +278,24 @@ const SCHEMA = `
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_interventions_student ON student_interventions(student_id, created_at);
+
+  -- Academic structure for department/program scoping.
+  CREATE TABLE IF NOT EXISTS departments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS programs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    department_id INTEGER NOT NULL REFERENCES departments(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    code TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (department_id, name)
+  );
+  CREATE INDEX IF NOT EXISTS idx_programs_department ON programs(department_id);
 `;
 
 // Lightweight migrations for databases created before a column existed.
@@ -323,6 +341,64 @@ export function initDb() {
   return initPromise;
 }
 
+async function seedAcademicStructure() {
+  const defaults = [
+    {
+      department: 'College of Business Management',
+      programs: [
+        'Bachelor of Science in Entrepreneurship with Specialization in Microfinance',
+        'Bachelor of Science in Tourism Management',
+      ],
+    },
+    {
+      department: 'College of Accountancy',
+      programs: [
+        'Bachelor of Science in Accountancy',
+        'Bachelor of Science in Accounting Information Systems',
+      ],
+    },
+    { department: 'College of Computer Studies', programs: [] },
+    { department: 'College of Criminal Justice', programs: [] },
+  ];
+
+  for (const item of defaults) {
+    let dept = await get('SELECT id, name FROM departments WHERE name = ?', [item.department]);
+    if (!dept) {
+      const info = await run('INSERT INTO departments (name) VALUES (?)', [item.department]);
+      dept = { id: info.lastInsertRowid, name: item.department };
+    }
+    for (const prog of item.programs) {
+      const existing = await get('SELECT id FROM programs WHERE department_id = ? AND name = ?', [dept.id, prog]);
+      if (!existing) {
+        await run('INSERT INTO programs (department_id, name, active) VALUES (?, ?, 1)', [dept.id, prog]);
+      }
+    }
+  }
+
+  // Best-effort backfill: map existing student course text to a matching program.
+  const programs = await all('SELECT id, name, department_id AS departmentId FROM programs WHERE active = 1');
+  for (const p of programs) {
+    await run(
+      `UPDATE students
+         SET program_id = COALESCE(program_id, ?), department_id = COALESCE(department_id, ?)
+       WHERE program_id IS NULL
+         AND TRIM(LOWER(COALESCE(course, ''))) = TRIM(LOWER(?))`,
+      [p.id, p.departmentId, p.name]
+    );
+  }
+  // If course contains the program name (common short forms), try a looser match for unlinked students.
+  for (const p of programs) {
+    await run(
+      `UPDATE students
+         SET program_id = COALESCE(program_id, ?), department_id = COALESCE(department_id, ?)
+       WHERE program_id IS NULL
+         AND course IS NOT NULL AND course != ''
+         AND INSTR(LOWER(course), LOWER(?)) > 0`,
+      [p.id, p.departmentId, p.name]
+    );
+  }
+}
+
 async function doInit() {
   await executeMultiple('PRAGMA foreign_keys = ON;');
   await executeMultiple(SCHEMA);
@@ -342,9 +418,13 @@ async function doInit() {
   await ensureColumn('students', 'status', "status TEXT NOT NULL DEFAULT 'Active'");
   await ensureColumn('students', 'password_hash', 'password_hash TEXT');
   await ensureColumn('students', 'password_set_at', 'password_set_at TEXT');
+  await ensureColumn('students', 'program_id', 'program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL');
+  await ensureColumn('students', 'department_id', 'department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL');
   await ensureColumn('users', 'avatar', 'avatar TEXT');
   await ensureColumn('users', 'active', 'active INTEGER NOT NULL DEFAULT 1');
   await ensureColumn('users', 'must_change_password', 'must_change_password INTEGER NOT NULL DEFAULT 0');
+  await ensureColumn('users', 'department_id', 'department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL');
+  await ensureColumn('users', 'program_id', 'program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL');
   await ensureColumn('notifications', 'data', 'data TEXT');
   await ensureColumn('events', 'term_id', 'term_id INTEGER');
   await ensureColumn('events', 'schedule_id', 'schedule_id INTEGER');
@@ -361,9 +441,14 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_events_series ON events(series_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
     CREATE INDEX IF NOT EXISTS idx_interventions_student ON student_interventions(student_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_students_program ON students(program_id);
+    CREATE INDEX IF NOT EXISTS idx_students_department ON students(department_id);
+    CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
+    CREATE INDEX IF NOT EXISTS idx_users_program ON users(program_id);
   `);
+  await seedAcademicStructure();
   // Record baseline/phase migrations so readiness checks can report status.
-  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms']) {
+  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms', '004_departments_programs_scoping']) {
     await run(`INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)`, [name]);
   }
 }

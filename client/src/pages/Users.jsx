@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Modal from '../components/Modal.jsx';
@@ -6,11 +6,12 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
-const emptyForm = { username: '', password: '', name: '', role: 'staff' };
+const emptyForm = { username: '', password: '', name: '', role: 'staff', departmentId: '', programId: '' };
 
 export default function Users() {
   const { user: me } = useAuth();
   const [users, setUsers] = useState([]);
+  const [structure, setStructure] = useState({ departments: [], programs: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
@@ -19,11 +20,17 @@ export default function Users() {
   const [formError, setFormError] = useState('');
   const [pwUser, setPwUser] = useState(null);
   const [newPw, setNewPw] = useState('');
+  const [progOpen, setProgOpen] = useState(false);
+  const [progForm, setProgForm] = useState({ departmentId: '', name: '', code: '' });
+  const [progSaving, setProgSaving] = useState(false);
+  const [progError, setProgError] = useState('');
 
   async function load() {
     setLoading(true);
     try {
-      setUsers(await api.getUsers());
+      const [u, s] = await Promise.all([api.getUsers(), api.getAcademicStructure().catch(() => ({ departments: [], programs: [] }))]);
+      setUsers(u);
+      setStructure(s || { departments: [], programs: [] });
       setError('');
     } catch (e) {
       setError(e.message);
@@ -36,16 +43,36 @@ export default function Users() {
     load();
   }, []);
 
+  const programsForDept = useMemo(() => {
+    const deptId = Number(form.departmentId || 0);
+    if (!deptId) return structure.programs || [];
+    return (structure.programs || []).filter((p) => Number(p.departmentId) === deptId);
+  }, [structure.programs, form.departmentId]);
+
   function openCreate() {
     setEditing({});
-    setForm(emptyForm);
+    setForm({ ...emptyForm });
     setFormError('');
   }
 
   function openEdit(u) {
     setEditing(u);
-    setForm({ username: u.username, password: '', name: u.name, role: u.role });
+    setForm({
+      username: u.username || '',
+      password: '',
+      name: u.name || '',
+      role: u.role || 'staff',
+      departmentId: u.departmentId ? String(u.departmentId) : '',
+      programId: u.programId ? String(u.programId) : '',
+    });
     setFormError('');
+  }
+
+  function onDepartmentChange(departmentId) {
+    const deptId = String(departmentId || '');
+    const deptPrograms = (structure.programs || []).filter((p) => String(p.departmentId) === deptId);
+    const keepProgram = deptPrograms.some((p) => String(p.id) === String(form.programId));
+    setForm((f) => ({ ...f, departmentId: deptId, programId: keepProgram ? f.programId : '' }));
   }
 
   async function save(e) {
@@ -53,10 +80,23 @@ export default function Users() {
     setSaving(true);
     setFormError('');
     try {
+      const payload = {
+        name: form.name,
+        role: form.role,
+        departmentId: form.departmentId || null,
+        programId: form.programId || null,
+      };
       if (editing?.id) {
-        await api.updateUser(editing.id, { name: form.name, role: form.role });
+        await api.updateUser(editing.id, payload);
       } else {
-        await api.createUser(form);
+        await api.createUser({
+          username: form.username,
+          password: form.password,
+          name: form.name,
+          role: form.role,
+          departmentId: form.departmentId || null,
+          programId: form.programId || null,
+        });
       }
       setEditing(null);
       await load();
@@ -100,6 +140,27 @@ export default function Users() {
     }
   }
 
+  async function saveProgram(e) {
+    e.preventDefault();
+    setProgSaving(true);
+    setProgError('');
+    try {
+      await api.createProgram({
+        departmentId: progForm.departmentId,
+        name: progForm.name,
+        code: progForm.code,
+      });
+      const s = await api.getAcademicStructure();
+      setStructure(s || { departments: [], programs: [] });
+      setProgForm({ departmentId: progForm.departmentId, name: '', code: '' });
+      setProgOpen(false);
+    } catch (err) {
+      setProgError(err.message);
+    } finally {
+      setProgSaving(false);
+    }
+  }
+
   const adminCount = users.filter((u) => u.role === 'admin').length;
   const staffCount = users.filter((u) => u.role === 'staff').length;
   const activeCount = users.filter((u) => Number(u.active)).length;
@@ -109,8 +170,13 @@ export default function Users() {
       <PageHeader
         eyebrow="Access control"
         title="Staff &amp; Admins"
-        subtitle="Accounts that can sign in to AttendX."
-        actions={<button className="btn btn-primary" onClick={openCreate}>+ Add account</button>}
+        subtitle="Accounts that can sign in to AttendX. Assign staff to a department/program to limit student visibility."
+        actions={
+          <>
+            <button className="btn" onClick={() => { setProgError(''); setProgOpen(true); }}>+ Add Program</button>
+            <button className="btn btn-primary" onClick={openCreate}>+ Add account</button>
+          </>
+        }
       />
 
       <div className="stat-grid">
@@ -132,6 +198,7 @@ export default function Users() {
                 <th>Name</th>
                 <th>Username</th>
                 <th>Role</th>
+                <th>Department / Program</th>
                 <th>Status</th>
                 <th className="right">Actions</th>
               </tr>
@@ -150,6 +217,18 @@ export default function Users() {
                   </td>
                   <td className="mono">{u.username}</td>
                   <td><span className={`pill ${u.role === 'admin' ? 'pill-purple' : 'pill-gray'}`}>{u.role}</span></td>
+                  <td>
+                    {u.role === 'admin' ? (
+                      <span className="muted small">All departments</span>
+                    ) : (u.departmentName || u.programName) ? (
+                      <div>
+                        <div className="small strong">{u.departmentName || '—'}</div>
+                        <div className="muted small">{u.programName || 'All programs in department'}</div>
+                      </div>
+                    ) : (
+                      <span className="pill pill-amber">Unassigned (can see all)</span>
+                    )}
+                  </td>
                   <td><span className={`pill ${Number(u.active) ? 'pill-green' : 'pill-red'}`}>{Number(u.active) ? 'active' : 'inactive'}</span></td>
                   <td className="right actions">
                     <button className="btn btn-sm" onClick={() => openEdit(u)}>Edit</button>
@@ -201,7 +280,58 @@ export default function Users() {
                 <option value="admin">Admin — full access</option>
               </select>
             </label>
+            <label>
+              Department
+              <select value={form.departmentId} onChange={(e) => onDepartmentChange(e.target.value)} disabled={form.role === 'admin'}>
+                <option value="">{form.role === 'admin' ? 'Not required (admin sees all)' : 'No department (unassigned)'}</option>
+                {(structure.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label className="span-2">
+              Program (optional)
+              <select value={form.programId} onChange={(e) => setForm({ ...form, programId: e.target.value })} disabled={form.role === 'admin' || !form.departmentId}>
+                <option value="">All programs in selected department</option>
+                {programsForDept.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            {form.role === 'staff' && (
+              <div className="muted small span-2">
+                Staff assigned to a department (and optional program) can only see students in that scope. Unassigned staff can currently see all students.
+              </div>
+            )}
             {formError && <div className="alert alert-error span-2">{formError}</div>}
+          </form>
+        </Modal>
+      )}
+
+      {progOpen && (
+        <Modal
+          title="Add program"
+          onClose={() => setProgOpen(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setProgOpen(false)}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveProgram} disabled={progSaving}>{progSaving ? 'Saving…' : 'Add program'}</button>
+            </>
+          }
+        >
+          <form className="form" onSubmit={saveProgram}>
+            <label>
+              Department *
+              <select value={progForm.departmentId} onChange={(e) => setProgForm({ ...progForm, departmentId: e.target.value })} required>
+                <option value="">Select department</option>
+                {(structure.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Program name *
+              <input value={progForm.name} onChange={(e) => setProgForm({ ...progForm, name: e.target.value })} placeholder="e.g. Bachelor of Science in..." required />
+            </label>
+            <label>
+              Code (optional)
+              <input value={progForm.code} onChange={(e) => setProgForm({ ...progForm, code: e.target.value })} placeholder="e.g. BSCS" />
+            </label>
+            {progError && <div className="alert alert-error">{progError}</div>}
           </form>
         </Modal>
       )}

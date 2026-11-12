@@ -2,6 +2,7 @@ import { all } from '../db.js';
 import { todayInTz } from '../classify.js';
 import { exclusionsByEvent } from './roster.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
+import { studentScopeFilter } from './academic.js';
 
 const EVENT_COLS_RISK = 'id, event_date, start_time, end_time, series_id AS seriesId';
 
@@ -73,14 +74,22 @@ function featureText(key, raw) {
 
 // Compute the risk model for every student. Returns the cohort context (feature
 // means/weights used as the SHAP background) plus a per-student result.
-export async function buildRiskModel() {
+export async function buildRiskModel({ user = null } = {}) {
   const events = await all(
     `SELECT ${EVENT_COLS_RISK} FROM events ORDER BY event_date ASC, id ASC`
   );
   const seriesNames = await seriesNameMap();
+  const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel, status
-     FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.status,
+            s.program_id AS programId, s.department_id AS departmentId
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE 1=1 ${scope.where}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    scope.params
   );
   const riskStudents = students.filter((s) => !RISK_EXEMPT_STATUSES.has(String(s.status || '').trim()));
 

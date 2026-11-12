@@ -5,6 +5,7 @@ import { displayStatus, todayInTz } from '../classify.js';
 import { buildAtRisk, buildOverview } from '../services/reports.js';
 import { maybeRunAutomation } from '../services/automation.js';
 import { buildDailyBriefing } from '../services/briefing.js';
+import { studentScopeFilter } from '../services/academic.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -82,15 +83,28 @@ function buildCurrentMonthWeeklyTrend(eventsInMonth, monthStartYmd, monthEndYmd,
 
 router.get('/stats', async (req, res) => {
   await maybeRunAutomation().catch(() => {});
-  const totalStudents = (await get('SELECT COUNT(*) AS c FROM students')).c;
+  const scope = studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+  const studentRows = await all(
+    `SELECT s.id FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE 1=1 ${scope.where}`,
+    scope.params
+  );
+  const scopedIds = studentRows.map((r) => r.id);
+  const scopedIdSet = new Set(scopedIds);
+  const totalStudents = scopedIds.length;
   const totalEvents = (await get('SELECT COUNT(*) AS c FROM events')).c;
-  const totalRecords = (
-    await get(`SELECT COUNT(*) AS c FROM attendance a WHERE a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}`)
-  ).c;
-  const totalExclusions = (await get('SELECT COUNT(*) AS c FROM event_exclusions')).c;
+  const inClause = scopedIds.length ? `AND a.student_id IN (${scopedIds.map(() => '?').join(',')})` : 'AND 1=0';
+  const totalRecords = scopedIds.length
+    ? (await get(`SELECT COUNT(*) AS c FROM attendance a WHERE a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL} ${inClause}`, scopedIds)).c
+    : 0;
 
   const events = await all('SELECT id, event_date AS eventDate, start_time AS startTime, end_time AS endTime FROM events');
-  const records = await all('SELECT event_id AS eventId, status, method, checked_in_at AS checkedInAt FROM attendance');
+  const records = scopedIds.length
+    ? await all(`SELECT event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt FROM attendance WHERE student_id IN (${scopedIds.map(() => '?').join(',')})`, scopedIds)
+    : [];
   const eventById = new Map(events.map((e) => [e.id, e]));
   const counts = { early: 0, 'on-time': 0, late: 0, absent: 0, excused: 0 };
   for (const r of records) {
@@ -101,17 +115,38 @@ router.get('/stats', async (req, res) => {
     .filter(([, count]) => count > 0)
     .map(([status, count]) => ({ status, count }));
 
-  const recentEvents = (
-    await all(
-      `SELECT e.id, e.name, e.event_date AS eventDate,
-              (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended,
-              (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS totalStudents
-       FROM events e ORDER BY e.event_date DESC, e.id DESC LIMIT 5`
-    )
-  ).map((e) => ({
-    ...e,
-    rate: e.totalStudents ? Math.round((e.attended / e.totalStudents) * 100) : 0,
-  }));
+  const exclusions = scopedIds.length
+    ? await all(`SELECT event_id AS eventId, student_id AS studentId FROM event_exclusions WHERE student_id IN (${scopedIds.map(() => '?').join(',')})`, scopedIds)
+    : [];
+  const exclusionsByEventId = new Map();
+  for (const x of exclusions) {
+    if (!exclusionsByEventId.has(x.eventId)) exclusionsByEventId.set(x.eventId, new Set());
+    exclusionsByEventId.get(x.eventId).add(x.studentId);
+  }
+
+  const recentEventsRaw = await all(
+    `SELECT e.id, e.name, e.event_date AS eventDate
+     FROM events e ORDER BY e.event_date DESC, e.id DESC LIMIT 5`
+  );
+  const recentIds = recentEventsRaw.map((e) => e.id);
+  const recentAttendedRows = (scopedIds.length && recentIds.length)
+    ? await all(
+        `SELECT a.event_id AS eventId, COUNT(*) AS attended
+         FROM attendance a
+         WHERE a.event_id IN (${recentIds.map(() => '?').join(',')})
+           AND a.student_id IN (${scopedIds.map(() => '?').join(',')})
+           AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}
+         GROUP BY a.event_id`,
+        [...recentIds, ...scopedIds]
+      )
+    : [];
+  const recentAttendedMap = new Map(recentAttendedRows.map((r) => [r.eventId, Number(r.attended || 0)]));
+  const recentEvents = recentEventsRaw.map((e) => {
+    const excludedCount = (exclusionsByEventId.get(e.id) || new Set()).size;
+    const denom = Math.max(0, totalStudents - excludedCount);
+    const attended = recentAttendedMap.get(e.id) || 0;
+    return { ...e, attended, totalStudents: denom, rate: denom ? Math.round((attended / denom) * 100) : 0 };
+  });
 
   const today = todayInTz();
   const { startYmd: monthStartYmd, endYmd: monthEndYmd, daysInMonth, month, year } = monthBounds(today);
@@ -126,13 +161,13 @@ router.get('/stats', async (req, res) => {
   const trend = buildCurrentMonthWeeklyTrend(monthEvents, monthStartYmd, monthEndYmd, daysInMonth);
   const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
 
-  const atRisk = await buildAtRisk({});
+  const atRisk = await buildAtRisk({ user: req.user });
 
   // Model students: consistent attendance with minimal/no absences and lates.
   // Past absences disqualify students from being recognized as top attendees.
   let topAttendees = [];
   try {
-    const overview = await buildOverview({});
+    const overview = await buildOverview({ user: req.user });
     const eligibleEvents = Math.min(3, Number(overview.totalEvents || 0));
     topAttendees = (overview.students || [])
       .map((s) => {
@@ -178,8 +213,9 @@ router.get('/stats', async (req, res) => {
     topAttendees = [];
   }
 
+  const totalExclusionsScoped = exclusions.filter((x) => scopedIdSet.has(x.studentId)).length;
   // Every student × event slot except the ones taken off an attendee list.
-  const expectedSlots = Math.max(0, totalStudents * totalEvents - totalExclusions);
+  const expectedSlots = Math.max(0, totalStudents * totalEvents - totalExclusionsScoped);
 
   res.json({
     totalStudents,

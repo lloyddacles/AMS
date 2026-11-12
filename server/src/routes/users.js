@@ -17,7 +17,7 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const { username, password, name, role = 'staff' } = req.body || {};
+  const { username, password, name, role = 'staff', departmentId = null, programId = null } = req.body || {};
   if (!username || !password || !name) {
     return res.status(400).json({ error: 'Username, password and name are required' });
   }
@@ -28,33 +28,34 @@ router.post('/', async (req, res) => {
     return res.status(400).json({ error: 'Invalid role' });
   }
   try {
-    const user = await createUser({ username, password, name, role });
+    const user = await createUser({ username, password, name, role, departmentId, programId });
     await logAudit({
       user: req.user,
       action: 'user.create',
       entity: 'user',
       entityId: user.id,
-      detail: `${user.name} (${user.username}) · ${user.role}`,
+      detail: `${user.name} (${user.username}) · ${user.role}${user.departmentName ? ` · ${user.departmentName}` : ''}${user.programName ? ` / ${user.programName}` : ''}`,
     });
     res.status(201).json(user);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return res.status(409).json({ error: 'That username is already taken' });
     }
+    if (err.status) return res.status(err.status).json({ error: err.message });
     throw err;
   }
 });
 
 router.put('/:id', async (req, res) => {
-  const { name, role, active } = req.body || {};
-  const result = await updateUser(req.user.id, req.params.id, { name, role, active });
+  const { name, role, active, departmentId, programId } = req.body || {};
+  const result = await updateUser(req.user.id, req.params.id, { name, role, active, departmentId, programId });
   if (!result.ok) return res.status(result.status).json({ error: result.error });
   await logAudit({
     user: req.user,
     action: 'user.update',
     entity: 'user',
     entityId: result.user.id,
-    detail: `${result.user.name} · ${result.user.role} · ${Number(result.user.active) ? 'active' : 'inactive'}`,
+    detail: `${result.user.name} · ${result.user.role} · ${Number(result.user.active) ? 'active' : 'inactive'}${result.user.departmentName ? ` · ${result.user.departmentName}` : ''}${result.user.programName ? ` / ${result.user.programName}` : ''}`,
   });
   res.json(result.user);
 });

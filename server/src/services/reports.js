@@ -3,6 +3,7 @@ import { buildRiskModel } from './risk.js';
 import { exclusionsByEvent } from './roster.js';
 import { getSettings } from './settings.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
+import { studentScopeFilter } from './academic.js';
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
@@ -13,6 +14,10 @@ function bucket(counts, cls) {
   else if (cls === 'late') counts.late += 1;
   else if (cls === 'excused') counts.excused += 1;
   else counts.absent += 1;
+}
+
+function scopeStudents(user, alias = 's') {
+  return studentScopeFilter(user, { studentAlias: alias, programAlias: `${alias}_prog_scope` });
 }
 
 // Build a WHERE fragment (plus params) selecting events within an optional
@@ -58,19 +63,25 @@ function isRiskExempt(status) {
   return RISK_EXEMPT_STATUSES.has(String(status || '').trim());
 }
 
-export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null } = {}) {
+export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null, user = null } = {}) {
   const like = `%${search}%`;
   const ef = eventFilter({ from, to, termId });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const seriesNames = await seriesNameMap();
+  const scope = scopeStudents(user, 's');
   const students = await all(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
-            course, year_level AS yearLevel, status
-     FROM students
-     WHERE (student_no LIKE ? OR first_name LIKE ? OR last_name LIKE ?)
-       AND (? = '' OR course = ?)
-     ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`,
-    [like, like, like, course, course]
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
+            s.course, s.year_level AS yearLevel, s.status, s.program_id AS programId, s.department_id AS departmentId,
+            p.name AS programName, d.name AS departmentName
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE (s.student_no LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
+       AND (? = '' OR s.course = ?)
+       ${scope.where}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    [like, like, like, course, course, ...scope.params]
   );
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
   const excluded = await exclusionsByEvent(events.map((e) => e.id));
@@ -107,6 +118,10 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
       course: s.course,
       yearLevel: s.yearLevel,
       status: s.status || 'Active',
+      programId: s.programId || null,
+      departmentId: s.departmentId || null,
+      programName: s.programName || null,
+      departmentName: s.departmentName || null,
       ...counts,
       attended,
       expected,
@@ -122,10 +137,11 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
 // flagged student is annotated with an explainable risk score (logistic model,
 // exact SHAP) plus its top contributing factors.
 export async function buildAtRisk(filters = {}) {
+  const { user = null, ...rest } = filters || {};
   const settings = await getSettings();
   const threshold = settings.atRiskThreshold;
   const minEvents = settings.atRiskMinEvents;
-  const { totalEvents, students } = await buildOverview(filters);
+  const { totalEvents, students } = await buildOverview({ ...rest, user });
   const eligible = totalEvents >= minEvents;
   const list = eligible
     ? students
@@ -143,7 +159,7 @@ export async function buildAtRisk(filters = {}) {
   // Attach the explainable risk model (best-effort: never block the report).
   let model = null;
   try {
-    model = await buildRiskModel();
+    model = await buildRiskModel({ user });
   } catch {
     model = null;
   }
@@ -183,9 +199,9 @@ export async function resolveComplianceTarget({ termId = null } = {}) {
 
 // Students who fall below their term's minimum attendance percentage. Each row
 // is annotated with how many more attendances they need to reach the minimum.
-export async function buildCompliance({ search = '', course = '', termId = null, from = '', to = '' } = {}) {
+export async function buildCompliance({ search = '', course = '', termId = null, from = '', to = '', user = null } = {}) {
   const target = await resolveComplianceTarget({ termId });
-  const { totalEvents, students } = await buildOverview({ search, course, termId, from, to });
+  const { totalEvents, students } = await buildOverview({ search, course, termId, from, to, user });
   const minimum = target.minimum;
   const eligible = totalEvents > 0;
   const list = eligible

@@ -181,6 +181,8 @@ export const api = {
 
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: data }),
+  getAcademicStructure: () => request('/academic/structure'),
+  createProgram: (data) => request('/academic/programs', { method: 'POST', body: data }),
 
   getUsers: () => request('/users'),
   createUser: (data) => request('/users', { method: 'POST', body: data }),

@@ -13,7 +13,7 @@ router.use(requireAuth);
 
 router.get('/flagged', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await listFlaggedForIntervention({ search, course }));
+  res.json(await listFlaggedForIntervention({ search, course, user: req.user }));
 });
 
 router.get('/causes', (req, res) => {
@@ -23,7 +23,7 @@ router.get('/causes', (req, res) => {
 router.get('/student/:studentId', async (req, res) => {
   const studentId = Number(req.params.studentId);
   if (!Number.isInteger(studentId) || studentId <= 0) return res.status(400).json({ error: 'Invalid student id' });
-  const data = await listInterventions(studentId);
+  const data = await listInterventions(studentId, { user: req.user });
   if (!data) return res.status(404).json({ error: 'Student not found' });
   res.json(data);
 });
@@ -31,7 +31,7 @@ router.get('/student/:studentId', async (req, res) => {
 router.post('/student/:studentId/summary', async (req, res) => {
   const studentId = Number(req.params.studentId);
   if (!Number.isInteger(studentId) || studentId <= 0) return res.status(400).json({ error: 'Invalid student id' });
-  const draft = await buildSummaryDraft(studentId, req.body || {});
+  const draft = await buildSummaryDraft(studentId, req.body || {}, req.user);
   if (!draft) return res.status(404).json({ error: 'Student not found' });
   res.json(draft);
 });

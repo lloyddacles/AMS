@@ -49,6 +49,10 @@ export async function requireAuth(req, res, next) {
       role: user.role,
       avatar: user.avatar,
       mustChangePassword: Number(user.mustChangePassword) ? 1 : 0,
+      departmentId: user.departmentId || null,
+      programId: user.programId || null,
+      departmentName: user.departmentName || null,
+      programName: user.programName || null,
     };
 
     // An account flagged for a mandatory password change may only call the

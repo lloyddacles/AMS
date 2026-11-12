@@ -21,7 +21,7 @@ const STATUS_META = {
   Deceased: { pill: 'pill-purple', icon: '◆' },
 };
 
-const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '', status: 'Active' };
+const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '', status: 'Active', programId: '' };
 
 const SORT_COLUMNS = [
   { key: 'name', label: 'Student', get: (s) => `${s.lastName || ''} ${s.firstName || ''}`.trim() || s.studentNo || '' },
@@ -44,14 +44,17 @@ function StatusBadge({ status }) {
 }
 
 function studentMeta(s) {
-  const group = [s.course, s.yearLevel, s.section].filter(Boolean).join(' · ');
-  return { group, email: s.email || '' };
+  const programOrCourse = s.programName || s.course || '';
+  const group = [programOrCourse, s.yearLevel, s.section].filter(Boolean).join(' · ');
+  const dept = s.departmentName || '';
+  return { group, dept, email: s.email || '' };
 }
 
 export default function Students() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [students, setStudents] = useState([]);
+  const [academic, setAcademic] = useState({ departments: [], programs: [] });
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
@@ -65,7 +68,7 @@ export default function Students() {
   const [selected, setSelected] = useState(() => new Set());
   const [regenBusy, setRegenBusy] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  const [bulkForm, setBulkForm] = useState({ course: '', yearLevel: '', section: '', status: '' });
+  const [bulkForm, setBulkForm] = useState({ programId: '', course: '', yearLevel: '', section: '', status: '' });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -163,6 +166,10 @@ export default function Students() {
   }
 
   useEffect(() => {
+    api.getAcademicStructure().then((s) => setAcademic(s || { departments: [], programs: [] })).catch(() => {});
+  }, []);
+
+  useEffect(() => {
     const t = setTimeout(() => load(search), 250);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -196,6 +203,12 @@ export default function Students() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   }
 
+  function onProgramChange(programId) {
+    const pid = String(programId || '');
+    const prog = (academic.programs || []).find((p) => String(p.id) === pid);
+    setForm((f) => ({ ...f, programId: pid, course: prog ? prog.name : f.course }));
+  }
+
   function openCreate() {
     setEditing({});
     setForm({ ...emptyForm, status: 'Active' });
@@ -213,6 +226,7 @@ export default function Students() {
       yearLevel: s.yearLevel || '',
       section: s.section || '',
       status: s.status || 'Active',
+      programId: s.programId ? String(s.programId) : '',
     });
     setFormError('');
   }
@@ -277,7 +291,7 @@ export default function Students() {
   }
 
   function openBulkEdit() {
-    setBulkForm({ course: '', yearLevel: '', section: '', status: '' });
+    setBulkForm({ programId: '', course: '', yearLevel: '', section: '', status: '' });
     setBulkError('');
     setBulkEditOpen(true);
   }
@@ -285,12 +299,12 @@ export default function Students() {
   async function saveBulkEdit(e) {
     e.preventDefault();
     const patch = {};
-    for (const key of ['course', 'yearLevel', 'section', 'status']) {
+    for (const key of ['programId', 'course', 'yearLevel', 'section', 'status']) {
       const value = String(bulkForm[key] || '').trim();
       if (value) patch[key] = value;
     }
     if (Object.keys(patch).length === 0) {
-      setBulkError('Enter a course, year level, section, or status to set. Blank fields leave existing values untouched.');
+      setBulkError('Select a program or enter a course, year level, section, or status to set. Blank fields leave existing values untouched.');
       return;
     }
     setBulkBusy(true);
@@ -492,7 +506,9 @@ export default function Students() {
                         <span className="student-no mono">{s.studentNo || '—'}</span>
                       </div>
                       <div className="student-line2">
-                        {meta.group ? <span>{meta.group}</span> : <span className="muted">No course/section set</span>}
+                        {meta.dept ? <span title={meta.dept}>{meta.dept}</span> : null}
+                        {meta.dept && meta.group ? <span className="student-meta-sep">•</span> : null}
+                        {meta.group ? <span>{meta.group}</span> : <span className="muted">No program/course set</span>}
                         {meta.email ? <span className="student-meta-sep">•</span> : null}
                         {meta.email ? <span className="student-email" title={meta.email}>{meta.email}</span> : null}
                       </div>
@@ -576,8 +592,21 @@ export default function Students() {
                   </select>
                 </label>
                 <label>
-                  <span>Course</span>
-                  <input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} placeholder="e.g. BSIT" />
+                  <span>Program / Department</span>
+                  <select value={form.programId || ''} onChange={(e) => onProgramChange(e.target.value)}>
+                    <option value="">No linked program</option>
+                    {(academic.programs || []).map((p) => (
+                      <option key={p.id} value={p.id}>{p.departmentName} — {p.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Course / Program Name</span>
+                  <input
+                    value={form.course}
+                    onChange={(e) => setForm({ ...form, course: e.target.value })}
+                    placeholder="e.g. BSIT or selected program name"
+                  />
                 </label>
                 <label>
                   <span>Year Level</span>
@@ -619,7 +648,23 @@ export default function Students() {
               </div>
               <div className="form grid-form">
                 <label>
-                  <span>Course</span>
+                  <span>Program</span>
+                  <select
+                    value={bulkForm.programId}
+                    onChange={(e) => {
+                      const pid = e.target.value;
+                      const prog = (academic.programs || []).find((p) => String(p.id) === String(pid));
+                      setBulkForm({ ...bulkForm, programId: pid, course: prog ? prog.name : bulkForm.course });
+                    }}
+                  >
+                    <option value="">Leave blank to keep</option>
+                    {(academic.programs || []).map((p) => (
+                      <option key={p.id} value={p.id}>{p.departmentName} — {p.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  <span>Course / Program Name</span>
                   <input
                     value={bulkForm.course}
                     onChange={(e) => setBulkForm({ ...bulkForm, course: e.target.value })}

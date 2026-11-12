@@ -53,34 +53,42 @@ async function excludedKeysFor(eventIds) {
 // Per-student summary, classified early / on-time / late / absent.
 router.get('/overview', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await buildOverview({ search, course, ...rangeFilters(req.query) }));
+  res.json(await buildOverview({ search, course, user: req.user, ...rangeFilters(req.query) }));
 });
 
 // Students below the configured attendance-rate threshold.
 router.get('/at-risk', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await buildAtRisk({ search, course, ...rangeFilters(req.query) }));
+  res.json(await buildAtRisk({ search, course, user: req.user, ...rangeFilters(req.query) }));
 });
 
 // Students below their term's minimum attendance percentage (compliance).
 router.get('/compliance', async (req, res) => {
   const { search = '', course = '' } = req.query;
-  res.json(await buildCompliance({ search, course, ...rangeFilters(req.query) }));
+  res.json(await buildCompliance({ search, course, user: req.user, ...rangeFilters(req.query) }));
 });
 
 // Time-series attendance trend (one point per event / day / week / month).
 router.get('/trends', async (req, res) => {
   const { course = '', granularity = 'day' } = req.query;
   const g = ['event', 'day', 'week', 'month'].includes(granularity) ? granularity : 'day';
-  res.json(await buildTrends({ course, granularity: g, ...rangeFilters(req.query) }));
+  res.json(await buildTrends({ course, granularity: g, user: req.user, ...rangeFilters(req.query) }));
 });
 
 // Event × student matrix of classifications.
 router.get('/matrix', async (req, res) => {
   const ef = eventFilter(rangeFilters(req.query));
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
+  const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
-    'SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE 1=1 ${scope.where}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    scope.params
   );
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
   const eventById = new Map(events.map((e) => [e.id, e]));
@@ -95,7 +103,7 @@ router.get('/matrix', async (req, res) => {
 // Explainable attendance risk for every student (logistic model + exact SHAP),
 // sorted most-at-risk first.
 router.get('/risk', async (req, res) => {
-  const model = await buildRiskModel();
+  const model = await buildRiskModel({ user: req.user });
   const students = [...model.students].sort(
     (a, b) => b.risk - a.risk || String(a.lastName || '').localeCompare(String(b.lastName || ''))
   );
@@ -104,7 +112,7 @@ router.get('/risk', async (req, res) => {
 
 // Full explanation (all feature contributions) for a single student.
 router.get('/risk/:studentId', async (req, res) => {
-  const model = await buildRiskModel();
+  const model = await buildRiskModel({ user: req.user });
   const student = model.byStudent.get(Number(req.params.studentId));
   if (!student) return res.status(404).json({ error: 'Student not found' });
   res.json({ totalEvents: model.totalEvents, context: model.context, student });
