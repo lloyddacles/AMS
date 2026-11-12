@@ -198,10 +198,10 @@ export default function Colleges() {
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="stat-grid">
-        <StatCard icon="building" accent="blue" label="Colleges" value={stats.colleges} hint="Departments/colleges" />
+        <StatCard icon="layers" accent="blue" label="Colleges" value={stats.colleges} hint="Departments/colleges" />
         <StatCard icon="book" accent="purple" label="Programs" value={stats.programs} hint="Total programs" />
         <StatCard icon="check" accent="green" label="Active programs" value={stats.activePrograms} hint={stats.inactivePrograms ? `${stats.inactivePrograms} inactive` : 'All active'} />
-        <StatCard icon="link" accent="amber" label="Programs in use" value={stats.inUse} hint="Linked to users/students/events" />
+        <StatCard icon="users" accent="amber" label="Programs in use" value={stats.inUse} hint="Linked to users/students/events" />
       </div>
 
       <div className="toolbar filter-bar">
@@ -224,7 +224,7 @@ export default function Colleges() {
           <p>No colleges or programs match your search/filter.</p>
         </div>
       ) : (
-        <div className="stack">
+        <div style={{ display: 'grid', gap: '1rem' }}>
           {filteredDepartments.map((d) => {
             const progs = programsByDept.get(d.id) || [];
             const visibleProgs = search.trim()
@@ -232,7 +232,7 @@ export default function Colleges() {
               : progs;
             return (
               <section key={d.id} className="card table-card">
-                <div className="dash-card-head">
+                <div className="dash-card-head" style={{ padding: '1rem 1rem 0.75rem', marginBottom: 0 }}>
                   <div>
                     <h3 style={{ margin: 0 }}>{d.name}</h3>
                     <p className="muted small" style={{ marginTop: '0.2rem' }}>
@@ -246,7 +246,7 @@ export default function Colleges() {
                   </div>
                 </div>
 
-                <div className="table-wrap" style={{ marginTop: '0.5rem' }}>
+                <div className="table-wrap">
                   <table className="table">
                     <thead>
                       <tr>
@@ -260,7 +260,9 @@ export default function Colleges() {
                     <tbody>
                       {visibleProgs.length === 0 ? (
                         <tr>
-                          <td colSpan={5} className="muted">No programs {search.trim() ? 'match your search' : 'in this college yet'}.</td>
+                          <td colSpan={5} className="muted" style={{ textAlign: 'center', padding: '1rem' }}>
+                            No programs {search.trim() ? 'match your search' : 'in this college yet'}.
+                          </td>
                         </tr>
                       ) : (
                         visibleProgs.map((p) => (
@@ -338,9 +340,9 @@ export default function Colleges() {
               <input value={progForm.code} onChange={(e) => setProgForm((f) => ({ ...f, code: e.target.value }))} placeholder="e.g., BSIS" />
             </label>
             {progModal.mode === 'edit' && (
-              <label className="checkbox" style={{ alignSelf: 'end' }}>
+              <label className="checkbox" style={{ alignSelf: 'end', marginBottom: '0.1rem' }}>
                 <input type="checkbox" checked={!!progForm.active} onChange={(e) => setProgForm((f) => ({ ...f, active: e.target.checked }))} />
-                Active
+                <span>Active program</span>
               </label>
             )}
             {progError && <div className="alert alert-error span-2">{progError}</div>}
