@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
+import { useDialog } from '../dialogs.jsx';
 import { composeIdCard } from '../idCard.js';
 import Modal from '../components/Modal.jsx';
 import BulkAddStudents from '../components/BulkAddStudents.jsx';
