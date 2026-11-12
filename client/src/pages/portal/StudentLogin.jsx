@@ -84,9 +84,9 @@ export default function StudentLogin() {
   }
 
   return (
-    <div className="login-page student-login-page">
-      <div className="login-shell student-login-shell">
-        <aside className="login-visual student-login-visual">
+    <div className="login-page student-login-page modern-auth-page">
+      <div className="login-shell student-login-shell modern-login-shell">
+        <aside className="login-visual student-login-visual modern-login-visual">
           <div className="login-visual-brand">
             <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
             <div>
@@ -96,7 +96,7 @@ export default function StudentLogin() {
           </div>
           <LoginArt className="login-art" />
           <div className="login-visual-copy">
-            <p className="login-visual-tag">A secure student platform to view attendance, track progress, and request corrections.</p>
+            <p className="login-visual-tag">Access your attendance records, track progress, and submit correction requests securely.</p>
             <ul className="login-features">
               {FEATURES.map((f) => (
                 <li key={f}>
@@ -108,12 +108,16 @@ export default function StudentLogin() {
           </div>
         </aside>
 
-        <div className="login-card student-login-card">
-          <LiveClock className="public-clock" />
-          <div className="login-brand student-login-brand">
+        <div className="login-card student-login-card modern-login-card">
+          <div className="auth-card-top auth-card-top-split">
+            <Link to="/" className="auth-back-link">← Back to home</Link>
+            <LiveClock className="public-clock" />
+          </div>
+
+          <div className="login-brand student-login-brand modern-login-brand">
             <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
-            <h1>Student Access</h1>
-            <p>{mode === 'signin' ? 'Sign in to access your attendance records and portal services.' : 'Set up your student account to access the portal for the first time.'}</p>
+            <h1>Student Portal Access</h1>
+            <p>{mode === 'signin' ? 'Sign in to view your attendance records and account details.' : 'Set up your account to start using the student portal.'}</p>
           </div>
 
           <div className="student-auth-tabs" role="tablist" aria-label="Student portal access">
@@ -141,7 +145,7 @@ export default function StudentLogin() {
             <div className="alert alert-warn">Signed out due to inactivity after 5 minutes.</div>
           )}
 
-          <form className="form student-login-form" onSubmit={submit}>
+          <form className="form student-login-form modern-auth-form" onSubmit={submit}>
             <label>
               <span>Student Number <span className="req">*</span></span>
               <input
@@ -170,12 +174,12 @@ export default function StudentLogin() {
 
             <label>
               <span>{mode === 'signin' ? 'Password' : 'Create Password'} <span className="req">*</span></span>
-              <div className="student-password-row">
+              <div className="student-password-row auth-password-row">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Enter your password"
                   autoComplete={mode === 'signin' ? 'current-password' : 'new-password'}
                   required
                 />
@@ -188,7 +192,7 @@ export default function StudentLogin() {
                   {showPassword ? 'Hide' : 'Show'}
                 </button>
               </div>
-              <span className="muted small">Minimum 6 characters. Choose a password you can remember.</span>
+              <span className="muted small">Minimum 6 characters.</span>
             </label>
 
             {mode === 'setup' && (
@@ -198,7 +202,7 @@ export default function StudentLogin() {
                   type={showPassword ? 'text' : 'password'}
                   value={confirm}
                   onChange={(e) => setConfirm(e.target.value)}
-                  placeholder="••••••••"
+                  placeholder="Confirm your password"
                   autoComplete="new-password"
                   required
                 />
@@ -217,24 +221,22 @@ export default function StudentLogin() {
             {mode === 'signin' ? (
               <ul>
                 <li>Use the student number and password you created for the portal.</li>
-                <li>If this is your first time, choose <strong>First-time setup</strong> to create your password.</li>
-                <li>If you forgot your password, contact your teacher/admin to reset your portal access.</li>
+                <li>If this is your first time, choose <strong>First-time setup</strong>.</li>
+                <li>If you forgot your password, contact your teacher/admin for a reset.</li>
               </ul>
             ) : (
               <ul>
                 <li>Enter your <strong>student number</strong> and <strong>full name</strong> exactly as registered.</li>
-                <li>Create a password (at least 6 characters) to secure your student account.</li>
-                <li>After setup, you can sign in anytime to view attendance and submit corrections.</li>
+                <li>Create a password (at least 6 characters) for your account.</li>
+                <li>After setup, sign in anytime to view attendance and submit corrections.</li>
               </ul>
             )}
           </div>
 
-          <div className="portal-auth-switch student-auth-links">
+          <div className="portal-auth-switch student-auth-links modern-auth-links">
             <Link to="/login">Staff/Admin sign-in</Link>
             <span aria-hidden="true">·</span>
             <Link to="/corrections">Quick corrections lookup</Link>
-            <span aria-hidden="true">·</span>
-            <Link to="/">Back to home</Link>
           </div>
         </div>
       </div>

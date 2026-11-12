@@ -7,6 +7,7 @@ import { DialogProvider } from './dialogs.jsx';
 import { useStudent } from './studentAuth.jsx';
 
 const Login = lazy(() => import('./pages/Login.jsx'));
+const Landing = lazy(() => import('./pages/Landing.jsx'));
 const Dashboard = lazy(() => import('./pages/Dashboard.jsx'));
 const Students = lazy(() => import('./pages/Students.jsx'));
 const QrSheet = lazy(() => import('./pages/QrSheet.jsx'));
@@ -45,6 +46,14 @@ function Protected({ children }) {
   return <Layout>{children}</Layout>;
 }
 
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!user) return <Landing />;
+  if (user.mustChangePassword) return <MustChangePassword />;
+  return <Layout><Dashboard /></Layout>;
+}
+
 function StudentProtected({ children }) {
   const { student, loading } = useStudent();
   if (loading) return <LoadingScreen />;
@@ -81,7 +90,7 @@ export default function App() {
             <Route path="corrections" element={<PortalCorrections />} />
             <Route path="account" element={<PortalAccount />} />
           </Route>
-          <Route path="/" element={<Protected><Dashboard /></Protected>} />
+          <Route path="/" element={<HomeRoute />} />
           <Route path="/students" element={<Protected><Students /></Protected>} />
           <Route path="/students/qr-sheet" element={<Protected><QrSheet /></Protected>} />
           <Route path="/live" element={<Protected><Live /></Protected>} />
