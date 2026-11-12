@@ -217,6 +217,37 @@ export function eventScopeFilter(user, opts = {}) {
   return { where: ` AND ${alias}department_id = ? `, params: [departmentId], scoped: true, departmentId, programId: null };
 }
 
+// Returns a schedule-scope filter for staff users.
+// Admins/unassigned staff are unrestricted. Scoped staff only see schedules
+// tagged to their assigned department/program (legacy unscoped schedules hidden).
+export function scheduleScopeFilter(user, opts = {}) {
+  const alias = opts.scheduleAlias ? `${opts.scheduleAlias}.` : '';
+  if (!user || user.role === 'admin') return { where: '', params: [], scoped: false };
+  const departmentId = Number(user.departmentId || 0);
+  const programId = Number(user.programId || 0);
+  if (!departmentId && !programId) return { where: '', params: [], scoped: false };
+  if (programId) {
+    return { where: ` AND ${alias}program_id = ? `, params: [programId], scoped: true, departmentId: departmentId || null, programId };
+  }
+  return { where: ` AND ${alias}department_id = ? `, params: [departmentId], scoped: true, departmentId, programId: null };
+}
+
+// Resolve write scope for scoped entities (events/schedules). Admins may set any
+// requested scope; scoped staff are forced to their own scope.
+export function scopedWriteScope(user, requested = {}) {
+  if (!user || user.role === 'admin') {
+    const departmentId = requested.departmentId == null || requested.departmentId === '' ? null : Number(requested.departmentId);
+    const programId = requested.programId == null || requested.programId === '' ? null : Number(requested.programId);
+    return {
+      departmentId: Number.isFinite(departmentId) && departmentId > 0 ? departmentId : null,
+      programId: Number.isFinite(programId) && programId > 0 ? programId : null,
+    };
+  }
+  const departmentId = Number(user.departmentId || 0) || null;
+  const programId = Number(user.programId || 0) || null;
+  return { departmentId, programId };
+}
+
 export function isStudentVisibleToUser(user, student = {}) {
   const scope = studentScopeFilter(user);
   if (!scope.scoped) return true;

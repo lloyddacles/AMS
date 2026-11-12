@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
@@ -28,12 +29,17 @@ const emptyForm = {
   description: '',
   requireStudentConfirm: false,
   active: true,
+  departmentId: '',
+  programId: '',
 };
 
 export default function Schedules() {
   const { confirm, notify } = useDialog();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [schedules, setSchedules] = useState([]);
   const [terms, setTerms] = useState([]);
+  const [academic, setAcademic] = useState({ departments: [], programs: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
@@ -46,9 +52,14 @@ export default function Schedules() {
   async function load() {
     setLoading(true);
     try {
-      const [s, t] = await Promise.all([api.getSchedules(), api.getTerms()]);
+      const [s, t, acad] = await Promise.all([
+        api.getSchedules(),
+        api.getTerms(),
+        api.getAcademicStructure().catch(() => ({ departments: [], programs: [] })),
+      ]);
       setSchedules(s);
       setTerms(t);
+      setAcademic(acad || { departments: [], programs: [] });
       setError('');
     } catch (e) {
       setError(e.message);
@@ -61,6 +72,20 @@ export default function Schedules() {
     load();
   }, []);
 
+  const programsForDept = useMemo(() => {
+    const did = Number(form.departmentId || 0);
+    if (!did) return academic.programs || [];
+    return (academic.programs || []).filter((p) => Number(p.departmentId) === did);
+  }, [academic.programs, form.departmentId]);
+
+  function defaultScope() {
+    if (isAdmin) return { departmentId: '', programId: '' };
+    return {
+      departmentId: user?.departmentId ? String(user.departmentId) : '',
+      programId: user?.programId ? String(user.programId) : '',
+    };
+  }
+
   function openCreate() {
     setEditing({});
     const current = terms.find((t) => Number(t.isCurrent) === 1);
@@ -69,6 +94,7 @@ export default function Schedules() {
       termId: current ? String(current.id) : '',
       startDate: current?.startDate || '',
       endDate: current?.endDate || '',
+      ...defaultScope(),
     });
     setFormError('');
   }
@@ -90,6 +116,8 @@ export default function Schedules() {
       description: s.description || '',
       requireStudentConfirm: !!Number(s.requireStudentConfirm),
       active: !!Number(s.active),
+      departmentId: s.departmentId ? String(s.departmentId) : (isAdmin ? '' : (user?.departmentId ? String(user.departmentId) : '')),
+      programId: s.programId ? String(s.programId) : (isAdmin ? '' : (user?.programId ? String(user.programId) : '')),
     });
     setFormError('');
   }
@@ -120,6 +148,8 @@ export default function Schedules() {
         ...form,
         termId: form.termId ? Number(form.termId) : null,
         weekdays: form.weekdays,
+        departmentId: form.departmentId || null,
+        programId: form.programId || null,
       };
       if (editing?.id) await api.updateSchedule(editing.id, payload);
       else await api.createSchedule(payload);
@@ -187,6 +217,12 @@ export default function Schedules() {
       {error && <div className="alert alert-error">{error}</div>}
       {result && <div className="alert alert-success">{result}</div>}
 
+      {!isAdmin && (user?.departmentId || user?.programId) && (
+        <div className="alert alert-info" style={{ marginBottom: '0.75rem' }}>
+          Showing schedule generation for your assigned scope: <strong>{user?.departmentName || 'Department'}</strong>{user?.programName ? ` · ${user.programName}` : ''}. Generated events will be tagged to this scope.
+        </div>
+      )}
+
       {loading && schedules.length === 0 && <div className="card"><Spinner label="Loading schedules…" size="lg" variant="panel" /></div>}
 
       {!loading && schedules.length === 0 && (
@@ -210,6 +246,7 @@ export default function Schedules() {
                     <span className={`pill ${active ? 'pill-green' : 'pill-gray'}`}>{active ? 'Active' : 'Inactive'}</span>
                     {s.termName ? <span className="pill pill-purple">{s.termName}</span> : <span className="pill pill-gray">No term</span>}
                     {Number(s.requireStudentConfirm) ? <span className="pill pill-blue">Kiosk · ID</span> : null}
+                    {(s.departmentName || s.programName) ? <span className="pill pill-amber">{s.programName || s.departmentName}</span> : <span className="pill pill-gray">Unscoped</span>}
                   </div>
                   <span className="schedule-event-count" title="Generated events">{s.eventCount} events</span>
                 </div>
@@ -269,7 +306,7 @@ export default function Schedules() {
             <section className="event-form-section">
               <div className="event-form-section-head">
                 <h4>Schedule details</h4>
-                <p className="muted small">Name this recurring session and where it takes place.</p>
+                <p className="muted small">Name this recurring session, scope, and where it takes place.</p>
               </div>
               <div className="form grid-form">
                 <label className="span-2">
@@ -292,6 +329,39 @@ export default function Schedules() {
                 <label className="span-2">
                   <span>Description</span>
                   <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes for generated events" />
+                </label>
+
+                <label>
+                  <span>College / Department {isAdmin ? '' : '(assigned scope)'}</span>
+                  <select
+                    value={form.departmentId}
+                    onChange={(e) => {
+                      const did = e.target.value;
+                      const currentOk = programsForDept.some((p) => String(p.id) === String(form.programId) && String(p.departmentId) === did);
+                      setForm((f) => ({ ...f, departmentId: did, programId: currentOk ? f.programId : '' }));
+                    }}
+                    disabled={!isAdmin && !!(user?.departmentId || user?.programId)}
+                  >
+                    <option value="">{isAdmin ? 'All colleges (global/unscoped)' : '—'}</option>
+                    {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Program {isAdmin ? '' : '(assigned scope)'}</span>
+                  <select
+                    value={form.programId}
+                    onChange={(e) => {
+                      const pid = e.target.value;
+                      const prog = (academic.programs || []).find((p) => String(p.id) === String(pid));
+                      setForm((f) => ({ ...f, programId: pid, departmentId: prog ? String(prog.departmentId) : f.departmentId }));
+                    }}
+                    disabled={!isAdmin && !!user?.programId}
+                  >
+                    <option value="">{form.departmentId ? 'All programs in college' : 'Select a college first (optional)'}</option>
+                    {(form.departmentId ? (academic.programs || []).filter((p) => String(p.departmentId) === String(form.departmentId)) : (academic.programs || [])).map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
                 </label>
               </div>
             </section>

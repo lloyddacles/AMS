@@ -29,7 +29,9 @@ export const SCHEDULE_FIELDS = `s.id, s.term_id AS termId, s.name, s.description
   s.start_date AS startDate, s.end_date AS endDate,
   s.require_student_confirm AS requireStudentConfirm, s.active,
   s.last_generated_date AS lastGeneratedDate, s.created_at AS createdAt,
+  s.department_id AS departmentId, s.program_id AS programId,
   t.name AS termName,
+  d.name AS departmentName, p.name AS programName,
   (SELECT COUNT(*) FROM events e WHERE e.schedule_id = s.id) AS eventCount`;
 
 export function parseSchedule(row) {
@@ -39,7 +41,15 @@ export function parseSchedule(row) {
 }
 
 export function getSchedule(id) {
-  return get(`SELECT ${SCHEDULE_FIELDS} FROM schedules s LEFT JOIN terms t ON t.id = s.term_id WHERE s.id = ?`, [id]).then(parseSchedule);
+  return get(
+    `SELECT ${SCHEDULE_FIELDS}
+     FROM schedules s
+     LEFT JOIN terms t ON t.id = s.term_id
+     LEFT JOIN departments d ON d.id = s.department_id
+     LEFT JOIN programs p ON p.id = s.program_id
+     WHERE s.id = ?`,
+    [id]
+  ).then(parseSchedule);
 }
 
 const MAX_OCCURRENCES = 400;
@@ -85,8 +95,8 @@ export async function generateScheduleEvents(scheduleId) {
       continue;
     }
     statements.push({
-      sql: `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, term_id, schedule_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?)`,
+      sql: `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, term_id, schedule_id, department_id, program_id)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?)`,
       args: [
         schedule.name,
         schedule.description,
@@ -98,6 +108,8 @@ export async function generateScheduleEvents(scheduleId) {
         schedule.require_student_confirm ? 1 : 0,
         schedule.term_id,
         scheduleId,
+        schedule.department_id || null,
+        schedule.program_id || null,
       ],
     });
     createdDates.push(date);

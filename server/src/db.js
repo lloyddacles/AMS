@@ -435,6 +435,8 @@ async function doInit() {
   await ensureColumn('events', 'archived_at', 'archived_at TEXT');
   await ensureColumn('events', 'department_id', 'department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL');
   await ensureColumn('events', 'program_id', 'program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL');
+  await ensureColumn('schedules', 'department_id', 'department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL');
+  await ensureColumn('schedules', 'program_id', 'program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL');
   await ensureColumn('terms', 'min_attendance', 'min_attendance INTEGER NOT NULL DEFAULT 80');
   await makeCheckinNullable();
   await executeMultiple(`
@@ -446,6 +448,8 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_events_department ON events(department_id);
     CREATE INDEX IF NOT EXISTS idx_events_program ON events(program_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_department ON schedules(department_id);
+    CREATE INDEX IF NOT EXISTS idx_schedules_program ON schedules(program_id);
     CREATE INDEX IF NOT EXISTS idx_interventions_student ON student_interventions(student_id, created_at);
     CREATE INDEX IF NOT EXISTS idx_students_program ON students(program_id);
     CREATE INDEX IF NOT EXISTS idx_students_department ON students(department_id);
@@ -454,7 +458,7 @@ async function doInit() {
   `);
   await seedAcademicStructure();
   // Record baseline/phase migrations so readiness checks can report status.
-  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms', '004_departments_programs_scoping', '005_event_department_program_scoping']) {
+  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms', '004_departments_programs_scoping', '005_event_department_program_scoping', '006_schedule_department_program_scoping']) {
     await run(`INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)`, [name]);
   }
 }
