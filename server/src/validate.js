@@ -34,6 +34,8 @@ export const schemas = {
     yearLevel: optionalTrimmed(50),
     section: optionalTrimmed(50),
     status: z.enum(['Active', 'Inactive', 'Deceased', 'Dropped', 'LOA', 'Regular', 'Irregular']).optional(),
+    programId: z.coerce.number().int().positive().optional().nullable(),
+    departmentId: z.coerce.number().int().positive().optional().nullable(),
   }),
   studentBulk: z.object({
     updateExisting: z.coerce.boolean().optional().default(false),
@@ -51,6 +53,8 @@ export const schemas = {
     autoConfirm: z.coerce.boolean().optional(),
     termId: z.coerce.number().int().positive().optional().nullable(),
     scheduleId: z.coerce.number().int().positive().optional().nullable(),
+    departmentId: z.coerce.number().int().positive().optional().nullable(),
+    programId: z.coerce.number().int().positive().optional().nullable(),
   }),
   eventUpdate: z.object({
     name: trimmed(200).optional(),
@@ -64,6 +68,8 @@ export const schemas = {
     autoConfirm: z.coerce.boolean().optional(),
     termId: z.coerce.number().int().positive().optional().nullable(),
     scheduleId: z.coerce.number().int().positive().optional().nullable(),
+    departmentId: z.coerce.number().int().positive().optional().nullable(),
+    programId: z.coerce.number().int().positive().optional().nullable(),
   }),
   eventBulk: z.object({
     action: z.enum(['close', 'reopen', 'archive', 'unarchive']),
