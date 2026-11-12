@@ -18,6 +18,7 @@ import {
 } from '../services/roster.js';
 import { config } from '../config.js';
 import { validate, schemas } from '../validate.js';
+import { eventScopeFilter } from '../services/academic.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -28,9 +29,12 @@ const selectFields = `e.id, e.name, e.description, e.location,
   e.auto_confirm AS autoConfirm,
   e.closed_at AS closedAt, e.report_summary AS reportSummary, e.created_at AS createdAt,
   e.term_id AS termId, e.schedule_id AS scheduleId,
+  e.department_id AS departmentId, e.program_id AS programId,
   e.archived AS archived, e.archived_at AS archivedAt, e.series_id AS seriesId,
   (SELECT name FROM terms t WHERE t.id = e.term_id) AS termName,
   (SELECT name FROM event_series s WHERE s.id = e.series_id) AS seriesName,
+  (SELECT d.name FROM departments d WHERE d.id = e.department_id) AS departmentName,
+  (SELECT p.name FROM programs p WHERE p.id = e.program_id) AS programName,
   (SELECT COUNT(*) FROM events e2 WHERE e2.series_id = e.series_id) AS seriesDayCount,
   (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')) AS attendanceCount,
   (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS totalStudents`;
@@ -63,6 +67,22 @@ function getEvent(id) {
   return get(`SELECT ${selectFields} FROM events e WHERE e.id = ?`, [id]).then(parseEvent);
 }
 
+function getScopedEvent(id, user) {
+  const scope = eventScopeFilter(user, { eventAlias: 'e' });
+  return get(`SELECT ${selectFields} FROM events e WHERE e.id = ? ${scope.where}`, [id, ...scope.params]).then(parseEvent);
+}
+
+function eventWriteScope(user, requested = {}) {
+  if (!user || user.role === 'admin') {
+    const departmentId = requested.departmentId == null || requested.departmentId === '' ? null : Number(requested.departmentId);
+    const programId = requested.programId == null || requested.programId === '' ? null : Number(requested.programId);
+    return { departmentId: Number.isFinite(departmentId) && departmentId > 0 ? departmentId : null, programId: Number.isFinite(programId) && programId > 0 ? programId : null };
+  }
+  const departmentId = Number(user.departmentId || 0) || null;
+  const programId = Number(user.programId || 0) || null;
+  return { departmentId, programId };
+}
+
 // List events. By default archived events are hidden so the main section stays
 // focused on current work; pass ?archived=1 for the archive, ?archived=all for both.
 router.get('/', async (req, res) => {
@@ -82,10 +102,11 @@ router.get('/', async (req, res) => {
     clauses.push('e.archived = ?');
     params.push(archivedView ? 1 : 0);
   }
-  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '';
+  const scope = eventScopeFilter(req.user, { eventAlias: 'e' });
+  const where = clauses.length ? ` WHERE ${clauses.join(' AND ')} ${scope.where}` : (scope.where ? ` WHERE 1=1 ${scope.where}` : '');
   const rows = await all(
     `SELECT ${selectFields} FROM events e${where} ORDER BY e.event_date DESC, e.id DESC`,
-    params
+    [...params, ...scope.params]
   );
   res.json(rows.map(parseEvent));
 });
@@ -95,10 +116,12 @@ router.get('/', async (req, res) => {
 router.get('/live-board', async (req, res) => {
   await maybeRunAutomation().catch(() => {});
 
+  const scope = eventScopeFilter(req.user, { eventAlias: 'e' });
   const rows = await all(
     `SELECT ${selectFields} FROM events e
-     WHERE e.archived = 0 AND e.status = 'active'
-     ORDER BY e.event_date ASC, e.start_time ASC, e.id ASC`
+     WHERE e.archived = 0 AND e.status = 'active' ${scope.where}
+     ORDER BY e.event_date ASC, e.start_time ASC, e.id ASC`,
+    scope.params
   );
   const events = rows.map(parseEvent);
   if (!events.length) return res.json({ now: new Date().toISOString(), events: [] });
@@ -174,9 +197,10 @@ router.post('/bulk', validate(schemas.eventBulk), async (req, res) => {
   const ids = [...new Set(req.body.ids.map((v) => Number(v)))].filter((n) => Number.isInteger(n) && n > 0);
 
   const placeholders = ids.map(() => '?').join(',');
+  const scope = eventScopeFilter(req.user, { eventAlias: '' });
   const events = await all(
-    `SELECT id, name, status, archived FROM events WHERE id IN (${placeholders})`,
-    ids
+    `SELECT id, name, status, archived FROM events WHERE id IN (${placeholders}) ${scope.where}`,
+    [...ids, ...scope.params]
   );
   if (events.length === 0) return res.status(404).json({ error: 'No matching events found' });
 
@@ -243,7 +267,7 @@ router.post('/bulk', validate(schemas.eventBulk), async (req, res) => {
 });
 
 router.get('/:id', async (req, res) => {
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   res.json(event);
 });
@@ -251,7 +275,7 @@ router.get('/:id', async (req, res) => {
 // Who attends this event. Every student is listed and flagged; no exclusions
 // recorded means everyone attends (the default).
 router.get('/:id/attendees', async (req, res) => {
-  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   res.json(await attendeeList(event.id));
 });
@@ -280,7 +304,7 @@ async function parseStudentIds(studentIds) {
 // check-in they already made for this event.
 router.post('/:id/attendees', async (req, res) => {
   const { studentIds, attending = true } = req.body || {};
-  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const parsed = await parseStudentIds(studentIds);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
@@ -300,7 +324,7 @@ router.post('/:id/attendees', async (req, res) => {
 
 // Keep only the listed students on the attendee list; everyone else is removed.
 router.post('/:id/attendees/only', async (req, res) => {
-  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const parsed = await parseStudentIds(req.body?.studentIds);
   if (parsed.error) return res.status(400).json({ error: parsed.error });
@@ -324,7 +348,7 @@ router.post('/:id/attendees/only', async (req, res) => {
 
 // Everyone attends again (clears all exclusions for the event).
 router.post('/:id/attendees/reset', async (req, res) => {
-  const event = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const changed = await clearExclusions(event.id);
   const list = await attendeeList(event.id);
@@ -343,12 +367,20 @@ router.post('/:id/attendees/reset', async (req, res) => {
 // Offline scan pack: everything the scanner needs to validate and record scans
 // without a connection. The client caches this in IndexedDB while online.
 router.get('/:id/scan-pack', async (req, res) => {
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
+  const { studentScopeFilter } = await import('../services/academic.js');
+  const sScope = studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
-            course, year_level AS yearLevel, section, qr_token AS qrToken
-     FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
+            s.course, s.year_level AS yearLevel, s.section, s.qr_token AS qrToken
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE 1=1 ${sScope.where}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    sScope.params
   );
   const attendance = await all(
     `SELECT student_id AS studentId, status, method,
@@ -371,10 +403,11 @@ router.get('/:id/scan-pack', async (req, res) => {
 });
 
 router.post('/', validate(schemas.eventCreate), async (req, res) => {
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body;
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId, departmentId, programId } = req.body;
+  const scopeWrite = eventWriteScope(req.user, { departmentId, programId });
   const info = await run(
-    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id, department_id, program_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name.trim(),
       description || null,
@@ -388,9 +421,11 @@ router.post('/', validate(schemas.eventCreate), async (req, res) => {
       autoConfirm ? 1 : 0,
       termId || null,
       scheduleId || null,
+      scopeWrite.departmentId,
+      scopeWrite.programId,
     ]
   );
-  const created = await getEvent(info.lastInsertRowid);
+  const created = await getScopedEvent(info.lastInsertRowid, req.user);
   await logAudit({
     user: req.user,
     action: 'event.create',
@@ -405,12 +440,18 @@ router.post('/', validate(schemas.eventCreate), async (req, res) => {
 router.put('/:id', validate(schemas.eventUpdate), async (req, res) => {
   const existing = await get('SELECT * FROM events WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
-  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId } = req.body;
+  // enforce scope
+  const scoped = await getScopedEvent(req.params.id, req.user);
+  if (!scoped) return res.status(404).json({ error: 'Event not found' });
+  const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId, scheduleId, departmentId, programId } = req.body;
   const nextName = String(name ?? existing.name).trim();
   const nextDate = String(eventDate ?? existing.event_date).trim();
   if (!nextName || !nextDate) {
     return res.status(400).json({ error: 'Event name and date are required' });
   }
+  const scopeWrite = (req.user?.role === 'admin')
+    ? eventWriteScope(req.user, { departmentId: departmentId !== undefined ? departmentId : existing.department_id, programId: programId !== undefined ? programId : existing.program_id })
+    : eventWriteScope(req.user, { departmentId: existing.department_id, programId: existing.program_id });
   // An active event must always be visible in the main list, so reopening via
   // the edit form pulls it out of the archive automatically.
   const nextStatus = status ?? existing.status;
@@ -419,7 +460,7 @@ router.put('/:id', validate(schemas.eventUpdate), async (req, res) => {
   await run(
     `UPDATE events SET name = ?, description = ?, location = ?, event_date = ?,
       start_time = ?, end_time = ?, status = ?, archived = ?, archived_at = ?,
-      require_student_confirm = ?, auto_confirm = ?, term_id = ?, schedule_id = ? WHERE id = ?`,
+      require_student_confirm = ?, auto_confirm = ?, term_id = ?, schedule_id = ?, department_id = ?, program_id = ? WHERE id = ?`,
     [
       nextName,
       description ?? existing.description,
@@ -434,10 +475,12 @@ router.put('/:id', validate(schemas.eventUpdate), async (req, res) => {
       autoConfirm === undefined ? existing.auto_confirm : (autoConfirm ? 1 : 0),
       termId === undefined ? existing.term_id : (termId || null),
       scheduleId === undefined ? existing.schedule_id : (scheduleId || null),
+      scopeWrite.departmentId,
+      scopeWrite.programId,
       req.params.id,
     ]
   );
-  const updated = await getEvent(req.params.id);
+  const updated = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.update',
@@ -449,10 +492,10 @@ router.put('/:id', validate(schemas.eventUpdate), async (req, res) => {
 });
 
 router.post('/:id/regenerate-code', async (req, res) => {
-  const existing = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   await run('UPDATE events SET checkin_code = ? WHERE id = ?', [newToken(), req.params.id]);
-  const updated = await getEvent(req.params.id);
+  const updated = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.regenerate-code',
@@ -466,10 +509,10 @@ router.post('/:id/regenerate-code', async (req, res) => {
 // Close the event and consolidate attendance: every student without a record is
 // locked in as absent, and a final summary is stored for reporting.
 router.post('/:id/close', async (req, res) => {
-  const existing = await get('SELECT id, status FROM events WHERE id = ?', [req.params.id]);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   const summary = await consolidateEvent(req.params.id);
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.close',
@@ -484,11 +527,11 @@ router.post('/:id/close', async (req, res) => {
 // Reopen a closed event so corrections can be made. Removes the auto-generated
 // absent rows so students can check in again; manual marks are kept.
 router.post('/:id/reopen', async (req, res) => {
-  const existing = await get('SELECT id FROM events WHERE id = ?', [req.params.id]);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   await run("DELETE FROM attendance WHERE event_id = ? AND method = 'auto' AND checked_in_at IS NULL", [req.params.id]);
   await run("UPDATE events SET status = 'active', closed_at = NULL, report_summary = NULL, archived = 0, archived_at = NULL WHERE id = ?", [req.params.id]);
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.reopen',
@@ -503,14 +546,14 @@ router.post('/:id/reopen', async (req, res) => {
 // Archive a closed event: it leaves the main list and lives in the Archived
 // section instead. Attendance history is untouched, so reports still include it.
 router.post('/:id/archive', async (req, res) => {
-  const existing = await get('SELECT id, name, status, archived FROM events WHERE id = ?', [req.params.id]);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   if (Number(existing.archived)) return res.status(400).json({ error: 'Event is already archived' });
   if (existing.status !== 'closed') {
     return res.status(400).json({ error: 'Only closed events can be archived' });
   }
   await run('UPDATE events SET archived = 1, archived_at = ? WHERE id = ?', [nowUtc(), req.params.id]);
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.archive',
@@ -523,11 +566,11 @@ router.post('/:id/archive', async (req, res) => {
 
 // Move an archived event back into the main list.
 router.post('/:id/unarchive', async (req, res) => {
-  const existing = await get('SELECT id, name, archived FROM events WHERE id = ?', [req.params.id]);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   if (!Number(existing.archived)) return res.status(400).json({ error: 'Event is not archived' });
   await run('UPDATE events SET archived = 0, archived_at = NULL WHERE id = ?', [req.params.id]);
-  const event = await getEvent(req.params.id);
+  const event = await getScopedEvent(req.params.id, req.user);
   await logAudit({
     user: req.user,
     action: 'event.unarchive',
@@ -541,11 +584,15 @@ router.post('/:id/unarchive', async (req, res) => {
 
 // List all event series with their days.
 router.get('/series/list', async (req, res) => {
+  const scope = eventScopeFilter(req.user, { eventAlias: 'e' });
+  // show series that have at least one visible event for this user
   const rows = await all(
     `SELECT s.id, s.name, s.created_at AS createdAt,
-            (SELECT COUNT(*) FROM events e WHERE e.series_id = s.id) AS dayCount
+            (SELECT COUNT(*) FROM events e WHERE e.series_id = s.id ${scope.where}) AS dayCount
      FROM event_series s
-     ORDER BY s.id DESC`
+     WHERE EXISTS (SELECT 1 FROM events e WHERE e.series_id = s.id ${scope.where})
+     ORDER BY s.id DESC`,
+    [...scope.params, ...scope.params]
   );
   res.json(rows);
 });
@@ -554,23 +601,22 @@ router.get('/series/list', async (req, res) => {
 router.post('/series', async (req, res) => {
   const { name, eventIds = [] } = req.body || {};
   if (!name || !String(name).trim()) return res.status(400).json({ error: 'Series name is required' });
+  const scope = eventScopeFilter(req.user, { eventAlias: '' });
   const info = await run('INSERT INTO event_series (name, created_by) VALUES (?, ?)', [String(name).trim(), req.user.id]);
   const seriesId = info.lastInsertRowid;
   if (Array.isArray(eventIds) && eventIds.length) {
     const ids = [...new Set(eventIds.map((n) => Number(n)))];
     const inPlaceholders = ids.map(() => '?').join(',');
-    const conflicts = await get(
-      `SELECT COUNT(*) AS c FROM events WHERE id IN (${inPlaceholders}) AND series_id IS NOT NULL`,
-      ids
-    );
-    if (conflicts.c) return res.status(400).json({ error: 'One or more events already belong to a series' });
+    const allowed = await all(`SELECT id, series_id AS seriesId FROM events WHERE id IN (${inPlaceholders}) ${scope.where}`, [...ids, ...scope.params]);
+    if (allowed.length !== ids.length) return res.status(404).json({ error: 'One or more events were not found' });
+    if (allowed.some((e) => e.seriesId)) return res.status(400).json({ error: 'One or more events already belong to a series' });
     for (const eid of ids) {
       await run('UPDATE events SET series_id = ? WHERE id = ?', [seriesId, eid]);
     }
   }
   const days = await all(
-    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ORDER BY e.event_date, e.id`,
-    [seriesId]
+    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ${scope.where} ORDER BY e.event_date, e.id`,
+    [seriesId, ...scope.params]
   );
   await logAudit({ user: req.user, action: 'event.series.create', entity: 'series', entityId: String(seriesId), detail: name.trim() });
   res.status(201).json({ id: seriesId, name: name.trim(), days: days.map(parseEvent) });
@@ -578,12 +624,13 @@ router.post('/series', async (req, res) => {
 
 // Add a continuation day to an existing series.
 router.post('/:id/continue', async (req, res) => {
-  const existing = await getEvent(req.params.id);
+  const existing = await getScopedEvent(req.params.id, req.user);
   if (!existing) return res.status(404).json({ error: 'Event not found' });
   const { name, description, location, eventDate, startTime, endTime, status, requireStudentConfirm, autoConfirm, termId } = req.body || {};
   if (!eventDate) return res.status(400).json({ error: 'Date is required for the continuation day' });
   let seriesId = existing.seriesId;
   let seriesName = existing.seriesName;
+  const scopeWrite = eventWriteScope(req.user, { departmentId: existing.departmentId, programId: existing.programId });
   if (!seriesId) {
     const info = await run('INSERT INTO event_series (name, created_by) VALUES (?, ?)', [existing.name, req.user.id]);
     seriesId = info.lastInsertRowid;
@@ -591,8 +638,8 @@ router.post('/:id/continue', async (req, res) => {
     await run('UPDATE events SET series_id = ? WHERE id = ?', [seriesId, existing.id]);
   }
   const info2 = await run(
-    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id, series_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO events (name, description, location, event_date, start_time, end_time, checkin_code, status, require_student_confirm, auto_confirm, term_id, schedule_id, series_id, department_id, program_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       name?.trim() || seriesName,
       description ?? existing.description,
@@ -607,6 +654,8 @@ router.post('/:id/continue', async (req, res) => {
       termId === undefined ? existing.termId : (termId || null),
       existing.scheduleId,
       seriesId,
+      scopeWrite.departmentId,
+      scopeWrite.programId,
     ]
   );
   const newId = info2.lastInsertRowid;
@@ -623,7 +672,7 @@ router.post('/:id/continue', async (req, res) => {
       );
     }
   }
-  const created = await getEvent(newId);
+  const created = await getScopedEvent(newId, req.user);
   await logAudit({ user: req.user, action: 'event.series.continue', entity: 'event', entityId: String(newId), detail: `${seriesName} · ${eventDate}` });
   res.status(201).json(created);
 });
@@ -632,10 +681,12 @@ router.post('/:id/continue', async (req, res) => {
 router.get('/series/:id', async (req, res) => {
   const series = await get('SELECT * FROM event_series WHERE id = ?', [req.params.id]);
   if (!series) return res.status(404).json({ error: 'Series not found' });
+  const scope = eventScopeFilter(req.user, { eventAlias: 'e' });
   const days = await all(
-    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ORDER BY e.event_date, e.id`,
-    [req.params.id]
+    `SELECT ${selectFields} FROM events e WHERE e.series_id = ? ${scope.where} ORDER BY e.event_date, e.id`,
+    [req.params.id, ...scope.params]
   );
+  if (!days.length) return res.status(404).json({ error: 'Series not found' });
   res.json({ id: series.id, name: series.name, days: days.map(parseEvent) });
 });
 
@@ -643,17 +694,17 @@ router.get('/series/:id', async (req, res) => {
 router.post('/series/:id/detach', async (req, res) => {
   const { eventId } = req.body || {};
   if (!eventId) return res.status(400).json({ error: 'eventId required' });
-  const ev = await get('SELECT id, series_id AS seriesId FROM events WHERE id = ?', [Number(eventId)]);
-  if (!ev || ev.seriesId !== Number(req.params.id)) return res.status(404).json({ error: 'Event not in this series' });
+  const ev = await getScopedEvent(Number(eventId), req.user);
+  if (!ev || Number(ev.seriesId) !== Number(req.params.id)) return res.status(404).json({ error: 'Event not in this series' });
   await run('UPDATE events SET series_id = NULL WHERE id = ?', [ev.id]);
   await logAudit({ user: req.user, action: 'event.series.detach', entity: 'event', entityId: String(ev.id), detail: String(req.params.id) });
   res.json({ ok: true });
 });
 
 router.delete('/:id', async (req, res) => {
-  const event = await getEvent(req.params.id);
-  const info = await run('DELETE FROM events WHERE id = ?', [req.params.id]);
-  if (!info.changes) return res.status(404).json({ error: 'Event not found' });
+  const event = await getScopedEvent(req.params.id, req.user);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  await run('DELETE FROM events WHERE id = ?', [req.params.id]);
   await logAudit({
     user: req.user,
     action: 'event.delete',

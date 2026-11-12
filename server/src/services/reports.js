@@ -3,7 +3,7 @@ import { buildRiskModel } from './risk.js';
 import { exclusionsByEvent } from './roster.js';
 import { getSettings } from './settings.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
-import { studentScopeFilter } from './academic.js';
+import { studentScopeFilter, eventScopeFilter } from './academic.js';
 
 const EVENT_COLS = 'id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId';
 const RECORD_COLS = 'event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt';
@@ -22,20 +22,26 @@ function scopeStudents(user, alias = 's') {
 
 // Build a WHERE fragment (plus params) selecting events within an optional
 // date range and/or term. Filters are inclusive and independent.
-export function eventFilter({ from = '', to = '', termId = null } = {}) {
+export function eventFilter({ from = '', to = '', termId = null, alias = '', user = null } = {}) {
+  const a = alias ? `${alias}.` : '';
   const clauses = [];
   const params = [];
   if (from) {
-    clauses.push('event_date >= ?');
+    clauses.push(`${a}event_date >= ?`);
     params.push(from);
   }
   if (to) {
-    clauses.push('event_date <= ?');
+    clauses.push(`${a}event_date <= ?`);
     params.push(to);
   }
   if (termId) {
-    clauses.push('term_id = ?');
+    clauses.push(`${a}term_id = ?`);
     params.push(termId);
+  }
+  const scope = eventScopeFilter(user, { eventAlias: alias || '' });
+  if (scope.where) {
+    clauses.push(scope.where.replace(/^\s*AND\s+/i, ''));
+    params.push(...scope.params);
   }
   return { sql: clauses.length ? ` WHERE ${clauses.join(' AND ')}` : '', params };
 }
@@ -65,7 +71,7 @@ function isRiskExempt(status) {
 
 export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null, user = null } = {}) {
   const like = `%${search}%`;
-  const ef = eventFilter({ from, to, termId });
+  const ef = eventFilter({ from, to, termId, user });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const seriesNames = await seriesNameMap();
   const scope = scopeStudents(user, 's');
@@ -235,17 +241,22 @@ export async function buildCompliance({ search = '', course = '', termId = null,
 // week / month), each with status counts and an attendance rate computed over
 // decided slots (present + excused + absent) so future/open events don't drag
 // the line down.
-export async function buildTrends({ from = '', to = '', termId = null, course = '', granularity = 'day' } = {}) {
-  const ef = eventFilter({ from, to, termId });
+export async function buildTrends({ from = '', to = '', termId = null, course = '', granularity = 'day', user = null } = {}) {
+  const ef = eventFilter({ from, to, termId, user });
   const events = await all(
     `SELECT ${EVENT_COLS} FROM events${ef.sql} ORDER BY event_date, start_time`,
     ef.params
   );
   const seriesNames = await seriesNameMap();
 
+  const sScope = scopeStudents(user, 's');
   const students = await all(
-    `SELECT id FROM students WHERE (? = '' OR course = ?)`,
-    [course, course]
+    `SELECT s.id FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE (? = '' OR s.course = ?) ${sScope.where}`,
+    [course, course, ...sScope.params]
   );
   const studentIds = new Set(students.map((s) => s.id));
   const totalStudents = studentIds.size;

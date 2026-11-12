@@ -93,6 +93,21 @@ export function studentScopeFilter(user, opts = {}) {
   };
 }
 
+// Returns an event-scope filter for staff users.
+// Admins/unassigned staff are unrestricted. Scoped staff only see events tagged
+// to their assigned department/program (unscoped legacy events are hidden).
+export function eventScopeFilter(user, opts = {}) {
+  const alias = opts.eventAlias ? `${opts.eventAlias}.` : '';
+  if (!user || user.role === 'admin') return { where: '', params: [], scoped: false };
+  const departmentId = Number(user.departmentId || 0);
+  const programId = Number(user.programId || 0);
+  if (!departmentId && !programId) return { where: '', params: [], scoped: false };
+  if (programId) {
+    return { where: ` AND ${alias}program_id = ? `, params: [programId], scoped: true, departmentId: departmentId || null, programId };
+  }
+  return { where: ` AND ${alias}department_id = ? `, params: [departmentId], scoped: true, departmentId, programId: null };
+}
+
 export function isStudentVisibleToUser(user, student = {}) {
   const scope = studentScopeFilter(user);
   if (!scope.scoped) return true;

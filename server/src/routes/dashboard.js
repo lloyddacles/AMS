@@ -5,7 +5,7 @@ import { displayStatus, todayInTz } from '../classify.js';
 import { buildAtRisk, buildOverview } from '../services/reports.js';
 import { maybeRunAutomation } from '../services/automation.js';
 import { buildDailyBriefing } from '../services/briefing.js';
-import { studentScopeFilter } from '../services/academic.js';
+import { studentScopeFilter, eventScopeFilter } from '../services/academic.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -84,6 +84,7 @@ function buildCurrentMonthWeeklyTrend(eventsInMonth, monthStartYmd, monthEndYmd,
 router.get('/stats', async (req, res) => {
   await maybeRunAutomation().catch(() => {});
   const scope = studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+  const eScope = eventScopeFilter(req.user, { eventAlias: 'e' });
   const studentRows = await all(
     `SELECT s.id FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
@@ -95,15 +96,34 @@ router.get('/stats', async (req, res) => {
   const scopedIds = studentRows.map((r) => r.id);
   const scopedIdSet = new Set(scopedIds);
   const totalStudents = scopedIds.length;
-  const totalEvents = (await get('SELECT COUNT(*) AS c FROM events')).c;
+  const totalEventsRow = await get(`SELECT COUNT(*) AS c FROM events e WHERE 1=1 ${eScope.where}`, eScope.params);
+  const totalEvents = Number(totalEventsRow?.c || 0);
+
   const inClause = scopedIds.length ? `AND a.student_id IN (${scopedIds.map(() => '?').join(',')})` : 'AND 1=0';
   const totalRecords = scopedIds.length
-    ? (await get(`SELECT COUNT(*) AS c FROM attendance a WHERE a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL} ${inClause}`, scopedIds)).c
+    ? (await get(
+        `SELECT COUNT(*) AS c
+         FROM attendance a
+         JOIN events e ON e.id = a.event_id
+         WHERE a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL} ${inClause} ${eScope.where}`,
+        [...scopedIds, ...eScope.params]
+      )).c
     : 0;
 
-  const events = await all('SELECT id, event_date AS eventDate, start_time AS startTime, end_time AS endTime FROM events');
-  const records = scopedIds.length
-    ? await all(`SELECT event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt FROM attendance WHERE student_id IN (${scopedIds.map(() => '?').join(',')})`, scopedIds)
+  const events = await all(
+    `SELECT e.id, e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime
+     FROM events e WHERE 1=1 ${eScope.where}`,
+    eScope.params
+  );
+  const scopedEventIds = events.map((e) => e.id);
+  const records = (scopedIds.length && scopedEventIds.length)
+    ? await all(
+        `SELECT a.event_id AS eventId, a.student_id AS studentId, a.status, a.method, a.checked_in_at AS checkedInAt
+         FROM attendance a
+         WHERE a.student_id IN (${scopedIds.map(() => '?').join(',')})
+           AND a.event_id IN (${scopedEventIds.map(() => '?').join(',')})`,
+        [...scopedIds, ...scopedEventIds]
+      )
     : [];
   const eventById = new Map(events.map((e) => [e.id, e]));
   const counts = { early: 0, 'on-time': 0, late: 0, absent: 0, excused: 0 };
@@ -126,7 +146,9 @@ router.get('/stats', async (req, res) => {
 
   const recentEventsRaw = await all(
     `SELECT e.id, e.name, e.event_date AS eventDate
-     FROM events e ORDER BY e.event_date DESC, e.id DESC LIMIT 5`
+     FROM events e WHERE 1=1 ${eScope.where}
+     ORDER BY e.event_date DESC, e.id DESC LIMIT 5`,
+    eScope.params
   );
   const recentIds = recentEventsRaw.map((e) => e.id);
   const recentAttendedRows = (scopedIds.length && recentIds.length)
@@ -150,13 +172,16 @@ router.get('/stats', async (req, res) => {
 
   const today = todayInTz();
   const { startYmd: monthStartYmd, endYmd: monthEndYmd, daysInMonth, month, year } = monthBounds(today);
+  const attendedSub = scopedIds.length
+    ? `(SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.student_id IN (${scopedIds.map(() => '?').join(',')}) AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL})`
+    : `0`;
   const monthEvents = await all(
     `SELECT e.id, e.name, e.event_date AS eventDate,
-            (SELECT COUNT(*) FROM attendance a WHERE a.event_id = e.id AND a.status IN ${ATTENDED_SQL} AND ${ON_LIST_SQL}) AS attended
+            ${attendedSub} AS attended
      FROM events e
-     WHERE e.event_date >= ? AND e.event_date <= ?
+     WHERE e.event_date >= ? AND e.event_date <= ? ${eScope.where}
      ORDER BY e.event_date ASC, e.start_time ASC, e.id ASC`,
-    [monthStartYmd, monthEndYmd]
+    [...(scopedIds.length ? scopedIds : []), monthStartYmd, monthEndYmd, ...eScope.params]
   );
   const trend = buildCurrentMonthWeeklyTrend(monthEvents, monthStartYmd, monthEndYmd, daysInMonth);
   const monthLabel = new Date(Date.UTC(year, month - 1, 1)).toLocaleDateString('en-US', { month: 'long', year: 'numeric', timeZone: 'UTC' });
@@ -213,7 +238,8 @@ router.get('/stats', async (req, res) => {
     topAttendees = [];
   }
 
-  const totalExclusionsScoped = exclusions.filter((x) => scopedIdSet.has(x.studentId)).length;
+  const scopedEventIdSet = new Set(scopedEventIds);
+  const totalExclusionsScoped = exclusions.filter((x) => scopedIdSet.has(x.studentId) && scopedEventIdSet.has(x.eventId)).length;
   // Every student × event slot except the ones taken off an attendee list.
   const expectedSlots = Math.max(0, totalStudents * totalEvents - totalExclusionsScoped);
 

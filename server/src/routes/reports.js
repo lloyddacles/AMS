@@ -77,7 +77,7 @@ router.get('/trends', async (req, res) => {
 
 // Event × student matrix of classifications.
 router.get('/matrix', async (req, res) => {
-  const ef = eventFilter(rangeFilters(req.query));
+  const ef = eventFilter({ ...rangeFilters(req.query), user: req.user });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
@@ -152,15 +152,25 @@ router.get('/export', async (req, res) => {
 
   if (type === 'event') {
     if (!eventId) return res.status(400).json({ error: 'eventId is required' });
-    const event = await get(`SELECT ${EVENT_COLS} FROM events WHERE id = ?`, [eventId]);
+    const { eventScopeFilter } = await import('../services/academic.js');
+    const eScope = eventScopeFilter(req.user, { eventAlias: '' });
+    const event = await get(`SELECT ${EVENT_COLS} FROM events WHERE id = ? ${eScope.where}`, [eventId, ...eScope.params]);
     if (!event) return res.status(404).json({ error: 'Event not found' });
     const records = await all(
       `SELECT ${RECORD_COLS}, note, checked_out_at AS checkedOutAt FROM attendance WHERE event_id = ?`,
       [event.id]
     );
     const byStudent = new Map(records.map((r) => [r.studentId, r]));
+    const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
     const students = await all(
-      'SELECT id, student_no, first_name, last_name, course, year_level FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
+      `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level
+       FROM students s
+       LEFT JOIN programs p ON p.id = s.program_id
+       LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+       ${scope.join}
+       WHERE 1=1 ${scope.where}
+       ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+      scope.params
     );
     const cutoff = absentCutoff(event);
     const windowPassed = cutoff ? new Date() > cutoff : false;
@@ -187,10 +197,18 @@ router.get('/export', async (req, res) => {
   }
 
   if (type === 'matrix') {
-    const ef = eventFilter(range);
+    const ef = eventFilter({ ...range, user: req.user });
     const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
+    const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
     const students = await all(
-      'SELECT id, student_no, first_name, last_name FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
+      `SELECT s.id, s.student_no, s.first_name, s.last_name
+       FROM students s
+       LEFT JOIN programs p ON p.id = s.program_id
+       LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+       ${scope.join}
+       WHERE 1=1 ${scope.where}
+       ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+      scope.params
     );
     const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
     const eventById = new Map(events.map((e) => [e.id, e]));

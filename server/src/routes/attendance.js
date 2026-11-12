@@ -14,8 +14,14 @@ import {
   todayInTz,
   eventPhase,
 } from '../classify.js';
+import { eventScopeFilter } from '../services/academic.js';
 
 const router = Router();
+
+async function getScopedEvent(eventId, user) {
+  const scope = eventScopeFilter(user, { eventAlias: '' });
+  return get(`SELECT * FROM events WHERE id = ? ${scope.where}`, [eventId, ...scope.params]);
+}
 
 const selectFields = `a.id, a.event_id AS eventId, a.student_id AS studentId, a.status,
   a.method, a.note, a.checked_in_at AS checkedInAt, a.checked_out_at AS checkedOutAt,
@@ -270,7 +276,7 @@ router.get('/today', async (req, res) => {
 // Full attendance view for an event: every student, classified. Students with
 // no time-in are marked absent once the absence window (start + 60 min) passes.
 router.get('/event/:eventId', async (req, res) => {
-  const event = await get('SELECT * FROM events WHERE id = ?', [req.params.eventId]);
+  const event = await getScopedEvent(req.params.eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const records = await all(
     `SELECT ${selectFields} FROM attendance a JOIN students s ON s.id = a.student_id WHERE a.event_id = ?`,
@@ -331,7 +337,7 @@ router.get('/event/:eventId', async (req, res) => {
 // Resolve a scanned QR for the scanner UI (preview before committing).
 router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
   const { eventId, qrToken } = req.body;
-  const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
+  const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
   const student = await get(
@@ -385,7 +391,7 @@ router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
 // QR scan check-in: the scanned QR text is the student's qr_token.
 router.post('/scan', validate(schemas.scan), async (req, res) => {
   const { eventId, qrToken, confirmValue, scannedAt, clientScanId } = req.body;
-  const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
+  const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   if (event.status !== 'active' && !scannedAt) {
     return res.status(400).json({ error: 'Check-in for this event is closed' });
@@ -418,7 +424,7 @@ router.post('/scan/batch', validate(schemas.scanBatch), async (req, res) => {
   for (const item of scans) {
     const clientScanId = normalizeClientScanId(item?.clientScanId);
     try {
-      const event = await get('SELECT * FROM events WHERE id = ?', [item?.eventId]);
+      const event = await getScopedEvent(item?.eventId, req.user);
       if (!event) {
         results.push({ clientScanId, ok: false, error: 'Event not found' });
         continue;
@@ -476,7 +482,7 @@ router.post('/', validate(schemas.manualAttendance), async (req, res) => {
   if (status === 'excused' && !String(note || '').trim()) {
     return res.status(400).json({ error: 'A reason is required when marking a student excused' });
   }
-  const event = await get('SELECT id FROM events WHERE id = ?', [eventId]);
+  const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const student = await get('SELECT id FROM students WHERE id = ?', [studentId]);
   if (!student) return res.status(404).json({ error: 'Student not found' });
