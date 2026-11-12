@@ -2,13 +2,14 @@ import { APP_NAME, APP_TAGLINE, AUTHOR, IDE, TECH_STACK } from '../meta.js';
 import PageHeader from '../components/PageHeader.jsx';
 
 const FEATURES = [
-  'QR code check-in for fast, contactless attendance at events.',
-  'Automatic time-in / time-out tracking, classified as Early, On-time, Late, or Absent.',
-  'Classification: early before the start, on-time within 10 minutes of start, late within 60 minutes, absent beyond that or with no scan. Time-out opens 30 minutes before the event ends.',
-  'Printable student ID cards with QR codes (85.6 × 54 mm, CR80).',
-  'Bulk student import from CSV and printable QR sheets.',
-  'Dashboards and reports with CSV export.',
-  'Secure JWT authentication with hashed passwords.',
+  'QR code check-in for fast, contactless attendance at events with automatic time-in/time-out tracking (Early, On-time, Late, Absent).',
+  'Printable student ID cards with QR codes (85.6 × 54 mm, CR80), printable QR sheets, and bulk student import from CSV.',
+  'Student management with status tracking (Active, Inactive, Deceased, Dropped, LOA, Regular, Irregular) to keep records accurate.',
+  'Dashboards for essential attendance summaries, plus detailed Reports & Insights with visual charts, trend views (daily/weekly/monthly), and PDF export.',
+  'Intervention tracking for students flagged for excessive absences or tardiness (including consecutive and accumulated cases), with proof of actions taken.',
+  'Cause categories and details (medical, family, and other concerns) to better understand attendance issues and support CARES reporting.',
+  'AI-assisted, simple-English suggestions for cause details, intervention actions, and auto-generated intervention summaries for easier documentation.',
+  'Secure authentication, role-based access, audit-friendly records, and CSV export for reporting.',
 ];
 
 export default function About() {
