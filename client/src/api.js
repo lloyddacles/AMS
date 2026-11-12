@@ -134,6 +134,7 @@ export const api = {
   closeEvent: (id) => request(`/events/${id}/close`, { method: 'POST' }),
   reopenEvent: (id) => request(`/events/${id}/reopen`, { method: 'POST' }),
   bulkEvents: (ids, action) => request('/events/bulk', { method: 'POST', body: { ids, action } }),
+  bulkSetEventScope: (ids, data) => request('/events/bulk-scope', { method: 'POST', body: { ids, ...data } }),
 
   getEventAttendance: (eventId) => request(`/attendance/event/${eventId}`),
   getTodayAttendance: () => request('/attendance/today'),

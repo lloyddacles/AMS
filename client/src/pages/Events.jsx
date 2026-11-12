@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import { phaseOf, EVENT_PHASES } from '../eventStatus.js';
 import { useDialog } from '../dialogs.jsx';
 import Modal from '../components/Modal.jsx';
@@ -19,6 +20,8 @@ const emptyForm = {
   requireStudentConfirm: false,
   autoConfirm: false,
   termId: '',
+  departmentId: '',
+  programId: '',
 };
 
 function formatEventTime(t) {
@@ -61,10 +64,13 @@ function generateEventDescription(form) {
 
 export default function Events() {
   const { confirm, notify } = useDialog();
+  const { user } = useAuth();
+  const isAdmin = user?.role === 'admin';
   const [events, setEvents] = useState([]);
   const [archivedEvents, setArchivedEvents] = useState([]);
   const [view, setView] = useState('events');
   const [terms, setTerms] = useState([]);
+  const [academic, setAcademic] = useState({ departments: [], programs: [] });
   const [termFilter, setTermFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -74,18 +80,21 @@ export default function Events() {
   const [formError, setFormError] = useState('');
   const [selected, setSelected] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [scopeModal, setScopeModal] = useState(null); // { departmentId, programId, saving, error }
 
   async function load() {
     setLoading(true);
     try {
-      const [evs, archs, tms] = await Promise.all([
+      const [evs, archs, tms, acad] = await Promise.all([
         api.getEvents(),
         api.getEvents(undefined, { archived: 1 }),
         api.getTerms(),
+        api.getAcademicStructure().catch(() => ({ departments: [], programs: [] })),
       ]);
       setEvents(evs);
       setArchivedEvents(archs);
       setTerms(tms);
+      setAcademic(acad || { departments: [], programs: [] });
       setError('');
     } catch (e) {
       setError(e.message);
@@ -102,7 +111,12 @@ export default function Events() {
     setEditing({});
     setView('events');
     const current = terms.find((t) => Number(t.isCurrent) === 1);
-    setForm({ ...emptyForm, termId: current ? String(current.id) : '' });
+    setForm({
+      ...emptyForm,
+      termId: current ? String(current.id) : '',
+      departmentId: !isAdmin && user?.departmentId ? String(user.departmentId) : '',
+      programId: !isAdmin && user?.programId ? String(user.programId) : '',
+    });
     setFormError('');
   }
 
@@ -119,6 +133,8 @@ export default function Events() {
       requireStudentConfirm: !!ev.requireStudentConfirm,
       autoConfirm: !!ev.autoConfirm,
       termId: ev.termId ? String(ev.termId) : '',
+      departmentId: ev.departmentId ? String(ev.departmentId) : '',
+      programId: ev.programId ? String(ev.programId) : '',
     });
     setFormError('');
   }
@@ -128,7 +144,12 @@ export default function Events() {
     setSaving(true);
     setFormError('');
     try {
-      const payload = { ...form, termId: form.termId ? Number(form.termId) : null };
+      const payload = {
+        ...form,
+        termId: form.termId ? Number(form.termId) : null,
+        departmentId: form.departmentId ? Number(form.departmentId) : null,
+        programId: form.programId ? Number(form.programId) : null,
+      };
       if (editing?.id) await api.updateEvent(editing.id, payload);
       else await api.createEvent(payload);
       const wasEdit = Boolean(editing?.id);
@@ -252,6 +273,31 @@ export default function Events() {
     });
   }
 
+  const scopePrograms = (deptId) => {
+    const did = Number(deptId || 0);
+    if (!did) return academic.programs || [];
+    return (academic.programs || []).filter((p) => Number(p.departmentId) === did);
+  };
+
+  async function saveBulkScope(e) {
+    e.preventDefault();
+    if (!scopeModal) return;
+    setScopeModal((m) => ({ ...m, saving: true, error: '' }));
+    try {
+      const ids = [...selected];
+      const res = await api.bulkSetEventScope(ids, {
+        departmentId: scopeModal.departmentId || null,
+        programId: scopeModal.programId || null,
+      });
+      setScopeModal(null);
+      setSelected(new Set());
+      await load();
+      await notify({ title: 'Event scope updated', message: `Updated scope for ${res.updated || ids.length} event(s).` });
+    } catch (err) {
+      setScopeModal((m) => m ? ({ ...m, saving: false, error: err.message || 'Unable to update event scope.' }) : m);
+    }
+  }
+
   const activeCount = events.filter((e) => e.status === 'active').length;
   const recurringCount = events.filter((e) => e.scheduleId).length;
   const seriesCount = events.filter((e) => e.seriesId).length;
@@ -324,6 +370,11 @@ export default function Events() {
                   </button>
                   <button className="btn btn-sm" onClick={() => runBulk('reopen')} disabled={bulkBusy}>Reopen</button>
                   <button className="btn btn-sm" onClick={() => runBulk('archive')} disabled={bulkBusy}>Archive</button>
+                  {isAdmin && (
+                    <button className="btn btn-sm" onClick={() => setScopeModal({ departmentId: '', programId: '', saving: false, error: '' })} disabled={bulkBusy}>
+                      Set scope
+                    </button>
+                  )}
                 </>
               )}
               <button className="btn btn-sm btn-ghost-light" onClick={() => setSelected(new Set())} disabled={bulkBusy}>Clear</button>
@@ -386,6 +437,11 @@ export default function Events() {
                 </div>
                 <div className="event-tag-row">
                   {ev.termName && <span className="pill pill-purple">{ev.termName}</span>}
+                  {(ev.departmentName || ev.programName) && (
+                    <span className="pill pill-blue" title={[ev.departmentName, ev.programName].filter(Boolean).join(' · ')}>
+                      {ev.programName || ev.departmentName}
+                    </span>
+                  )}
                   {ev.requireStudentConfirm && <span className="pill pill-blue">Kiosk · ID</span>}
                   {ev.seriesId && Number(ev.seriesDayCount) > 0 && (
                     <span className="pill pill-blue">{ev.seriesName || 'Series'} · {ev.seriesDayCount} day{Number(ev.seriesDayCount) === 1 ? '' : 's'}</span>
@@ -551,6 +607,53 @@ export default function Events() {
             </section>
 
             {formError && <div className="alert alert-error">{formError}</div>}
+          </form>
+        </Modal>
+      )}
+
+      {scopeModal && (
+        <Modal
+          title="Set event scope"
+          onClose={() => !scopeModal.saving && setScopeModal(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setScopeModal(null)} disabled={scopeModal.saving}>Cancel</button>
+              <button className="btn btn-primary" onClick={saveBulkScope} disabled={scopeModal.saving}>
+                {scopeModal.saving ? 'Saving…' : `Apply to ${selected.size} event${selected.size === 1 ? '' : 's'}`}
+              </button>
+            </>
+          }
+        >
+          <form className="form" onSubmit={saveBulkScope}>
+            <p className="muted small" style={{ marginTop: 0 }}>
+              Assign selected events to a department/program. Scoped staff will only see events in their own assigned scope. Leave blank to make events global (visible to admin and unassigned staff).
+            </p>
+            <label>
+              Department
+              <select
+                value={scopeModal.departmentId}
+                onChange={(e) => {
+                  const did = e.target.value;
+                  const ok = scopePrograms(did).some((p) => String(p.id) === String(scopeModal.programId));
+                  setScopeModal((m) => ({ ...m, departmentId: did, programId: ok ? m.programId : '' }));
+                }}
+              >
+                <option value="">All departments (global)</option>
+                {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+              </select>
+            </label>
+            <label>
+              Program
+              <select
+                value={scopeModal.programId}
+                disabled={!scopeModal.departmentId}
+                onChange={(e) => setScopeModal((m) => ({ ...m, programId: e.target.value }))}
+              >
+                <option value="">{scopeModal.departmentId ? 'All programs in department' : 'Select a department first'}</option>
+                {scopePrograms(scopeModal.departmentId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </select>
+            </label>
+            {scopeModal.error && <div className="alert alert-error">{scopeModal.error}</div>}
           </form>
         </Modal>
       )}
