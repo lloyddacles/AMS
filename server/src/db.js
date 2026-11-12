@@ -259,6 +259,25 @@ const SCHEMA = `
     last_generated_date TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
+
+  -- Documented interventions/follow-up actions for students flagged due to
+  -- excessive absences/tardiness (proof for reporting, e.g. CARES).
+  CREATE TABLE IF NOT EXISTS student_interventions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    intervention_date TEXT NOT NULL,
+    flagged_triggers TEXT,
+    cause_category TEXT,
+    cause_details TEXT,
+    action_taken TEXT NOT NULL,
+    summary TEXT,
+    status TEXT NOT NULL DEFAULT 'recorded',
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_by_name TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_interventions_student ON student_interventions(student_id, created_at);
 `;
 
 // Lightweight migrations for databases created before a column existed.
@@ -341,6 +360,7 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_events_schedule ON events(schedule_id);
     CREATE INDEX IF NOT EXISTS idx_events_series ON events(series_id);
     CREATE INDEX IF NOT EXISTS idx_schedules_term ON schedules(term_id);
+    CREATE INDEX IF NOT EXISTS idx_interventions_student ON student_interventions(student_id, created_at);
   `);
   // Record baseline/phase migrations so readiness checks can report status.
   for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms']) {

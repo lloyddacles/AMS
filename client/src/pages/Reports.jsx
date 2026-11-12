@@ -10,6 +10,7 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 import RiskExplainer from '../components/RiskExplainer.jsx';
+import Modal from '../components/Modal.jsx';
 import { buildReportInsights } from '../utils/reportInsights.js';
 
 const SUMMARY_COLUMNS = [
@@ -64,7 +65,7 @@ export default function Reports() {
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
   const initialView = params.get('view');
-  const [view, setView] = useState(['at-risk', 'matrix', 'trends', 'compliance'].includes(initialView) ? initialView : 'summary');
+  const [view, setView] = useState(['at-risk', 'matrix', 'trends', 'compliance', 'interventions'].includes(initialView) ? initialView : 'summary');
   const [search, setSearch] = useState('');
   const [course, setCourse] = useState('');
   const [from, setFrom] = useState(params.get('from') || '');
@@ -88,6 +89,8 @@ export default function Reports() {
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [visualTrends, setVisualTrends] = useState(null);
   const [visualGranularity, setVisualGranularity] = useState('day');
+  const [interventionData, setInterventionData] = useState(null);
+  const [interventionModal, setInterventionModal] = useState(null); // { student, form, history, saving, generating, error }
   const chartRefs = {
     status: useRef(null),
     distribution: useRef(null),
@@ -187,6 +190,17 @@ export default function Reports() {
   }, [view, course, granularity, from, to, termId]);
 
   useEffect(() => {
+    if (view !== 'interventions') return undefined;
+    const t = setTimeout(() => {
+      api
+        .getInterventionFlags({ search, course })
+        .then(setInterventionData)
+        .catch((e) => setError(e.message));
+    }, 250);
+    return () => clearTimeout(t);
+  }, [view, search, course]);
+
+  useEffect(() => {
     setParams((prev) => {
       const next = new URLSearchParams(prev);
       if (view === 'summary') next.delete('view');
@@ -220,6 +234,7 @@ export default function Reports() {
     trends: 'Track attendance movement over time to spot improvement, decline, and patterns.',
     'at-risk': 'Prioritize students below threshold with explainable risk signals and intervention drivers.',
     compliance: 'See who meets or misses the required attendance minimum and what recovery is needed.',
+    interventions: 'Flag excessive absences/tardiness, record proof of interventions, identify possible causes, and generate CARES-ready summaries.',
   };
 
   const sortedStudents = useMemo(() => {
@@ -382,6 +397,70 @@ export default function Reports() {
     termId ? `Term: ${terms.find((t) => String(t.id) === String(termId))?.name || termId}` : null,
   ].filter(Boolean);
 
+  async function openInterventionModal(student) {
+    const today = new Date().toISOString().slice(0, 10);
+    setInterventionModal({
+      student,
+      history: null,
+      loading: true,
+      saving: false,
+      generating: false,
+      error: '',
+      form: {
+        interventionDate: today,
+        causeCategory: '',
+        causeDetails: '',
+        actionTaken: '',
+        summary: '',
+      },
+    });
+    try {
+      const data = await api.getStudentInterventions(student.id);
+      setInterventionModal((m) => (m && m.student.id === student.id ? { ...m, history: data, loading: false } : m));
+    } catch (e) {
+      setInterventionModal((m) => (m && m.student.id === student.id ? { ...m, loading: false, error: e.message } : m));
+    }
+  }
+
+  async function generateInterventionDraft() {
+    if (!interventionModal) return;
+    setInterventionModal((m) => ({ ...m, generating: true, error: '' }));
+    try {
+      const draft = await api.generateInterventionSummary(interventionModal.student.id, interventionModal.form);
+      setInterventionModal((m) => (m ? { ...m, generating: false, form: { ...m.form, summary: draft.summary || m.form.summary } } : m));
+    } catch (e) {
+      setInterventionModal((m) => (m ? { ...m, generating: false, error: e.message } : m));
+    }
+  }
+
+  async function saveInterventionRecord(e) {
+    e.preventDefault();
+    if (!interventionModal) return;
+    setInterventionModal((m) => ({ ...m, saving: true, error: '' }));
+    try {
+      await api.createIntervention({
+        studentId: interventionModal.student.id,
+        interventionDate: interventionModal.form.interventionDate,
+        causeCategory: interventionModal.form.causeCategory,
+        causeDetails: interventionModal.form.causeDetails,
+        actionTaken: interventionModal.form.actionTaken,
+      });
+      const [history, refreshed] = await Promise.all([
+        api.getStudentInterventions(interventionModal.student.id),
+        api.getInterventionFlags({ search, course }).catch(() => null),
+      ]);
+      if (refreshed) setInterventionData(refreshed);
+      setInterventionModal((m) => (m ? {
+        ...m,
+        saving: false,
+        history,
+        form: { ...m.form, actionTaken: '', causeDetails: '', summary: '' },
+      } : m));
+    } catch (err) {
+      setInterventionModal((m) => (m ? { ...m, saving: false, error: err.message } : m));
+    }
+  }
+
   const statusChartData = useMemo(() => {
     if (!overview) return [];
     const totals = { Early: 0, 'On-time': 0, Late: 0, Excused: 0, Absent: 0 };
@@ -523,12 +602,13 @@ export default function Reports() {
         <button className={view === 'trends' ? 'active' : ''} onClick={() => setView('trends')}>Trends</button>
         <button className={view === 'at-risk' ? 'active' : ''} onClick={() => setView('at-risk')}>At-Risk</button>
         <button className={view === 'compliance' ? 'active' : ''} onClick={() => setView('compliance')}>Compliance</button>
+        <button className={view === 'interventions' ? 'active' : ''} onClick={() => setView('interventions')}>Interventions</button>
       </div>
 
       {error && <div className="alert alert-error">{error}</div>}
 
       <div className="toolbar report-filters filter-bar reports-filter-bar">
-        {(view === 'summary' || view === 'at-risk' || view === 'compliance') && (
+        {(view === 'summary' || view === 'at-risk' || view === 'compliance' || view === 'interventions') && (
           <>
             <input className="search" placeholder="Search students, numbers, courses…" value={search} onChange={(e) => setSearch(e.target.value)} />
             <select value={course} onChange={(e) => setCourse(e.target.value)}>
@@ -1207,6 +1287,214 @@ export default function Reports() {
             </>
           )}
         </>
+      )}
+
+      {view === 'interventions' && (
+        <>
+          {!interventionData ? (
+            <div className="card"><Spinner label="Loading intervention flags…" size="lg" variant="panel" /></div>
+          ) : (
+            <>
+              <div className="stat-grid">
+                <StatCard icon="alert" accent="amber" label="Flagged for intervention" value={interventionData.students.length} hint="Excessive absences/tardiness or at-risk" />
+                <StatCard icon="users" accent="blue" label="High priority" value={interventionData.students.filter((s) => s.flags?.priority === 'High').length} hint="3 consecutive or high accumulation" />
+                <StatCard icon="check" accent="green" label="With recorded intervention" value={interventionData.students.filter((s) => s.latestIntervention).length} hint="Proof/action documented" />
+                <StatCard icon="shield" accent="purple" label="Needs documentation" value={interventionData.students.filter((s) => !s.latestIntervention).length} hint="No intervention record yet" />
+              </div>
+
+              <div className="card">
+                <div className="card-head">
+                  <h3>Intervention flagging rules</h3>
+                </div>
+                <p className="muted small" style={{ marginTop: 0 }}>
+                  Students are flagged for intervention when there are <strong>3 consecutive absences</strong>, <strong>3 consecutive lates</strong>, or <strong>accumulated excessive absences/tardiness</strong> (e.g. many total absences/lates).
+                  Record what you did, identify possible causes (medical, family, or other issues), and generate an AI-assisted summary for easier CARES reporting.
+                </p>
+              </div>
+
+              <div className="card table-card">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th>Student</th>
+                      <th>Course</th>
+                      <th className="num">Rate</th>
+                      <th className="num">Absent</th>
+                      <th className="num">Late</th>
+                      <th>Flag triggers</th>
+                      <th>Last intervention</th>
+                      <th className="right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {interventionData.students.length === 0 && (
+                      <tr><td colSpan={8} className="muted center">No students currently flagged for intervention based on the rules.</td></tr>
+                    )}
+                    {interventionData.students.map((s) => (
+                      <tr key={s.id}>
+                        <td>
+                          <div className="strong">{s.name}</div>
+                          <div className="muted small mono">{s.studentNo}</div>
+                        </td>
+                        <td>{s.course || '—'}</td>
+                        <td className="num">
+                          <div className="rate-wrap">
+                            <div className={`rate-bar ${Number(s.rate) < 75 ? 'danger' : ''}`}><span style={{ width: `${s.rate}%` }} /></div>
+                            <span className="rate-label">{s.rate}%</span>
+                          </div>
+                        </td>
+                        <td className="num">{s.absent}{s.streak >= 3 ? <div className="muted small">Streak: {s.streak}</div> : null}</td>
+                        <td className="num">{s.late}{s.lateStreak >= 3 ? <div className="muted small">Streak: {s.lateStreak}</div> : null}</td>
+                        <td>
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.35rem' }}>
+                            {(s.flags?.triggers || []).map((t, i) => (
+                              <span key={i} className={`pill ${t.priority === 'High' ? 'pill-red' : 'pill-amber'}`}>{t.label}</span>
+                            ))}
+                          </div>
+                        </td>
+                        <td>
+                          {s.latestIntervention ? (
+                            <div>
+                              <div className="small strong">{s.latestIntervention.interventionDate || 'Recorded'}</div>
+                              <div className="muted small">{s.latestIntervention.causeCategory || 'Cause not set'}</div>
+                            </div>
+                          ) : (
+                            <span className="pill pill-gray">None yet</span>
+                          )}
+                        </td>
+                        <td className="right actions">
+                          <button className="btn btn-sm btn-primary" onClick={() => openInterventionModal(s)}>Record / View</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                <div className="muted small" style={{ padding: '0.75rem 1rem' }}>
+                  Flagged students: {interventionData.students.length}. Interventions serve as proof of follow-up and can support CARES reporting.
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {interventionModal && (
+        <Modal
+          wide
+          title={`Intervention — ${interventionModal.student.name}`}
+          onClose={() => setInterventionModal(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setInterventionModal(null)}>Close</button>
+              <button className="btn btn-primary" onClick={saveInterventionRecord} disabled={interventionModal.saving}>
+                {interventionModal.saving ? 'Saving…' : 'Save intervention (proof)'}
+              </button>
+            </>
+          }
+        >
+          <div className="form event-form">
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Why flagged</h4>
+                <p className="muted small">System-detected attendance concerns for this student.</p>
+              </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.4rem' }}>
+                {(interventionModal.student.flags?.triggers || []).map((t, i) => (
+                  <span key={i} className={`pill ${t.priority === 'High' ? 'pill-red' : 'pill-amber'}`}>{t.label}</span>
+                ))}
+                {!interventionModal.student.flags?.triggers?.length && <span className="muted small">No specific triggers listed.</span>}
+              </div>
+              <div className="muted small" style={{ marginTop: '0.5rem' }}>
+                Absences: {interventionModal.student.absent} (streak {interventionModal.student.streak || 0}) · Lates: {interventionModal.student.late} (streak {interventionModal.student.lateStreak || 0}) · Rate: {interventionModal.student.rate}% · Risk: {interventionModal.student.risk}%
+              </div>
+            </section>
+
+            <form className="event-form-section" onSubmit={saveInterventionRecord}>
+              <div className="event-form-section-head">
+                <h4>Record intervention (proof)</h4>
+                <p className="muted small">Document the action taken and possible cause to help with follow-up and CARES reporting.</p>
+              </div>
+              <div className="form grid-form">
+                <label>
+                  <span>Intervention date</span>
+                  <input
+                    type="date"
+                    value={interventionModal.form.interventionDate}
+                    onChange={(e) => setInterventionModal((m) => ({ ...m, form: { ...m.form, interventionDate: e.target.value } }))}
+                  />
+                </label>
+                <label>
+                  <span>Possible cause / issue</span>
+                  <select
+                    value={interventionModal.form.causeCategory}
+                    onChange={(e) => setInterventionModal((m) => ({ ...m, form: { ...m.form, causeCategory: e.target.value } }))}
+                  >
+                    <option value="">Select a cause (helps understand context)</option>
+                    {(interventionData?.causeCategories || []).map((c) => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </label>
+                <label className="span-2">
+                  <span>Cause details (optional)</span>
+                  <textarea
+                    rows={2}
+                    value={interventionModal.form.causeDetails}
+                    onChange={(e) => setInterventionModal((m) => ({ ...m, form: { ...m.form, causeDetails: e.target.value } }))}
+                    placeholder="e.g. Medical certificate provided, family emergency, transportation issues, etc."
+                  />
+                </label>
+                <label className="span-2">
+                  <span>Intervention / action taken (proof) <span className="req">*</span></span>
+                  <textarea
+                    rows={3}
+                    value={interventionModal.form.actionTaken}
+                    onChange={(e) => setInterventionModal((m) => ({ ...m, form: { ...m.form, actionTaken: e.target.value } }))}
+                    placeholder="What did you do? (e.g. called guardian, met with student, referred to CARES/counselor, agreed on attendance plan)"
+                    required
+                  />
+                </label>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                <button type="button" className="btn btn-sm" onClick={generateInterventionDraft} disabled={interventionModal.generating}>
+                  {interventionModal.generating ? 'Generating…' : 'Generate AI summary'}
+                </button>
+                <span className="muted small" style={{ alignSelf: 'center' }}>Auto-generates a CARES-ready summary from flags, cause, and your action.</span>
+              </div>
+              {interventionModal.form.summary && (
+                <div className="card" style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#f8fafc' }}>
+                  <div className="strong small" style={{ marginBottom: '0.25rem' }}>Generated summary preview</div>
+                  <div className="small" style={{ whiteSpace: 'pre-wrap' }}>{interventionModal.form.summary}</div>
+                </div>
+              )}
+              {interventionModal.error && <div className="alert alert-error" style={{ marginTop: '0.75rem' }}>{interventionModal.error}</div>}
+            </form>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Intervention history (proof records)</h4>
+                <p className="muted small">Previously recorded actions for this student.</p>
+              </div>
+              {interventionModal.loading ? (
+                <div className="muted small">Loading history…</div>
+              ) : !(interventionModal.history?.interventions || []).length ? (
+                <div className="muted small">No interventions recorded yet.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: '0.6rem' }}>
+                  {interventionModal.history.interventions.map((i) => (
+                    <div key={i.id} className="card" style={{ padding: '0.7rem 0.85rem', boxShadow: 'none', border: '1px solid #e5e7eb' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', flexWrap: 'wrap' }}>
+                        <div className="strong small">{i.interventionDate} · {i.causeCategory || 'Cause not specified'}</div>
+                        <div className="muted small">{i.createdByName || 'Staff'}</div>
+                      </div>
+                      <div className="small" style={{ marginTop: '0.25rem' }}><strong>Action taken:</strong> {i.actionTaken}</div>
+                      {i.causeDetails ? <div className="muted small" style={{ marginTop: '0.2rem' }}><strong>Cause details:</strong> {i.causeDetails}</div> : null}
+                      {i.summary ? <details style={{ marginTop: '0.35rem' }}><summary className="small linklike" style={{ cursor: 'pointer' }}>View AI-generated summary</summary><div className="small muted" style={{ marginTop: '0.3rem', whiteSpace: 'pre-wrap' }}>{i.summary}</div></details> : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </section>
+          </div>
+        </Modal>
       )}
     </div>
   );

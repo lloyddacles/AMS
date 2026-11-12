@@ -132,13 +132,21 @@ export async function buildRiskModel() {
     const total = seq.length;
     const recent = seq.slice(-Math.min(RECENT_WINDOW, total));
     const recentMiss = recent.filter((c) => c === 'absent').length;
-    let streak = 0;
+    let streak = 0; // consecutive absences from most recent decided event
     for (let i = seq.length - 1; i >= 0; i--) {
       const c = seq[i];
       if (c === null) continue; // pending / future event
       if (c === 'absent') streak += 1;
       else break;
     }
+    let lateStreak = 0; // consecutive lates from most recent decided event
+    for (let i = seq.length - 1; i >= 0; i--) {
+      const c = seq[i];
+      if (c === null) continue;
+      if (c === 'late') lateStreak += 1;
+      else break;
+    }
+    const recentLate = recent.filter((c) => c === 'late').length;
     const everAttended = !!lastAttendedDate;
     const daysSince = everAttended ? Math.max(0, daysBetween(today, lastAttendedDate)) : RECENCY_CAP_DAYS;
     const features = {
@@ -152,7 +160,7 @@ export async function buildRiskModel() {
     rows.push({
       student: s,
       features,
-      raw: { attended, absent, late, excused, total, recentMiss, recentTotal: recent.length, streak, daysSince, everAttended },
+      raw: { attended, absent, late, excused, total, recentMiss, recentLate, recentTotal: recent.length, streak, lateStreak, daysSince, everAttended },
     });
   }
 

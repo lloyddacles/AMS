@@ -155,6 +155,10 @@ export const api = {
   getReportCompliance: (params) => request(`/reports/compliance?${new URLSearchParams(params || {}).toString()}`),
   getRisk: () => request('/reports/risk'),
   getStudentRisk: (id) => request(`/reports/risk/${id}`),
+  getInterventionFlags: (params) => request(`/interventions/flagged?${new URLSearchParams(params || {}).toString()}`),
+  getStudentInterventions: (studentId) => request(`/interventions/student/${studentId}`),
+  generateInterventionSummary: (studentId, data) => request(`/interventions/student/${studentId}/summary`, { method: 'POST', body: data || {} }),
+  createIntervention: (data) => request('/interventions', { method: 'POST', body: data }),
 
   getDashboard: () => request('/dashboard/stats'),
   getDashboardBriefing: () => request('/dashboard/briefing'),

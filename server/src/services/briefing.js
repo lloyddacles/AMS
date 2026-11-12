@@ -108,16 +108,18 @@ export async function buildDailyBriefing() {
       const recentMiss = Number(s.raw?.recentMiss || 0);
       const recentTotal = Number(s.raw?.recentTotal || 0);
       const streak = Number(s.raw?.streak || 0);
+      const lateStreak = Number(s.raw?.lateStreak || 0);
       const late = Number(s.raw?.late || 0);
       const absent = Number(s.raw?.absent || 0);
       const reasons = [];
       if (streak >= 2) reasons.push(`${streak} consecutive absences`);
+      if (lateStreak >= 2) reasons.push(`${lateStreak} consecutive lates`);
       if (recentTotal > 0 && recentMiss >= 2) reasons.push(`${recentMiss}/${recentTotal} recent absences`);
       if (late >= 3) reasons.push(`${late} late records`);
       if (absent >= 3 && streak < 2) reasons.push(`${absent} total absences`);
       const driver = (s.drivers || []).find((d) => d.contribution > 0);
       if (!reasons.length && driver) reasons.push(driver.label || 'Attendance risk pattern');
-      const likelihood = s.risk >= 75 || streak >= 3 || recentMiss >= 2 ? 'High' : s.risk >= 45 ? 'Medium' : 'Low';
+      const likelihood = s.risk >= 75 || streak >= 3 || lateStreak >= 3 || recentMiss >= 2 || absent >= 5 || late >= 5 ? 'High' : s.risk >= 45 ? 'Medium' : 'Low';
       return {
         studentId: s.id,
         name: nameOf(s),
@@ -130,6 +132,7 @@ export async function buildDailyBriefing() {
         absent,
         late,
         streak,
+        lateStreak,
         recentMiss,
         reasons,
         confidence: confidenceFromEvidence(Number(s.raw?.total || ov.expected || 0), s.risk),
@@ -208,7 +211,18 @@ export async function buildDailyBriefing() {
     }
   }
 
-  for (const w of watchlist.filter((s) => s.streak >= 2 || s.recentMiss >= 2)) {
+  for (const w of watchlist.filter((s) => s.streak >= 2 || s.lateStreak >= 2 || s.recentMiss >= 2 || s.absent >= 5 || s.late >= 5)) {
+    const reasons = (w.reasons || []).slice(0, 3);
+    const flaggedTitle = w.streak >= 3 || w.lateStreak >= 3 || w.absent >= 5 || w.late >= 5
+      ? 'Flagged for intervention (excessive absences/tardiness)'
+      : 'Worsening attendance pattern';
+    const flaggedAction = w.streak >= 3
+      ? 'Document intervention: contact student/guardian, identify cause (medical/family/other), and record the action taken as proof.'
+      : w.lateStreak >= 3
+        ? 'Document intervention for repeated lateness: discuss barriers/schedule issues, agree on improvements, and record actions taken.'
+        : w.absent >= 5 || w.late >= 5
+          ? 'Excessive absences/lateness accumulated. Conduct follow-up, identify possible causes, and record intervention/proof in the system.'
+          : 'Intervene early: ask about recent barriers, provide support/reminders, and confirm attendance for the next event.';
     upsert({
       studentId: w.studentId,
       name: w.name,
@@ -217,10 +231,10 @@ export async function buildDailyBriefing() {
       rate: w.rate,
       risk: w.risk,
       riskLevel: w.riskLevel,
-      priority: w.streak >= 3 || w.risk >= 75 ? 'High' : 'Medium',
-      title: 'Worsening attendance pattern',
-      action: 'Intervene early: ask about recent barriers, provide support/reminders, and confirm attendance for the next event.',
-      reasons: w.reasons.slice(0, 3),
+      priority: w.streak >= 3 || w.lateStreak >= 3 || w.absent >= 5 || w.late >= 5 || w.risk >= 75 ? 'High' : 'Medium',
+      title: flaggedTitle,
+      action: flaggedAction,
+      reasons,
       confidence: w.confidence,
       category: 'pattern',
     });
