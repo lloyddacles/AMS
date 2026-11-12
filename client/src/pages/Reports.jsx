@@ -87,11 +87,24 @@ export default function Reports() {
   const [riskCache, setRiskCache] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(true);
   const [visualTrends, setVisualTrends] = useState(null);
+  const [visualGranularity, setVisualGranularity] = useState('day');
   const chartRefs = {
     status: useRef(null),
     distribution: useRef(null),
     trend: useRef(null),
   };
+
+  // Auto-adjust to current real-time period when no date/term filters are set.
+  useEffect(() => {
+    if (params.get('from') || params.get('to') || params.get('termId')) return;
+    const now = new Date();
+    const iso = (d) => d.toISOString().slice(0, 10);
+    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    setFrom(iso(start));
+    setTo(iso(end));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const rangeParams = { from, to, termId: termId || '' };
 
@@ -115,16 +128,16 @@ export default function Reports() {
     return () => { alive = false; };
   }, [from, to, termId]);
 
-  // Load overall daily trend points for visual summaries (all courses, archived + active events).
+  // Load overall trend points for visual summaries (all courses, archived + active events).
   useEffect(() => {
     let alive = true;
     setVisualTrends(null);
     api
-      .getReportTrends({ granularity: 'day', ...rangeParams })
+      .getReportTrends({ granularity: visualGranularity, ...rangeParams })
       .then((d) => { if (alive) setVisualTrends(d); })
       .catch(() => { if (alive) setVisualTrends(null); });
     return () => { alive = false; };
-  }, [from, to, termId]);
+  }, [from, to, termId, visualGranularity]);
 
   useEffect(() => {
     if (view !== 'matrix') return undefined;
@@ -403,11 +416,12 @@ export default function Reports() {
   }, [overview]);
 
   const trendVisualData = useMemo(() => {
-    // Prefer the overall total daily trend (archived + active, all courses) for the visual summary.
-    const src = visualTrends || trends;
+    // Prefer the overall total trend (archived + active, all courses) for the visual summary.
+    const src = (visualGranularity && visualTrends) ? visualTrends : (visualTrends || trends);
     const points = src?.points || [];
-    return points.slice(-30);
-  }, [trends, visualTrends]);
+    const limit = visualGranularity === 'day' ? 31 : visualGranularity === 'week' ? 16 : 12;
+    return points.slice(-limit);
+  }, [trends, visualTrends, visualGranularity]);
 
   const STATUS_COLORS = {
     Early: '#06b6d4',
@@ -645,9 +659,27 @@ export default function Reports() {
                 )}
               </div>
               <div className="ai-visual-card ai-visual-card-wide" ref={chartRefs.trend}>
-                <div className="ai-visual-title">Attendance rate trend (daily total)</div>
+                <div className="ai-visual-title-row" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.75rem', flexWrap: 'wrap', marginBottom: '0.25rem' }}>
+                  <div className="ai-visual-title" style={{ marginBottom: 0 }}>Attendance rate trend ({visualGranularity === 'day' ? 'daily' : visualGranularity === 'week' ? 'weekly' : 'monthly'} total)</div>
+                  <div className="seg seg-sm" role="group" aria-label="Trend granularity">
+                    {[
+                      ['day', 'Daily'],
+                      ['week', 'Weekly'],
+                      ['month', 'Monthly'],
+                    ].map(([val, label]) => (
+                      <button
+                        key={val}
+                        type="button"
+                        className={`seg-btn ${visualGranularity === val ? 'active' : ''}`}
+                        onClick={() => setVisualGranularity(val)}
+                      >
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <p className="muted small" style={{ margin: '0 0 0.5rem' }}>
-                  This graph shows if more or fewer students came each day, using all events in the selected range (including archived and active). If the line goes up, attendance is getting better. If it goes down, fewer students are coming.
+                  This graph shows if more or fewer students came {visualGranularity === 'day' ? 'each day' : visualGranularity === 'week' ? 'each week' : 'each month'}, using all events in the selected range (including archived and active). If the line goes up, attendance is getting better. If it goes down, fewer students are coming. It automatically follows the current date range.
                 </p>
                 {trendVisualData.length === 0 ? (
                   <div className="muted small" style={{ padding: '0.5rem 0' }}>
