@@ -115,11 +115,15 @@ export async function attendeeStats(eventId) {
   const total = (await get('SELECT COUNT(*) AS c FROM students')).c;
   const excludedRows = await listExclusions([eventId]);
   const excludedIds = new Set(excludedRows.map((r) => r.studentId));
+  const attending = Math.max(0, total - excludedIds.size);
   return {
     mode: excludedIds.size ? 'custom' : 'all',
-    totalStudents: total,
+    // "totalStudents" is the event's attendee count (active/selected attendees),
+    // not the number of students in the whole system.
+    totalStudents: attending,
+    systemStudents: total,
     excludedCount: excludedIds.size,
-    attending: Math.max(0, total - excludedIds.size),
+    attending,
   };
 }
 
