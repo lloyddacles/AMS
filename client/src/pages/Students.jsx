@@ -69,6 +69,7 @@ export default function Students() {
   const [regenBusy, setRegenBusy] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
   const [bulkForm, setBulkForm] = useState({ programId: '', course: '', yearLevel: '', section: '', status: '' });
+  const [bulkDeptFilter, setBulkDeptFilter] = useState('');
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -231,6 +232,15 @@ export default function Students() {
     setFormError('');
   }
 
+  const selectedProgram = (academic.programs || []).find((p) => String(p.id) === String(form.programId || ''));
+  const formDeptId = selectedProgram ? String(selectedProgram.departmentId) : '';
+  const formPrograms = formDeptId
+    ? (academic.programs || []).filter((p) => String(p.departmentId) === formDeptId)
+    : (academic.programs || []);
+  const bulkPrograms = bulkDeptFilter
+    ? (academic.programs || []).filter((p) => String(p.departmentId) === String(bulkDeptFilter))
+    : (academic.programs || []);
+
   async function save(e) {
     e.preventDefault();
     setSaving(true);
@@ -292,6 +302,7 @@ export default function Students() {
 
   function openBulkEdit() {
     setBulkForm({ programId: '', course: '', yearLevel: '', section: '', status: '' });
+    setBulkDeptFilter('');
     setBulkError('');
     setBulkEditOpen(true);
   }
@@ -337,7 +348,8 @@ export default function Students() {
     }
   }
 
-  const courseCount = new Set(students.map((s) => s.course).filter(Boolean)).size;
+  const courseCount = new Set(students.map((s) => s.programName || s.course).filter(Boolean)).size;
+  const deptCount = new Set(students.map((s) => s.departmentName).filter(Boolean)).size;
   const sectionCount = new Set(students.map((s) => s.section).filter(Boolean)).size;
   const yearCount = new Set(students.map((s) => s.yearLevel).filter(Boolean)).size;
   const activeCount = (statusCounts.Active || 0) + (statusCounts.Regular || 0);
@@ -365,7 +377,7 @@ export default function Students() {
       <div className="stat-grid">
         <StatCard icon="users" accent="blue" label="Total students" value={students.length} hint="In directory (current search)" />
         <StatCard icon="live" accent="green" label="Active / Regular" value={activeCount} hint="Currently active enrollment" />
-        <StatCard icon="book" accent="purple" label="Courses" value={courseCount} hint="Distinct courses" />
+        <StatCard icon="book" accent="purple" label="Programs / Courses" value={courseCount} hint={`${deptCount} department${deptCount === 1 ? '' : 's'} represented`} />
         <StatCard icon="layers" accent="amber" label="Sections" value={sectionCount} hint={`${yearCount} year level${yearCount === 1 ? '' : 's'}`} />
       </div>
 
@@ -506,8 +518,7 @@ export default function Students() {
                         <span className="student-no mono">{s.studentNo || '—'}</span>
                       </div>
                       <div className="student-line2">
-                        {meta.dept ? <span title={meta.dept}>{meta.dept}</span> : null}
-                        {meta.dept && meta.group ? <span className="student-meta-sep">•</span> : null}
+                        {meta.dept ? <span className="student-dept-chip" title={meta.dept}>{meta.dept}</span> : null}
                         {meta.group ? <span>{meta.group}</span> : <span className="muted">No program/course set</span>}
                         {meta.email ? <span className="student-meta-sep">•</span> : null}
                         {meta.email ? <span className="student-email" title={meta.email}>{meta.email}</span> : null}
@@ -592,21 +603,36 @@ export default function Students() {
                   </select>
                 </label>
                 <label>
-                  <span>Program / Department</span>
-                  <select value={form.programId || ''} onChange={(e) => onProgramChange(e.target.value)}>
-                    <option value="">No linked program</option>
-                    {(academic.programs || []).map((p) => (
-                      <option key={p.id} value={p.id}>{p.departmentName} — {p.name}</option>
-                    ))}
+                  <span>Department</span>
+                  <select
+                    value={formDeptId}
+                    onChange={(e) => {
+                      const did = e.target.value;
+                      const currentOk = (academic.programs || []).some((p) => String(p.id) === String(form.programId) && String(p.departmentId) === did);
+                      if (!currentOk) setForm((f) => ({ ...f, programId: '', course: did ? f.course : f.course }));
+                    }}
+                  >
+                    <option value="">All departments</option>
+                    {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </label>
                 <label>
+                  <span>Program</span>
+                  <select value={form.programId || ''} onChange={(e) => onProgramChange(e.target.value)}>
+                    <option value="">No linked program</option>
+                    {formPrograms.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="span-2">
                   <span>Course / Program Name</span>
                   <input
                     value={form.course}
                     onChange={(e) => setForm({ ...form, course: e.target.value })}
-                    placeholder="e.g. BSIT or selected program name"
+                    placeholder="Auto-filled from selected program, or enter manually"
                   />
+                  <span className="muted small">Select a department and program to link the student correctly for staff scoping.</span>
                 </label>
                 <label>
                   <span>Year Level</span>
@@ -643,12 +669,28 @@ export default function Students() {
           <form className="form event-form" onSubmit={saveBulkEdit}>
             <section className="event-form-section">
               <div className="event-form-section-head">
-                <h4>Update selected students</h4>
-                <p className="muted small">Only filled-in fields are changed. Blank fields keep each student's current value.</p>
+                <h4>Assign department &amp; program</h4>
+                <p className="muted small">Quickly assign selected students to the correct department/program for staff scoping. Blank fields keep existing values.</p>
               </div>
               <div className="form grid-form">
                 <label>
-                  <span>Program</span>
+                  <span>Department filter</span>
+                  <select
+                    value={bulkDeptFilter}
+                    onChange={(e) => {
+                      const did = e.target.value;
+                      setBulkDeptFilter(did);
+                      const list = did ? (academic.programs || []).filter((p) => String(p.departmentId) === String(did)) : (academic.programs || []);
+                      const ok = list.some((p) => String(p.id) === String(bulkForm.programId));
+                      if (!ok) setBulkForm((f) => ({ ...f, programId: '' }));
+                    }}
+                  >
+                    <option value="">All departments</option>
+                    {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Program (assign)</span>
                   <select
                     value={bulkForm.programId}
                     onChange={(e) => {
@@ -658,19 +700,28 @@ export default function Students() {
                     }}
                   >
                     <option value="">Leave blank to keep</option>
-                    {(academic.programs || []).map((p) => (
-                      <option key={p.id} value={p.id}>{p.departmentName} — {p.name}</option>
+                    {bulkPrograms.map((p) => (
+                      <option key={p.id} value={p.id}>{p.name}{!bulkDeptFilter ? ` — ${p.departmentName}` : ''}</option>
                     ))}
                   </select>
                 </label>
-                <label>
+                <label className="span-2">
                   <span>Course / Program Name</span>
                   <input
                     value={bulkForm.course}
                     onChange={(e) => setBulkForm({ ...bulkForm, course: e.target.value })}
-                    placeholder="Leave blank to keep"
+                    placeholder="Auto-filled from selected program, or leave blank to keep"
                   />
                 </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Other details (optional)</h4>
+                <p className="muted small">Only filled-in fields are changed.</p>
+              </div>
+              <div className="form grid-form">
                 <label>
                   <span>Year Level</span>
                   <input
