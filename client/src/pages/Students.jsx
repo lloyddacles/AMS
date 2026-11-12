@@ -23,14 +23,11 @@ const STATUS_META = {
 
 const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '', status: 'Active' };
 
-const COLUMNS = [
+const SORT_COLUMNS = [
+  { key: 'name', label: 'Student', get: (s) => `${s.lastName || ''} ${s.firstName || ''}`.trim() || s.studentNo || '' },
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
-  { key: 'name', label: 'Name', get: (s) => `${s.lastName || ''} ${s.firstName || ''}` },
   { key: 'status', label: 'Status', get: (s) => s.status || 'Active' },
   { key: 'course', label: 'Course', get: (s) => s.course || '' },
-  { key: 'yearLevel', label: 'Year', get: (s) => s.yearLevel || '' },
-  { key: 'section', label: 'Section', get: (s) => s.section || '' },
-  { key: 'email', label: 'Email', get: (s) => s.email || '' },
 ];
 
 const PAGE_SIZES = [10, 25, 50, 100];
@@ -39,11 +36,16 @@ function StatusBadge({ status }) {
   const value = STUDENT_STATUSES.includes(status) ? status : 'Active';
   const meta = STATUS_META[value] || STATUS_META.Active;
   return (
-    <span className={`pill ${meta.pill}`} title={`Status: ${value}`}>
-      <span aria-hidden="true" style={{ marginRight: '0.35rem', fontSize: '0.7em', lineHeight: 1 }}>{meta.icon}</span>
+    <span className={`pill ${meta.pill} status-badge`} title={`Status: ${value}`}>
+      <span aria-hidden="true" className="status-badge-dot">{meta.icon}</span>
       {value}
     </span>
   );
+}
+
+function studentMeta(s) {
+  const group = [s.course, s.yearLevel, s.section].filter(Boolean).join(' · ');
+  return { group, email: s.email || '' };
 }
 
 export default function Students() {
@@ -87,11 +89,11 @@ export default function Students() {
   }, [students, statusFilter]);
 
   const sorted = useMemo(() => {
-    const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
+    const col = SORT_COLUMNS.find((c) => c.key === sort.key) || SORT_COLUMNS[0];
     const dir = sort.dir === 'desc' ? -1 : 1;
     return [...filtered].sort((a, b) => {
-      const av = col.get(a);
-      const bv = col.get(b);
+      const av = String(col.get(a) || '');
+      const bv = String(col.get(b) || '');
       return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true }) * dir;
     });
   }, [filtered, sort]);
@@ -353,54 +355,54 @@ export default function Students() {
         <StatCard icon="layers" accent="amber" label="Sections" value={sectionCount} hint={`${yearCount} year level${yearCount === 1 ? '' : 's'}`} />
       </div>
 
-      <div className="card students-controls">
-        <div className="toolbar students-toolbar" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
+      <div className="card students-controls students-controls-compact">
+        <div className="students-controls-row">
           <input
-            className="search"
-            placeholder="Search by name, student no, course, section, email, or status…"
+            className="search students-search"
+            placeholder="Search name, student no, course, section, email, or status…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
-          <label className="page-size">
-            Status
-            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">All statuses</option>
-              {STUDENT_STATUSES.map((s) => (
-                <option key={s} value={s}>{s} ({statusCounts[s] || 0})</option>
-              ))}
-            </select>
-          </label>
-          <label className="page-size">
-            Rows
-            <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
-              {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+          <label className="students-sort">
+            <span>Sort</span>
+            <select
+              value={`${sort.key}:${sort.dir}`}
+              onChange={(e) => {
+                const [key, dir] = e.target.value.split(':');
+                setSort({ key, dir });
+              }}
+            >
+              {SORT_COLUMNS.flatMap((c) => ([
+                <option key={`${c.key}:asc`} value={`${c.key}:asc`}>{c.label} (A–Z)</option>,
+                <option key={`${c.key}:desc`} value={`${c.key}:desc`}>{c.label} (Z–A)</option>,
+              ]))}
             </select>
           </label>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+        <div className="students-filter-chips" role="group" aria-label="Filter by status">
           <button
             type="button"
-            className={`btn btn-sm ${statusFilter === 'all' ? 'btn-primary' : ''}`}
+            className={`student-filter-chip ${statusFilter === 'all' ? 'active' : ''}`}
             onClick={() => setStatusFilter('all')}
           >
-            All <span className="muted small">({students.length})</span>
+            All <span>{students.length}</span>
           </button>
           {STUDENT_STATUSES.map((s) => (
             <button
               key={s}
               type="button"
-              className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : ''}`}
+              className={`student-filter-chip ${statusFilter === s ? 'active' : ''}`}
               onClick={() => setStatusFilter(s)}
               title={`Show ${s} students`}
             >
-              {s} <span className="muted small">({statusCounts[s] || 0})</span>
+              {s} <span>{statusCounts[s] || 0}</span>
             </button>
           ))}
         </div>
 
         {selected.size > 0 && (
-          <div className="events-bulk-bar students-bulk-bar" style={{ marginTop: '0.75rem' }}>
+          <div className="events-bulk-bar students-bulk-bar" style={{ marginTop: '0.6rem' }}>
             <div className="events-bulk-info">
               <span className="events-bulk-count">{selected.size}</span>
               <span>student{selected.size === 1 ? '' : 's'} selected</span>
@@ -424,94 +426,103 @@ export default function Students() {
 
       {error && <div className="alert alert-error">{error}</div>}
 
-      <div className="card table-card students-table-card">
-        <div className="students-table-head">
+      <div className="card table-card students-table-card students-compact-card">
+        <div className="students-table-head compact">
           <div>
-            <h3 style={{ margin: 0, fontSize: '1rem' }}>Student directory</h3>
-            <p className="muted small" style={{ margin: '0.15rem 0 0' }}>
-              {loading ? 'Loading…' : `${pageRows.length} shown on this page · ${total} result${total === 1 ? '' : 's'}`}
+            <h3>Student directory</h3>
+            <p className="muted small">
+              {loading ? 'Loading…' : `${pageRows.length} shown · ${total} result${total === 1 ? '' : 's'}${statusFilter !== 'all' ? ` · ${statusFilter}` : ''}`}
             </p>
           </div>
-          <label className="events-select-all" style={{ margin: 0 }}>
-            <input type="checkbox" aria-label="Select all on this page" checked={allPageSelected} onChange={toggleSelectPage} />
-            <span>Select page</span>
-          </label>
+          <div className="students-head-tools">
+            <label className="events-select-all">
+              <input type="checkbox" aria-label="Select all on this page" checked={allPageSelected} onChange={toggleSelectPage} />
+              <span>Select page</span>
+            </label>
+          </div>
         </div>
-        <div className="scroll-x">
-          <table className="table students-table">
-            <thead>
-              <tr>
-                <th className="check-col"></th>
-                {COLUMNS.map((c) => (
-                  <th key={c.key}>
-                    <button
-                      type="button"
-                      className={`sortable ${sort.key === c.key ? 'active' : ''}`}
-                      onClick={() => toggleSort(c.key)}
-                      title={`Sort by ${c.label}`}
-                    >
-                      {c.label}
-                      <span className="sort-arrow">{sort.key === c.key ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
-                    </button>
-                  </th>
-                ))}
-                <th className="right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading && students.length === 0 && (
-                <tr><td colSpan={9} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
-              )}
-              {!loading && total === 0 && (
-                <tr>
-                  <td colSpan={9} className="muted center" style={{ padding: '2rem 1rem' }}>
-                    <div style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>No students found</div>
-                    <div className="small">Try adjusting your search or status filter, or add students.</div>
-                  </td>
-                </tr>
-              )}
-              {pageRows.map((s) => {
-                const status = s.status || 'Active';
-                const inactiveLike = ['Inactive', 'Deceased', 'Dropped', 'LOA'].includes(status);
-                return (
-                  <tr key={s.id} className={`${selected.has(s.id) ? 'row-selected' : ''} ${inactiveLike ? 'row-muted' : ''}`}>
-                    <td className="check-col">
-                      <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
-                    </td>
-                    <td className="mono">{s.studentNo}</td>
-                    <td>
-                      <div className="name-cell">
-                        <span className="mini-avatar">{(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}</span>
-                        <div>
-                          <div className="strong">{s.lastName}, {s.firstName}</div>
-                          <div className="muted small">{[s.course, s.section].filter(Boolean).join(' · ') || '—'}</div>
-                        </div>
+
+        {loading && students.length === 0 ? (
+          <div className="students-empty"><Spinner label="Loading students…" size="sm" variant="center" /></div>
+        ) : !loading && total === 0 ? (
+          <div className="students-empty muted center">
+            <div style={{ fontSize: '1rem', marginBottom: '0.25rem', color: 'var(--text)' }}>No students found</div>
+            <div className="small">Try adjusting your search or status filter, or add students.</div>
+          </div>
+        ) : (
+          <div className="students-compact-list" role="table" aria-label="Student directory">
+            <div className="students-compact-header" role="row">
+              <div className="scol check" />
+              <div className="scol student">
+                <button type="button" className={`sortable ${sort.key === 'name' ? 'active' : ''}`} onClick={() => toggleSort('name')}>
+                  Student <span className="sort-arrow">{sort.key === 'name' ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </button>
+              </div>
+              <div className="scol status">
+                <button type="button" className={`sortable ${sort.key === 'status' ? 'active' : ''}`} onClick={() => toggleSort('status')}>
+                  Status <span className="sort-arrow">{sort.key === 'status' ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
+                </button>
+              </div>
+              <div className="scol actions right">Actions</div>
+            </div>
+            {pageRows.map((s) => {
+              const status = s.status || 'Active';
+              const inactiveLike = ['Inactive', 'Deceased', 'Dropped', 'LOA'].includes(status);
+              const meta = studentMeta(s);
+              const fullName = `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, '').trim() || 'Unnamed student';
+              return (
+                <div
+                  key={s.id}
+                  role="row"
+                  className={`students-compact-row ${selected.has(s.id) ? 'row-selected' : ''} ${inactiveLike ? 'row-muted' : ''}`}
+                >
+                  <div className="scol check" role="cell">
+                    <input
+                      type="checkbox"
+                      checked={selected.has(s.id)}
+                      onChange={() => toggleSelect(s.id)}
+                      aria-label={`Select ${s.firstName || ''} ${s.lastName || ''}`.trim()}
+                    />
+                  </div>
+                  <div className="scol student" role="cell">
+                    <span className="mini-avatar">{(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}</span>
+                    <div className="student-main">
+                      <div className="student-line1">
+                        <span className="strong student-name" title={meta.email || fullName}>{fullName}</span>
+                        <span className="student-no mono">{s.studentNo || '—'}</span>
                       </div>
-                    </td>
-                    <td><StatusBadge status={status} /></td>
-                    <td>{s.course || <span className="muted">—</span>}</td>
-                    <td>{s.yearLevel || <span className="muted">—</span>}</td>
-                    <td>{s.section || <span className="muted">—</span>}</td>
-                    <td className="muted">{s.email || '—'}</td>
-                    <td className="right actions">
-                      <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
-                      <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                      <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                      <div className="student-line2">
+                        {meta.group ? <span>{meta.group}</span> : <span className="muted">No course/section set</span>}
+                        {meta.email ? <span className="student-meta-sep">•</span> : null}
+                        {meta.email ? <span className="student-email" title={meta.email}>{meta.email}</span> : null}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="scol status" role="cell"><StatusBadge status={status} /></div>
+                  <div className="scol actions right" role="cell">
+                    <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
+                    <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                    <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {total > 0 && (
-        <div className="pagination">
+        <div className="pagination students-pagination">
           <span className="muted small">
             Showing {((currentPage - 1) * pageSize) + 1}–{Math.min(currentPage * pageSize, total)} of {total}
           </span>
           <div className="pager">
+            <label className="page-size inline">
+              <span>Rows</span>
+              <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
+                {PAGE_SIZES.map((n) => <option key={n} value={n}>{n}</option>)}
+              </select>
+            </label>
             <button className="btn btn-sm" onClick={() => setPage(1)} disabled={currentPage === 1}>« First</button>
             <button className="btn btn-sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={currentPage === 1}>‹ Prev</button>
             <span className="pager-info">Page {currentPage} of {pageCount}</span>
