@@ -9,7 +9,16 @@ const router = Router();
 router.use(requireAuth);
 
 const selectFields = `id, student_no AS studentNo, first_name AS firstName,
-  last_name AS lastName, email, course, year_level AS yearLevel, section, qr_token AS qrToken, created_at AS createdAt`;
+  last_name AS lastName, email, course, year_level AS yearLevel, section, status, qr_token AS qrToken, created_at AS createdAt`;
+
+const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'Regular', 'Irregular'];
+
+function normalizeStatus(value, fallback = 'Active') {
+  const s = String(value ?? '').trim();
+  if (!s) return fallback;
+  const match = STUDENT_STATUSES.find((opt) => opt.toLowerCase() === s.toLowerCase());
+  return match || fallback;
+}
 
 function chunk(items, size) {
   const out = [];
@@ -31,9 +40,9 @@ router.get('/', async (req, res) => {
     const like = `%${search}%`;
     rows = await all(
       `SELECT ${selectFields} FROM students
-       WHERE student_no LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR course LIKE ?
+       WHERE student_no LIKE ? OR first_name LIKE ? OR last_name LIKE ? OR course LIKE ? OR section LIKE ? OR status LIKE ?
        ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`,
-      [like, like, like, like]
+      [like, like, like, like, like, like]
     );
   } else {
     rows = await all(`SELECT ${selectFields} FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`);
@@ -48,12 +57,22 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', validate(schemas.studentCreate), async (req, res) => {
-  const { studentNo, firstName, lastName, email, course, yearLevel, section } = req.body;
+  const { studentNo, firstName, lastName, email, course, yearLevel, section, status } = req.body;
   try {
     const info = await run(
-      `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, section, qr_token)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [studentNo.trim(), firstName.trim(), lastName.trim(), email || null, course || null, yearLevel || null, section || null, newToken()]
+      `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, section, status, qr_token)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [
+        studentNo.trim(),
+        firstName.trim(),
+        lastName.trim(),
+        email || null,
+        course || null,
+        yearLevel || null,
+        section || null,
+        normalizeStatus(status),
+        newToken(),
+      ]
     );
     const row = await get(`SELECT ${selectFields} FROM students WHERE id = ?`, [info.lastInsertRowid]);
     await logAudit({
@@ -61,7 +80,7 @@ router.post('/', validate(schemas.studentCreate), async (req, res) => {
       action: 'student.create',
       entity: 'student',
       entityId: row.id,
-      detail: `${row.studentNo} ${row.lastName}, ${row.firstName}`,
+      detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}`,
     });
     res.status(201).json(row);
   } catch (err) {
@@ -106,6 +125,7 @@ router.post('/bulk', validate(schemas.studentBulk), async (req, res) => {
       course: raw.course ? String(raw.course).trim() : null,
       yearLevel: raw.yearLevel ? String(raw.yearLevel).trim() : null,
       section: raw.section ? String(raw.section).trim() : null,
+      status: normalizeStatus(raw.status),
     });
   });
 
@@ -128,17 +148,17 @@ router.post('/bulk', validate(schemas.studentBulk), async (req, res) => {
         continue;
       }
       statements.push({
-        sql: `UPDATE students SET first_name = ?, last_name = ?, email = ?, course = ?, year_level = ?, section = ?
+        sql: `UPDATE students SET first_name = ?, last_name = ?, email = ?, course = ?, year_level = ?, section = ?, status = ?
               WHERE id = ?`,
-        args: [c.firstName, c.lastName, c.email, c.course, c.yearLevel, c.section, existingByNo.get(c.studentNo)],
+        args: [c.firstName, c.lastName, c.email, c.course, c.yearLevel, c.section, c.status, existingByNo.get(c.studentNo)],
       });
       updated.push(c.studentNo);
       continue;
     }
     statements.push({
-      sql: `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, section, qr_token)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      args: [c.studentNo, c.firstName, c.lastName, c.email, c.course, c.yearLevel, c.section, newToken()],
+      sql: `INSERT INTO students (student_no, first_name, last_name, email, course, year_level, section, status, qr_token)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      args: [c.studentNo, c.firstName, c.lastName, c.email, c.course, c.yearLevel, c.section, c.status, newToken()],
     });
     created.push(c.studentNo);
   }
@@ -164,7 +184,7 @@ router.post('/bulk', validate(schemas.studentBulk), async (req, res) => {
   });
 });
 
-// Apply the same course / year / section change to many students at once.
+// Apply the same course / year / section / status change to many students at once.
 // Blank fields are left untouched, so a single request can update just one
 // attribute without clearing the rest.
 router.post('/bulk-update', async (req, res) => {
@@ -184,8 +204,18 @@ router.post('/bulk-update', async (req, res) => {
     if (!value) continue;
     patch.push({ key, column, value: value.slice(0, 120) });
   }
+  if (Object.prototype.hasOwnProperty.call(req.body || {}, 'status')) {
+    const rawStatus = String(req.body.status ?? '').trim();
+    if (rawStatus) {
+      const value = STUDENT_STATUSES.find((opt) => opt.toLowerCase() === rawStatus.toLowerCase());
+      if (!value) {
+        return res.status(400).json({ error: `Status must be one of: ${STUDENT_STATUSES.join(', ')}` });
+      }
+      patch.push({ key: 'status', column: 'status', value });
+    }
+  }
   if (patch.length === 0) {
-    return res.status(400).json({ error: 'Provide a course, year level, or section to set' });
+    return res.status(400).json({ error: 'Provide a course, year level, section, or status to set' });
   }
 
   const placeholders = ids.map(() => '?').join(',');
@@ -245,16 +275,19 @@ router.post('/bulk-delete', requireRole('admin'), async (req, res) => {
 router.put('/:id', async (req, res) => {
   const existing = await get('SELECT * FROM students WHERE id = ?', [req.params.id]);
   if (!existing) return res.status(404).json({ error: 'Student not found' });
-  const { studentNo, firstName, lastName, email, course, yearLevel, section } = req.body || {};
+  const { studentNo, firstName, lastName, email, course, yearLevel, section, status } = req.body || {};
   const nextStudentNo = String(studentNo ?? existing.student_no).trim();
   const nextFirstName = String(firstName ?? existing.first_name).trim();
   const nextLastName = String(lastName ?? existing.last_name).trim();
   if (!nextStudentNo || !nextFirstName || !nextLastName) {
     return res.status(400).json({ error: 'Student number, first name and last name are required' });
   }
+  const nextStatus = status === undefined || status === null || String(status).trim() === ''
+    ? (existing.status || 'Active')
+    : normalizeStatus(status, existing.status || 'Active');
   try {
     await run(
-      `UPDATE students SET student_no = ?, first_name = ?, last_name = ?, email = ?, course = ?, year_level = ?, section = ?
+      `UPDATE students SET student_no = ?, first_name = ?, last_name = ?, email = ?, course = ?, year_level = ?, section = ?, status = ?
        WHERE id = ?`,
       [
         nextStudentNo,
@@ -264,6 +297,7 @@ router.put('/:id', async (req, res) => {
         course ?? existing.course,
         yearLevel ?? existing.year_level,
         section ?? existing.section,
+        nextStatus,
         req.params.id,
       ]
     );
@@ -275,6 +309,7 @@ router.put('/:id', async (req, res) => {
     if ((existing.course || '') !== (row.course || '')) changes.push(`course ${existing.course || '—'} → ${row.course || '—'}`);
     if ((existing.year_level || '') !== (row.yearLevel || '')) changes.push(`year ${existing.year_level || '—'} → ${row.yearLevel || '—'}`);
     if ((existing.section || '') !== (row.section || '')) changes.push(`section ${existing.section || '—'} → ${row.section || '—'}`);
+    if ((existing.status || 'Active') !== (row.status || 'Active')) changes.push(`status ${existing.status || 'Active'} → ${row.status || 'Active'}`);
     await logAudit({
       user: req.user,
       action: 'student.update',

@@ -10,11 +10,22 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
-const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '' };
+const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'Regular', 'Irregular'];
+const STATUS_META = {
+  Active: { pill: 'pill-green', icon: '●' },
+  Regular: { pill: 'pill-blue', icon: '●' },
+  Irregular: { pill: 'pill-amber', icon: '●' },
+  Inactive: { pill: 'pill-gray', icon: '○' },
+  Dropped: { pill: 'pill-red', icon: '■' },
+  Deceased: { pill: 'pill-purple', icon: '◆' },
+};
+
+const emptyForm = { studentNo: '', firstName: '', lastName: '', email: '', course: '', yearLevel: '', section: '', status: 'Active' };
 
 const COLUMNS = [
   { key: 'studentNo', label: 'Student No', get: (s) => s.studentNo || '' },
   { key: 'name', label: 'Name', get: (s) => `${s.lastName || ''} ${s.firstName || ''}` },
+  { key: 'status', label: 'Status', get: (s) => s.status || 'Active' },
   { key: 'course', label: 'Course', get: (s) => s.course || '' },
   { key: 'yearLevel', label: 'Year', get: (s) => s.yearLevel || '' },
   { key: 'section', label: 'Section', get: (s) => s.section || '' },
@@ -23,11 +34,23 @@ const COLUMNS = [
 
 const PAGE_SIZES = [10, 25, 50, 100];
 
+function StatusBadge({ status }) {
+  const value = STUDENT_STATUSES.includes(status) ? status : 'Active';
+  const meta = STATUS_META[value] || STATUS_META.Active;
+  return (
+    <span className={`pill ${meta.pill}`} title={`Status: ${value}`}>
+      <span aria-hidden="true" style={{ marginRight: '0.35rem', fontSize: '0.7em', lineHeight: 1 }}>{meta.icon}</span>
+      {value}
+    </span>
+  );
+}
+
 export default function Students() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [students, setStudents] = useState([]);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editing, setEditing] = useState(null);
@@ -39,7 +62,7 @@ export default function Students() {
   const [selected, setSelected] = useState(() => new Set());
   const [regenBusy, setRegenBusy] = useState(false);
   const [bulkEditOpen, setBulkEditOpen] = useState(false);
-  const [bulkForm, setBulkForm] = useState({ course: '', yearLevel: '', section: '' });
+  const [bulkForm, setBulkForm] = useState({ course: '', yearLevel: '', section: '', status: '' });
   const [bulkBusy, setBulkBusy] = useState(false);
   const [bulkError, setBulkError] = useState('');
   const [sort, setSort] = useState({ key: 'name', dir: 'asc' });
@@ -48,15 +71,29 @@ export default function Students() {
   const [searchParams, setSearchParams] = useSearchParams();
   const focusId = searchParams.get('student');
 
+  const statusCounts = useMemo(() => {
+    const counts = Object.fromEntries(STUDENT_STATUSES.map((s) => [s, 0]));
+    for (const s of students) {
+      const key = STUDENT_STATUSES.includes(s.status) ? s.status : 'Active';
+      counts[key] = (counts[key] || 0) + 1;
+    }
+    return counts;
+  }, [students]);
+
+  const filtered = useMemo(() => {
+    if (statusFilter === 'all') return students;
+    return students.filter((s) => (s.status || 'Active') === statusFilter);
+  }, [students, statusFilter]);
+
   const sorted = useMemo(() => {
     const col = COLUMNS.find((c) => c.key === sort.key) || COLUMNS[1];
     const dir = sort.dir === 'desc' ? -1 : 1;
-    return [...students].sort((a, b) => {
+    return [...filtered].sort((a, b) => {
       const av = col.get(a);
       const bv = col.get(b);
       return av.localeCompare(bv, undefined, { sensitivity: 'base', numeric: true }) * dir;
     });
-  }, [students, sort]);
+  }, [filtered, sort]);
 
   const total = sorted.length;
   const pageCount = Math.max(1, Math.ceil(total / pageSize));
@@ -108,7 +145,7 @@ export default function Students() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, sort, pageSize]);
+  }, [search, sort, pageSize, statusFilter]);
 
   async function load(q = search) {
     setLoading(true);
@@ -158,7 +195,7 @@ export default function Students() {
 
   function openCreate() {
     setEditing({});
-    setForm(emptyForm);
+    setForm({ ...emptyForm, status: 'Active' });
     setFormError('');
   }
 
@@ -172,6 +209,7 @@ export default function Students() {
       course: s.course || '',
       yearLevel: s.yearLevel || '',
       section: s.section || '',
+      status: s.status || 'Active',
     });
     setFormError('');
   }
@@ -236,7 +274,7 @@ export default function Students() {
   }
 
   function openBulkEdit() {
-    setBulkForm({ course: '', yearLevel: '', section: '' });
+    setBulkForm({ course: '', yearLevel: '', section: '', status: '' });
     setBulkError('');
     setBulkEditOpen(true);
   }
@@ -244,12 +282,12 @@ export default function Students() {
   async function saveBulkEdit(e) {
     e.preventDefault();
     const patch = {};
-    for (const key of ['course', 'yearLevel', 'section']) {
+    for (const key of ['course', 'yearLevel', 'section', 'status']) {
       const value = String(bulkForm[key] || '').trim();
       if (value) patch[key] = value;
     }
     if (Object.keys(patch).length === 0) {
-      setBulkError('Enter a course, year level, or section to set. Blank fields leave existing values untouched.');
+      setBulkError('Enter a course, year level, section, or status to set. Blank fields leave existing values untouched.');
       return;
     }
     setBulkBusy(true);
@@ -285,13 +323,14 @@ export default function Students() {
   const courseCount = new Set(students.map((s) => s.course).filter(Boolean)).size;
   const sectionCount = new Set(students.map((s) => s.section).filter(Boolean)).size;
   const yearCount = new Set(students.map((s) => s.yearLevel).filter(Boolean)).size;
+  const activeCount = (statusCounts.Active || 0) + (statusCounts.Regular || 0);
 
   return (
     <div className="page students-page">
       <PageHeader
-        eyebrow="Directory"
+        eyebrow="Student directory"
         title="Students"
-        subtitle={`${total} student${total === 1 ? '' : 's'}${search ? ' matching your search' : ' in the directory'}`}
+        subtitle={`${total} student${total === 1 ? '' : 's'} shown${statusFilter !== 'all' ? ` · ${statusFilter}` : ''}${search ? ' · matching search' : ''}`}
         actions={
           <>
             <Link className="btn" to="/students/qr-sheet">Print ID Cards</Link>
@@ -307,20 +346,29 @@ export default function Students() {
       />
 
       <div className="stat-grid">
-        <StatCard icon="users" accent="blue" label="Students" value={students.length} hint="Matching current search" />
+        <StatCard icon="users" accent="blue" label="Total students" value={students.length} hint="In directory (current search)" />
+        <StatCard icon="live" accent="green" label="Active / Regular" value={activeCount} hint="Currently active enrollment" />
         <StatCard icon="book" accent="purple" label="Courses" value={courseCount} hint="Distinct courses" />
-        <StatCard icon="layers" accent="green" label="Sections" value={sectionCount} hint="Distinct sections" />
-        <StatCard icon="star" accent="amber" label="Year levels" value={yearCount} hint="Distinct year levels" />
+        <StatCard icon="layers" accent="amber" label="Sections" value={sectionCount} hint={`${yearCount} year level${yearCount === 1 ? '' : 's'}`} />
       </div>
 
       <div className="card students-controls">
-        <div className="toolbar students-toolbar">
+        <div className="toolbar students-toolbar" style={{ gap: '0.75rem', flexWrap: 'wrap' }}>
           <input
             className="search"
-            placeholder="Search by name, student no, course, section, or email…"
+            placeholder="Search by name, student no, course, section, email, or status…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
+          <label className="page-size">
+            Status
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">All statuses</option>
+              {STUDENT_STATUSES.map((s) => (
+                <option key={s} value={s}>{s} ({statusCounts[s] || 0})</option>
+              ))}
+            </select>
+          </label>
           <label className="page-size">
             Rows
             <select value={pageSize} onChange={(e) => setPageSize(Number(e.target.value))}>
@@ -328,8 +376,30 @@ export default function Students() {
             </select>
           </label>
         </div>
+
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+          <button
+            type="button"
+            className={`btn btn-sm ${statusFilter === 'all' ? 'btn-primary' : ''}`}
+            onClick={() => setStatusFilter('all')}
+          >
+            All <span className="muted small">({students.length})</span>
+          </button>
+          {STUDENT_STATUSES.map((s) => (
+            <button
+              key={s}
+              type="button"
+              className={`btn btn-sm ${statusFilter === s ? 'btn-primary' : ''}`}
+              onClick={() => setStatusFilter(s)}
+              title={`Show ${s} students`}
+            >
+              {s} <span className="muted small">({statusCounts[s] || 0})</span>
+            </button>
+          ))}
+        </div>
+
         {selected.size > 0 && (
-          <div className="events-bulk-bar students-bulk-bar">
+          <div className="events-bulk-bar students-bulk-bar" style={{ marginTop: '0.75rem' }}>
             <div className="events-bulk-info">
               <span className="events-bulk-count">{selected.size}</span>
               <span>student{selected.size === 1 ? '' : 's'} selected</span>
@@ -358,7 +428,7 @@ export default function Students() {
           <div>
             <h3 style={{ margin: 0, fontSize: '1rem' }}>Student directory</h3>
             <p className="muted small" style={{ margin: '0.15rem 0 0' }}>
-              {loading ? 'Loading…' : `${pageRows.length} shown on this page · ${total} total`}
+              {loading ? 'Loading…' : `${pageRows.length} shown on this page · ${total} result${total === 1 ? '' : 's'}`}
             </p>
           </div>
           <label className="events-select-all" style={{ margin: 0 }}>
@@ -389,34 +459,47 @@ export default function Students() {
             </thead>
             <tbody>
               {loading && students.length === 0 && (
-                <tr><td colSpan={8} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
+                <tr><td colSpan={9} className="center"><Spinner label="Loading students…" size="sm" variant="center" /></td></tr>
               )}
-              {!loading && students.length === 0 && (
-                <tr><td colSpan={8} className="muted center">No students found. Try adjusting your search or add students.</td></tr>
-              )}
-              {pageRows.map((s) => (
-                <tr key={s.id} className={selected.has(s.id) ? 'row-selected' : ''}>
-                  <td className="check-col">
-                    <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
-                  </td>
-                  <td className="mono">{s.studentNo}</td>
-                  <td>
-                    <div className="name-cell">
-                      <span className="mini-avatar">{(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}</span>
-                      <span className="strong">{s.lastName}, {s.firstName}</span>
-                    </div>
-                  </td>
-                  <td>{s.course || <span className="muted">—</span>}</td>
-                  <td>{s.yearLevel || <span className="muted">—</span>}</td>
-                  <td>{s.section || <span className="muted">—</span>}</td>
-                  <td className="muted">{s.email || '—'}</td>
-                  <td className="right actions">
-                    <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
-                    <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
-                    <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
+              {!loading && total === 0 && (
+                <tr>
+                  <td colSpan={9} className="muted center" style={{ padding: '2rem 1rem' }}>
+                    <div style={{ fontSize: '1rem', marginBottom: '0.25rem' }}>No students found</div>
+                    <div className="small">Try adjusting your search or status filter, or add students.</div>
                   </td>
                 </tr>
-              ))}
+              )}
+              {pageRows.map((s) => {
+                const status = s.status || 'Active';
+                const inactiveLike = ['Inactive', 'Deceased', 'Dropped'].includes(status);
+                return (
+                  <tr key={s.id} className={`${selected.has(s.id) ? 'row-selected' : ''} ${inactiveLike ? 'row-muted' : ''}`}>
+                    <td className="check-col">
+                      <input type="checkbox" checked={selected.has(s.id)} onChange={() => toggleSelect(s.id)} aria-label={`Select ${s.firstName} ${s.lastName}`} />
+                    </td>
+                    <td className="mono">{s.studentNo}</td>
+                    <td>
+                      <div className="name-cell">
+                        <span className="mini-avatar">{(s.firstName?.[0] || '') + (s.lastName?.[0] || '')}</span>
+                        <div>
+                          <div className="strong">{s.lastName}, {s.firstName}</div>
+                          <div className="muted small">{[s.course, s.section].filter(Boolean).join(' · ') || '—'}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td><StatusBadge status={status} /></td>
+                    <td>{s.course || <span className="muted">—</span>}</td>
+                    <td>{s.yearLevel || <span className="muted">—</span>}</td>
+                    <td>{s.section || <span className="muted">—</span>}</td>
+                    <td className="muted">{s.email || '—'}</td>
+                    <td className="right actions">
+                      <button className="btn btn-sm" onClick={() => setQrStudent(s)}>QR</button>
+                      <button className="btn btn-sm" onClick={() => openEdit(s)}>Edit</button>
+                      <button className="btn btn-sm btn-danger" onClick={() => remove(s)}>Delete</button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -455,7 +538,7 @@ export default function Students() {
             <section className="event-form-section">
               <div className="event-form-section-head">
                 <h4>Student information</h4>
-                <p className="muted small">Enter the student’s identity and academic details.</p>
+                <p className="muted small">Identity, enrollment details, and current student status.</p>
               </div>
               <div className="form grid-form">
                 <label>
@@ -475,6 +558,12 @@ export default function Students() {
                   <input value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} required />
                 </label>
                 <label>
+                  <span>Status <span className="req">*</span></span>
+                  <select value={form.status || 'Active'} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    {STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </label>
+                <label>
                   <span>Course</span>
                   <input value={form.course} onChange={(e) => setForm({ ...form, course: e.target.value })} placeholder="e.g. BSIT" />
                 </label>
@@ -482,10 +571,13 @@ export default function Students() {
                   <span>Year Level</span>
                   <input value={form.yearLevel} onChange={(e) => setForm({ ...form, yearLevel: e.target.value })} placeholder="e.g. 1st Year" />
                 </label>
-                <label className="span-2">
+                <label>
                   <span>Section</span>
                   <input value={form.section} onChange={(e) => setForm({ ...form, section: e.target.value })} placeholder="e.g. A" />
                 </label>
+              </div>
+              <div style={{ marginTop: '0.75rem' }}>
+                <StatusBadge status={form.status || 'Active'} />
               </div>
             </section>
             {formError && <div className="alert alert-error">{formError}</div>}
@@ -530,13 +622,20 @@ export default function Students() {
                     placeholder="Leave blank to keep"
                   />
                 </label>
-                <label className="span-2">
+                <label>
                   <span>Section</span>
                   <input
                     value={bulkForm.section}
                     onChange={(e) => setBulkForm({ ...bulkForm, section: e.target.value })}
                     placeholder="Leave blank to keep"
                   />
+                </label>
+                <label>
+                  <span>Status</span>
+                  <select value={bulkForm.status} onChange={(e) => setBulkForm({ ...bulkForm, status: e.target.value })}>
+                    <option value="">Leave blank to keep</option>
+                    {STUDENT_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+                  </select>
                 </label>
               </div>
             </section>
@@ -599,6 +698,7 @@ function StudentQrModal({ student, onClose, onRegenerate }) {
     >
       <div className="qr-display" ref={wrapRef}>
         <StudentIdCard student={student} />
+        <div style={{ marginTop: '0.5rem' }}><StatusBadge status={student.status} /></div>
       </div>
       <p className="muted small center">
         ID size 85.6 × 54 mm. Have the student present this card — staff scan the QR at the event to record attendance.

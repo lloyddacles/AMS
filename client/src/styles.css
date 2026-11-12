@@ -1047,6 +1047,8 @@ input:focus, select:focus, textarea:focus {
 .check-col { width: 36px; text-align: center; }
 .check-col input { width: 15px; height: 15px; cursor: pointer; }
 .table tbody tr.row-selected { background: #eff6ff; }
+.table tbody tr.row-muted td { color: #6b7280; }
+.table tbody tr.row-muted .strong { color: #374151; }
 
 /* ---------- Matrix ---------- */
 .matrix th.rot { white-space: nowrap; font-size: 0.7rem; }

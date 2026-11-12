@@ -95,6 +95,7 @@ const SCHEMA = `
     course TEXT,
     year_level TEXT,
     section TEXT,
+    status TEXT NOT NULL DEFAULT 'Active',
     qr_token TEXT NOT NULL UNIQUE,
     password_hash TEXT,
     password_set_at TEXT,
@@ -319,6 +320,7 @@ async function doInit() {
   await ensureColumn('events', 'report_summary', 'report_summary TEXT');
   await ensureColumn('attendance', 'checked_out_at', 'checked_out_at TEXT');
   await ensureColumn('students', 'section', 'section TEXT');
+  await ensureColumn('students', 'status', "status TEXT NOT NULL DEFAULT 'Active'");
   await ensureColumn('students', 'password_hash', 'password_hash TEXT');
   await ensureColumn('students', 'password_set_at', 'password_set_at TEXT');
   await ensureColumn('users', 'avatar', 'avatar TEXT');

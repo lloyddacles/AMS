@@ -33,6 +33,7 @@ export const schemas = {
     course: optionalTrimmed(120),
     yearLevel: optionalTrimmed(50),
     section: optionalTrimmed(50),
+    status: z.enum(['Active', 'Inactive', 'Deceased', 'Dropped', 'Regular', 'Irregular']).optional(),
   }),
   studentBulk: z.object({
     updateExisting: z.coerce.boolean().optional().default(false),

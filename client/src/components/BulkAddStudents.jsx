@@ -10,12 +10,13 @@ const COLUMNS = [
   { key: 'course', label: 'Course', aliases: /course|program|strand/ },
   { key: 'yearLevel', label: 'Year Level', aliases: /year|level|grade/ },
   { key: 'section', label: 'Section', aliases: /section|block/ },
+  { key: 'status', label: 'Status', aliases: /^status$/ },
 ];
 
 const SAMPLE = [
-  'Student No,First Name,Last Name,Email,Course,Year Level,Section',
-  '2024-1001,Jose,Rizal,jose.rizal@example.edu,BSCS,1st Year,A',
-  '2024-1002,Andres,Bonifacio,andres.bonifacio@example.edu,BSIT,2nd Year,B',
+  'Student No,First Name,Last Name,Email,Course,Year Level,Section,Status',
+  '2024-1001,Jose,Rizal,jose.rizal@example.edu,BSCS,1st Year,A,Active',
+  '2024-1002,Andres,Bonifacio,andres.bonifacio@example.edu,BSIT,2nd Year,B,Regular',
 ].join('\n');
 
 function splitLine(line) {
@@ -174,8 +175,8 @@ export default function BulkAddStudents({ onClose, onDone }) {
       }
     >
       <p className="muted small">
-        Paste rows or upload a CSV. Columns: <strong>Student No, First Name, Last Name, Email, Course, Year Level, Section</strong>.
-        A header row is optional; extra columns are ignored.
+        Paste rows or upload a CSV. Columns: <strong>Student No, First Name, Last Name, Email, Course, Year Level, Section, Status</strong>.
+        Status can be Active, Inactive, Deceased, Dropped, Regular, or Irregular (defaults to Active). A header row is optional; extra columns are ignored.
       </p>
       <label className="bulk-update-toggle">
         <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />
