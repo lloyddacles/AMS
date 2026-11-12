@@ -573,6 +573,45 @@ export default function Events() {
 
             <section className="event-form-section">
               <div className="event-form-section-head">
+                <h4>Department / Program scope</h4>
+                <p className="muted small">
+                  {isAdmin
+                    ? 'Assign this event to a department/program so scoped staff only see events relevant to them.'
+                    : 'This event is scoped to your assigned department/program.'}
+                </p>
+              </div>
+              <div className="form grid-form">
+                <label>
+                  <span>Department</span>
+                  <select
+                    value={form.departmentId || ''}
+                    disabled={!isAdmin}
+                    onChange={(e) => {
+                      const did = e.target.value;
+                      const ok = scopePrograms(did).some((p) => String(p.id) === String(form.programId));
+                      setForm((f) => ({ ...f, departmentId: did, programId: ok ? f.programId : '' }));
+                    }}
+                  >
+                    <option value="">{isAdmin ? 'All departments (global)' : '—'}</option>
+                    {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+                  </select>
+                </label>
+                <label>
+                  <span>Program</span>
+                  <select
+                    value={form.programId || ''}
+                    disabled={!isAdmin || !form.departmentId}
+                    onChange={(e) => setForm((f) => ({ ...f, programId: e.target.value }))}
+                  >
+                    <option value="">{form.departmentId ? 'All programs in department' : 'Select a department first'}</option>
+                    {scopePrograms(form.departmentId).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                  </select>
+                </label>
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
                 <h4>Attendance options</h4>
                 <p className="muted small">Control how scans are verified and confirmed for this event.</p>
               </div>
