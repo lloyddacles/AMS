@@ -43,11 +43,25 @@ function StatusBadge({ status }) {
   );
 }
 
+function programChipStyle(name = '') {
+  const n = String(name).toLowerCase().replace(/\s+/g, ' ').trim();
+  if (!n) return null;
+  if (n.includes('entrepreneurship')) return { background: '#800000', color: '#ffffff', border: '1px solid #800000' }; // maroon
+  if (n.includes('tourism management')) return { background: '#7e22ce', color: '#ffffff', border: '1px solid #7e22ce' }; // purple
+  if (n.includes('criminology')) return { background: '#f97316', color: '#111827', border: '1px solid #ea580c' }; // orange
+  if (n.includes('accounting information systems') || (n.includes('accountancy') && !n.includes('tourism'))) {
+    return { background: '#facc15', color: '#422006', border: '1px solid #eab308' }; // yellow
+  }
+  if (n.includes('information systems')) return { background: '#1e3a8a', color: '#ffffff', border: '1px solid #1e3a8a' }; // navy blue
+  return null;
+}
+
 function studentMeta(s) {
   const programOrCourse = s.programName || s.course || '';
-  const group = [programOrCourse, s.yearLevel, s.section].filter(Boolean).join(' · ');
+  const yearSection = [s.yearLevel, s.section].filter(Boolean).join(' · ');
   const dept = s.departmentName || '';
-  return { group, dept, email: s.email || '' };
+  const programStyle = programChipStyle(programOrCourse);
+  return { programOrCourse, yearSection, group: [programOrCourse, s.yearLevel, s.section].filter(Boolean).join(' · '), dept, email: s.email || '', programStyle };
 }
 
 export default function Students() {
@@ -549,7 +563,18 @@ export default function Students() {
                       </div>
                       <div className="student-line2">
                         {meta.dept ? <span className="student-dept-chip" title={meta.dept}>{meta.dept}</span> : null}
-                        {meta.group ? <span>{meta.group}</span> : <span className="muted">No program/course set</span>}
+                        {meta.programOrCourse ? (
+                          <span
+                            className={`program-chip${meta.programStyle ? '' : ' program-chip-default'}`}
+                            style={meta.programStyle || undefined}
+                            title={meta.programOrCourse}
+                          >
+                            {meta.programOrCourse}
+                          </span>
+                        ) : (
+                          <span className="muted">No program/course set</span>
+                        )}
+                        {meta.yearSection ? <span>{meta.yearSection}</span> : null}
                         {meta.email ? <span className="student-meta-sep">•</span> : null}
                         {meta.email ? <span className="student-email" title={meta.email}>{meta.email}</span> : null}
                       </div>
