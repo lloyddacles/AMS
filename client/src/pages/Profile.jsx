@@ -84,37 +84,78 @@ export default function Profile() {
   const initial = (name || user?.username || 'A')[0]?.toUpperCase() || 'A';
 
   return (
-    <div className="page">
+    <div className="page profile-page">
       <PageHeader
         eyebrow="Account"
         title="Profile"
-        subtitle="Manage your administrator account and profile picture."
-        actions={
-          <>
-            <span className="pill pill-blue">{user?.role || 'staff'}</span>
-            <span className="pill pill-gray">@{user?.username || 'account'}</span>
-          </>
-        }
+        subtitle="Manage your account details and profile picture."
       />
 
       {error && <div className="alert alert-error">{error}</div>}
       {notice && <div className="alert alert-info">{notice}</div>}
 
-      <div className="card profile-card">
-        <form className="profile-form" onSubmit={save}>
-          <div className="profile-avatar">
+      <section className="card profile-hero">
+        <div className="profile-hero-main">
+          <div className="profile-avatar-wrap">
             {avatar ? (
-              <img className="avatar-lg" src={avatar} alt="Profile" />
+              <img className="avatar-lg profile-avatar-img" src={avatar} alt="Profile" />
             ) : (
-              <span className="avatar-lg avatar-lg-empty">{initial}</span>
+              <span className="avatar-lg avatar-lg-empty profile-avatar-img">{initial}</span>
             )}
-            <div className="profile-avatar-actions">
-              <button type="button" className="btn btn-sm" onClick={() => fileRef.current?.click()}>
+            <button
+              type="button"
+              className="profile-avatar-fab"
+              onClick={() => fileRef.current?.click()}
+              title={avatar ? 'Change picture' : 'Upload picture'}
+            >
+              ✎
+            </button>
+          </div>
+          <div className="profile-hero-copy">
+            <div className="profile-name-row">
+              <h2>{name || user?.name || 'Your profile'}</h2>
+              <span className="pill pill-blue">{user?.role || 'staff'}</span>
+            </div>
+            <p className="muted">@{user?.username || 'account'} · Keep your profile up to date for a personalized experience.</p>
+            <div className="profile-quick-meta">
+              <div className="profile-meta-chip">
+                <span>Username</span>
+                <strong>@{user?.username || '—'}</strong>
+              </div>
+              <div className="profile-meta-chip">
+                <span>Role</span>
+                <strong>{user?.role || '—'}</strong>
+              </div>
+              <div className="profile-meta-chip">
+                <span>Photo</span>
+                <strong>{avatar ? 'Custom' : 'Default'}</strong>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="profile-grid">
+        <section className="card profile-panel">
+          <div className="profile-panel-head">
+            <h3>Profile picture</h3>
+            <p className="muted small">Upload a clear image so your account is easy to recognize.</p>
+          </div>
+          <div className="profile-avatar-panel">
+            <div className="profile-avatar-preview">
+              {avatar ? (
+                <img className="profile-avatar-lg" src={avatar} alt="Profile preview" />
+              ) : (
+                <span className="profile-avatar-lg profile-avatar-placeholder">{initial}</span>
+              )}
+            </div>
+            <div className="profile-avatar-actions modern">
+              <button type="button" className="btn btn-primary" onClick={() => fileRef.current?.click()}>
                 {avatar ? 'Change picture' : 'Upload picture'}
               </button>
               {avatar && (
-                <button type="button" className="btn btn-sm btn-danger" onClick={removePhoto}>
-                  Remove
+                <button type="button" className="btn" onClick={removePhoto}>
+                  Remove photo
                 </button>
               )}
               <input
@@ -125,31 +166,40 @@ export default function Profile() {
                 hidden
               />
             </div>
-            <p className="muted small center">Recommended: a square image. Large photos are resized automatically.</p>
+            <p className="muted small">Recommended: square image (PNG/JPG/WEBP/GIF). Large photos are resized automatically (up to 8 MB).</p>
           </div>
+        </section>
 
-          <div className="profile-fields">
-            <label>
-              Display name
+        <section className="card profile-panel">
+          <div className="profile-panel-head">
+            <h3>Account details</h3>
+            <p className="muted small">Update your display name. Username and role are managed by the system.</p>
+          </div>
+          <form className="profile-form-modern" onSubmit={save}>
+            <label className="profile-field">
+              <span>Display name</span>
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Your name" required />
+              <small className="muted">This name appears across the app.</small>
             </label>
-            <div className="form-grid-2">
-              <label>
-                Username
+
+            <div className="profile-form-grid">
+              <label className="profile-field">
+                <span>Username</span>
                 <input value={user?.username || ''} disabled />
               </label>
-              <label>
-                Role
+              <label className="profile-field">
+                <span>Role</span>
                 <input value={user?.role || ''} disabled />
               </label>
             </div>
-            <div className="profile-actions">
+
+            <div className="profile-actions modern">
               <button className="btn btn-primary" type="submit" disabled={saving}>
-                {saving ? 'Saving…' : 'Save changes'}
+                {saving ? 'Saving changes…' : 'Save changes'}
               </button>
             </div>
-          </div>
-        </form>
+          </form>
+        </section>
       </div>
     </div>
   );
