@@ -3,7 +3,10 @@ import { all, get, run } from '../db.js';
 export async function listDepartments() {
   return all(
     `SELECT d.id, d.name, d.created_at AS createdAt,
-            (SELECT COUNT(*) FROM programs p WHERE p.department_id = d.id AND p.active = 1) AS programCount
+            (SELECT COUNT(*) FROM programs p WHERE p.department_id = d.id) AS programCount,
+            (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id) AS userCount,
+            (SELECT COUNT(*) FROM students s WHERE s.department_id = d.id) AS studentCount,
+            (SELECT COUNT(*) FROM events e WHERE e.department_id = d.id) AS eventCount
      FROM departments d
      ORDER BY d.name COLLATE NOCASE`
   );
@@ -19,7 +22,10 @@ export async function listPrograms({ departmentId = null, includeInactive = fals
   if (!includeInactive) clauses.push('p.active = 1');
   const where = clauses.length ? `WHERE ${clauses.join(' AND ')}` : '';
   return all(
-    `SELECT p.id, p.name, p.code, p.active, p.department_id AS departmentId, d.name AS departmentName, p.created_at AS createdAt
+    `SELECT p.id, p.name, p.code, p.active, p.department_id AS departmentId, d.name AS departmentName, p.created_at AS createdAt,
+            (SELECT COUNT(*) FROM users u WHERE u.program_id = p.id) AS userCount,
+            (SELECT COUNT(*) FROM students s WHERE s.program_id = p.id) AS studentCount,
+            (SELECT COUNT(*) FROM events e WHERE e.program_id = p.id) AS eventCount
      FROM programs p
      JOIN departments d ON d.id = p.department_id
      ${where}
@@ -28,34 +34,137 @@ export async function listPrograms({ departmentId = null, includeInactive = fals
   );
 }
 
+export async function createDepartment({ name }) {
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return { ok: false, status: 400, error: 'College/department name is required' };
+  try {
+    const info = await run('INSERT INTO departments (name) VALUES (?)', [trimmed]);
+    const department = await get(
+      `SELECT d.id, d.name, d.created_at AS createdAt,
+              0 AS programCount, 0 AS userCount, 0 AS studentCount, 0 AS eventCount
+       FROM departments d WHERE d.id = ?`,
+      [info.lastInsertRowid]
+    );
+    return { ok: true, department };
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) {
+      return { ok: false, status: 409, error: 'That college/department already exists' };
+    }
+    throw err;
+  }
+}
+
+export async function updateDepartment(id, { name }) {
+  const deptId = Number(id);
+  if (!Number.isInteger(deptId) || deptId <= 0) return { ok: false, status: 400, error: 'Invalid department' };
+  const existing = await get('SELECT id FROM departments WHERE id = ?', [deptId]);
+  if (!existing) return { ok: false, status: 404, error: 'College/department not found' };
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return { ok: false, status: 400, error: 'College/department name is required' };
+  try {
+    await run('UPDATE departments SET name = ? WHERE id = ?', [trimmed, deptId]);
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) {
+      return { ok: false, status: 409, error: 'That college/department already exists' };
+    }
+    throw err;
+  }
+  const department = await get(
+    `SELECT d.id, d.name, d.created_at AS createdAt,
+            (SELECT COUNT(*) FROM programs p WHERE p.department_id = d.id) AS programCount,
+            (SELECT COUNT(*) FROM users u WHERE u.department_id = d.id) AS userCount,
+            (SELECT COUNT(*) FROM students s WHERE s.department_id = d.id) AS studentCount,
+            (SELECT COUNT(*) FROM events e WHERE e.department_id = d.id) AS eventCount
+     FROM departments d WHERE d.id = ?`,
+    [deptId]
+  );
+  return { ok: true, department };
+}
+
+export async function deleteDepartment(id) {
+  const deptId = Number(id);
+  if (!Number.isInteger(deptId) || deptId <= 0) return { ok: false, status: 400, error: 'Invalid department' };
+  const existing = await get('SELECT id, name FROM departments WHERE id = ?', [deptId]);
+  if (!existing) return { ok: false, status: 404, error: 'College/department not found' };
+  await run('DELETE FROM departments WHERE id = ?', [deptId]);
+  return { ok: true, department: existing };
+}
+
 export async function createProgram({ departmentId, name, code = '' }) {
   const deptId = Number(departmentId);
-  if (!Number.isInteger(deptId) || deptId <= 0) return { ok: false, status: 400, error: 'Department is required' };
+  if (!Number.isInteger(deptId) || deptId <= 0) return { ok: false, status: 400, error: 'College/department is required' };
   const trimmed = String(name || '').trim();
   if (!trimmed) return { ok: false, status: 400, error: 'Program name is required' };
   const dept = await get('SELECT id, name FROM departments WHERE id = ?', [deptId]);
-  if (!dept) return { ok: false, status: 404, error: 'Department not found' };
+  if (!dept) return { ok: false, status: 404, error: 'College/department not found' };
   try {
     const info = await run(
       'INSERT INTO programs (department_id, name, code, active) VALUES (?, ?, ?, 1)',
       [deptId, trimmed, String(code || '').trim() || null]
     );
     const program = await get(
-      `SELECT p.id, p.name, p.code, p.active, p.department_id AS departmentId, d.name AS departmentName
+      `SELECT p.id, p.name, p.code, p.active, p.department_id AS departmentId, d.name AS departmentName,
+              0 AS userCount, 0 AS studentCount, 0 AS eventCount
        FROM programs p JOIN departments d ON d.id = p.department_id WHERE p.id = ?`,
       [info.lastInsertRowid]
     );
     return { ok: true, program };
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
-      return { ok: false, status: 409, error: 'That program already exists in this department' };
+      return { ok: false, status: 409, error: 'That program already exists in this college/department' };
     }
     throw err;
   }
 }
 
-export async function getAcademicStructure() {
-  const [departments, programs] = await Promise.all([listDepartments(), listPrograms({ includeInactive: false })]);
+export async function updateProgram(id, { departmentId, name, code = '', active = 1 }) {
+  const progId = Number(id);
+  if (!Number.isInteger(progId) || progId <= 0) return { ok: false, status: 400, error: 'Invalid program' };
+  const existing = await get('SELECT id FROM programs WHERE id = ?', [progId]);
+  if (!existing) return { ok: false, status: 404, error: 'Program not found' };
+  const deptId = Number(departmentId);
+  if (!Number.isInteger(deptId) || deptId <= 0) return { ok: false, status: 400, error: 'College/department is required' };
+  const dept = await get('SELECT id FROM departments WHERE id = ?', [deptId]);
+  if (!dept) return { ok: false, status: 404, error: 'College/department not found' };
+  const trimmed = String(name || '').trim();
+  if (!trimmed) return { ok: false, status: 400, error: 'Program name is required' };
+  const isActive = active === false || active === 0 || String(active) === '0' ? 0 : 1;
+  try {
+    await run(
+      'UPDATE programs SET department_id = ?, name = ?, code = ?, active = ? WHERE id = ?',
+      [deptId, trimmed, String(code || '').trim() || null, isActive, progId]
+    );
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) {
+      return { ok: false, status: 409, error: 'That program already exists in this college/department' };
+    }
+    throw err;
+  }
+  const program = await get(
+    `SELECT p.id, p.name, p.code, p.active, p.department_id AS departmentId, d.name AS departmentName,
+            (SELECT COUNT(*) FROM users u WHERE u.program_id = p.id) AS userCount,
+            (SELECT COUNT(*) FROM students s WHERE s.program_id = p.id) AS studentCount,
+            (SELECT COUNT(*) FROM events e WHERE e.program_id = p.id) AS eventCount
+     FROM programs p JOIN departments d ON d.id = p.department_id WHERE p.id = ?`,
+    [progId]
+  );
+  return { ok: true, program };
+}
+
+export async function deleteProgram(id) {
+  const progId = Number(id);
+  if (!Number.isInteger(progId) || progId <= 0) return { ok: false, status: 400, error: 'Invalid program' };
+  const existing = await get('SELECT id, name FROM programs WHERE id = ?', [progId]);
+  if (!existing) return { ok: false, status: 404, error: 'Program not found' };
+  await run('DELETE FROM programs WHERE id = ?', [progId]);
+  return { ok: true, program: existing };
+}
+
+export async function getAcademicStructure({ includeInactivePrograms = false } = {}) {
+  const [departments, programs] = await Promise.all([
+    listDepartments(),
+    listPrograms({ includeInactive: includeInactivePrograms }),
+  ]);
   return { departments, programs };
 }
 

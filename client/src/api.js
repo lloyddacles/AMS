@@ -177,8 +177,13 @@ export const api = {
 
   getSettings: () => request('/settings'),
   updateSettings: (data) => request('/settings', { method: 'PUT', body: data }),
-  getAcademicStructure: () => request('/academic/structure'),
+  getAcademicStructure: (params) => request(`/academic/structure?${new URLSearchParams(params || {}).toString()}`),
+  createDepartment: (data) => request('/academic/departments', { method: 'POST', body: data }),
+  updateDepartment: (id, data) => request(`/academic/departments/${id}`, { method: 'PUT', body: data }),
+  deleteDepartment: (id) => request(`/academic/departments/${id}`, { method: 'DELETE' }),
   createProgram: (data) => request('/academic/programs', { method: 'POST', body: data }),
+  updateProgram: (id, data) => request(`/academic/programs/${id}`, { method: 'PUT', body: data }),
+  deleteProgram: (id) => request(`/academic/programs/${id}`, { method: 'DELETE' }),
 
   getUsers: () => request('/users'),
   createUser: (data) => request('/users', { method: 'POST', body: data }),

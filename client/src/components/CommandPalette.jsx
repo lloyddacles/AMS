@@ -12,6 +12,7 @@ const PAGES = [
   { label: 'Reports', to: '/reports', icon: '▤', keywords: 'export csv risk trends', roles: ['admin'] },
   { label: 'Corrections', to: '/corrections/review', icon: '✎', keywords: 'requests review appeals' },
   { label: 'Terms', to: '/terms', icon: '▦', keywords: 'semester', roles: ['admin'] },
+  { label: 'Colleges', to: '/colleges', icon: '🏛', keywords: 'departments programs courses academic structure', roles: ['admin'] },
   { label: 'Settings', to: '/settings', icon: '⚙', keywords: 'policy automation digest', roles: ['admin'] },
   { label: 'Staff', to: '/users', icon: '⚇', keywords: 'users accounts', roles: ['admin'] },
   { label: 'Audit Log', to: '/audit', icon: '☰', keywords: 'history changes', roles: ['admin'] },

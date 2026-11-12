@@ -28,6 +28,7 @@ const AuditLog = lazy(() => import('./pages/AuditLog.jsx'));
 const Settings = lazy(() => import('./pages/Settings.jsx'));
 const MustChangePassword = lazy(() => import('./pages/MustChangePassword.jsx'));
 const Backup = lazy(() => import('./pages/Backup.jsx'));
+const Colleges = lazy(() => import('./pages/Colleges.jsx'));
 const StudentLogin = lazy(() => import('./pages/portal/StudentLogin.jsx'));
 const PortalLayout = lazy(() => import('./pages/portal/PortalLayout.jsx'));
 const PortalDashboard = lazy(() => import('./pages/portal/PortalDashboard.jsx'));
@@ -90,6 +91,7 @@ export default function App() {
           <Route path="/events/:id/scan" element={<Protected><Scanner /></Protected>} />
           <Route path="/schedules" element={<Protected><Schedules /></Protected>} />
           <Route path="/terms" element={<Protected><AdminOnly><Terms /></AdminOnly></Protected>} />
+          <Route path="/colleges" element={<Protected><AdminOnly><Colleges /></AdminOnly></Protected>} />
           <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />
           <Route path="/reports" element={<Protected><AdminOnly><Reports /></AdminOnly></Protected>} />
           <Route path="/about" element={<Protected><About /></Protected>} />
