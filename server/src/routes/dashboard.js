@@ -273,7 +273,7 @@ router.get('/stats', async (req, res) => {
 router.get('/briefing', async (req, res) => {
   await maybeRunAutomation().catch(() => {});
   try {
-    const briefing = await buildDailyBriefing();
+    const briefing = await buildDailyBriefing({ user: req.user });
     res.json(briefing);
   } catch (e) {
     res.status(500).json({ error: e.message || 'Could not generate briefing' });

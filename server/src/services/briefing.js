@@ -3,6 +3,7 @@ import { todayInTz, eventPhase, formatTzTime, eventStart, displayStatus } from '
 import { buildOverview, buildAtRisk, buildCompliance } from './reports.js';
 import { buildRiskModel } from './risk.js';
 import { exclusionsByEvent } from './roster.js';
+import { eventScopeFilter, studentScopeFilter } from './academic.js';
 
 function nameOf(s) {
   return `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, '').trim() || s.studentNo || 'Student';
@@ -14,27 +15,42 @@ function confidenceFromEvidence(events, riskScore) {
   return 'Low';
 }
 
-export async function buildDailyBriefing() {
+export async function buildDailyBriefing({ user = null } = {}) {
   const today = todayInTz();
   const now = new Date();
+  const eScope = eventScopeFilter(user, { eventAlias: 'e' });
+  const sScope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
+
+  const scopedStudents = await all(
+    `SELECT s.id FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE 1=1 ${sScope.where}`,
+    sScope.params
+  );
+  const scopedIds = scopedStudents.map((r) => r.id);
+  const inClause = scopedIds.length ? `AND a.student_id IN (${scopedIds.map(() => '?').join(',')})` : 'AND 1=0';
 
   const [overview, atRisk, compliance, riskModel, todayEventsRaw] = await Promise.all([
-    buildOverview({}).catch(() => ({ totalEvents: 0, students: [] })),
-    buildAtRisk({}).catch(() => ({ threshold: 75, minEvents: 3, totalEvents: 0, students: [], model: null })),
-    buildCompliance({}).catch(() => ({ eligible: false, below: 0, minimum: 75, students: [], totalStudents: 0, totalEvents: 0 })),
-    buildRiskModel().catch(() => ({ totalEvents: 0, context: null, byStudent: new Map(), students: [] })),
+    buildOverview({ user }).catch(() => ({ totalEvents: 0, students: [] })),
+    buildAtRisk({ user }).catch(() => ({ threshold: 75, minEvents: 3, totalEvents: 0, students: [], model: null })),
+    buildCompliance({ user }).catch(() => ({ eligible: false, below: 0, minimum: 75, students: [], totalStudents: 0, totalEvents: 0 })),
+    buildRiskModel({ user }).catch(() => ({ totalEvents: 0, context: null, byStudent: new Map(), students: [] })),
     all(
       `SELECT e.id, e.name, e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime,
               e.location, e.status, e.archived,
               (SELECT COUNT(*) FROM attendance a
                 WHERE a.event_id = e.id AND a.status IN ('early','on-time','late','present')
+                  ${inClause}
                   AND NOT EXISTS (SELECT 1 FROM event_exclusions x WHERE x.event_id = a.event_id AND x.student_id = a.student_id)
               ) AS attended,
-              (SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id) AS expected
+              CASE WHEN ? THEN (${scopedIds.length} - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id AND x.student_id IN (${scopedIds.length ? scopedIds.map(() => '?').join(',') : 'NULL'})))
+                   ELSE ((SELECT COUNT(*) FROM students) - (SELECT COUNT(*) FROM event_exclusions x WHERE x.event_id = e.id)) END AS expected
        FROM events e
-       WHERE e.event_date = ? AND e.archived = 0
+       WHERE e.event_date = ? AND e.archived = 0 ${eScope.where}
        ORDER BY e.start_time ASC, e.id ASC`,
-      [today]
+      [...(scopedIds.length ? scopedIds : []), sScope.scoped ? 1 : 0, ...(scopedIds.length ? scopedIds : []), today, ...eScope.params]
     ),
   ]);
 

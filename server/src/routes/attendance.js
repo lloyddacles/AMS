@@ -14,13 +14,43 @@ import {
   todayInTz,
   eventPhase,
 } from '../classify.js';
-import { eventScopeFilter } from '../services/academic.js';
+import { eventScopeFilter, studentScopeFilter } from '../services/academic.js';
 
 const router = Router();
 
 async function getScopedEvent(eventId, user) {
   const scope = eventScopeFilter(user, { eventAlias: '' });
   return get(`SELECT * FROM events WHERE id = ? ${scope.where}`, [eventId, ...scope.params]);
+}
+
+async function getScopedStudent(studentId, user) {
+  const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
+  return get(
+    `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
+            s.course, s.year_level AS yearLevel, s.section, s.department_id AS departmentId, s.program_id AS programId
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE s.id = ? ${scope.where}`,
+    [studentId, ...scope.params]
+  );
+}
+
+async function ensureAttendanceRecordAccessible(id, user) {
+  const eScope = eventScopeFilter(user, { eventAlias: 'e' });
+  const sScope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
+  return get(
+    `SELECT a.id
+     FROM attendance a
+     JOIN events e ON e.id = a.event_id
+     JOIN students s ON s.id = a.student_id
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE a.id = ? ${eScope.where} ${sScope.where}`,
+    [id, ...eScope.params, ...sScope.params]
+  );
 }
 
 const selectFields = `a.id, a.event_id AS eventId, a.student_id AS studentId, a.status,
@@ -283,8 +313,17 @@ router.get('/event/:eventId', async (req, res) => {
     [req.params.eventId]
   );
   const byStudent = new Map(records.map((r) => [r.studentId, r]));
+  const sScope = studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
-    `SELECT ${studentFields} FROM students s ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`
+    `SELECT s.id AS studentId, s.student_no AS studentNo, s.first_name AS firstName,
+            s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.section
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${sScope.join}
+     WHERE 1=1 ${sScope.where}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    sScope.params
   );
   const cutoff = absentCutoff(event);
   const windowPassed = cutoff ? new Date() > cutoff : false;
@@ -340,12 +379,14 @@ router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
   const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
 
-  const student = await get(
+  const raw = await get(
     `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
             course, year_level AS yearLevel, section
      FROM students WHERE qr_token = ?`,
     [resolveToken(qrToken)]
   );
+  if (!raw) return res.status(404).json({ error: 'Unrecognized QR code' });
+  const student = await getScopedStudent(raw.id, req.user);
   if (!student) return res.status(404).json({ error: 'Unrecognized QR code' });
   if (await isExcluded(event.id, student.id)) return res.status(400).json({ error: OFF_LIST_ERROR });
 
@@ -399,6 +440,8 @@ router.post('/scan', validate(schemas.scan), async (req, res) => {
 
   const target = await resolveScanTarget(event, qrToken, confirmValue);
   if (target.error) return res.status(target.error === 'Unrecognized QR code' ? 404 : 400).json({ error: target.error });
+  const scopedStudent = await getScopedStudent(target.student.id, req.user);
+  if (!scopedStudent) return res.status(404).json({ error: 'Unrecognized QR code' });
 
   const result = await applyScan({
     eventId: event.id,
@@ -432,6 +475,11 @@ router.post('/scan/batch', validate(schemas.scanBatch), async (req, res) => {
       const target = await resolveScanTarget(event, item?.qrToken, item?.confirmValue);
       if (target.error) {
         results.push({ clientScanId, ok: false, error: target.error });
+        continue;
+      }
+      const scopedStudent = await getScopedStudent(target.student.id, req.user);
+      if (!scopedStudent) {
+        results.push({ clientScanId, ok: false, error: 'Unrecognized QR code' });
         continue;
       }
       const result = await applyScan({
@@ -484,7 +532,7 @@ router.post('/', validate(schemas.manualAttendance), async (req, res) => {
   }
   const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
-  const student = await get('SELECT id FROM students WHERE id = ?', [studentId]);
+  const student = await getScopedStudent(studentId, req.user);
   if (!student) return res.status(404).json({ error: 'Student not found' });
   // Marking a student by hand puts them back on the attendee list.
   let readded = false;
@@ -506,6 +554,8 @@ router.post('/', validate(schemas.manualAttendance), async (req, res) => {
 router.put('/:id', validate(schemas.attendanceUpdate), async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const accessible = await ensureAttendanceRecordAccessible(id, req.user);
+  if (!accessible) return res.status(404).json({ error: 'Attendance record not found' });
   const existing = await get('SELECT * FROM attendance WHERE id = ?', [id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
   const { status, note } = req.body;
@@ -534,6 +584,8 @@ router.put('/:id', validate(schemas.attendanceUpdate), async (req, res) => {
 router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
   if (!Number.isInteger(id) || id <= 0) return res.status(400).json({ error: 'Invalid id' });
+  const accessible = await ensureAttendanceRecordAccessible(id, req.user);
+  if (!accessible) return res.status(404).json({ error: 'Attendance record not found' });
   const before = await getAttendanceRow(id);
   const info = await run('DELETE FROM attendance WHERE id = ?', [id]);
   if (!info.changes) return res.status(404).json({ error: 'Attendance record not found' });
