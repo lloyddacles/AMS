@@ -9,7 +9,7 @@ const PAGES = [
   { label: 'Students', to: '/students', icon: '◔', keywords: 'directory people' },
   { label: 'Events', to: '/events', icon: '★', keywords: 'attendance activities' },
   { label: 'Schedules', to: '/schedules', icon: '❖', keywords: 'recurring calendar' },
-  { label: 'Reports', to: '/reports', icon: '▤', keywords: 'export csv risk trends' },
+  { label: 'Reports', to: '/reports', icon: '▤', keywords: 'export csv risk trends', roles: ['admin'] },
   { label: 'Corrections', to: '/corrections/review', icon: '✎', keywords: 'requests review appeals' },
   { label: 'Terms', to: '/terms', icon: '▦', keywords: 'semester', roles: ['admin'] },
   { label: 'Settings', to: '/settings', icon: '⚙', keywords: 'policy automation digest', roles: ['admin'] },

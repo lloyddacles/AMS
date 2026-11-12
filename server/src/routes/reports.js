@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { get, all } from '../db.js';
-import { requireAuth } from '../middleware/auth.js';
+import { requireAuth, requireRole } from '../middleware/auth.js';
 import { displayStatus, absentCutoff } from '../classify.js';
 import { buildOverview, buildAtRisk, buildTrends, buildCompliance, eventFilter } from '../services/reports.js';
 import { buildRiskModel } from '../services/risk.js';
@@ -8,13 +8,14 @@ import { exclusionsByEvent } from '../services/roster.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from '../services/series.js';
 
 const router = Router();
-router.use(requireAuth);
+router.use(requireAuth, requireRole('admin'));
 
 function rangeFilters(query) {
   return {
     from: query.from || '',
     to: query.to || '',
     termId: query.termId ? Number(query.termId) : null,
+    programId: query.programId ? Number(query.programId) : null,
   };
 }
 
@@ -77,18 +78,21 @@ router.get('/trends', async (req, res) => {
 
 // Event × student matrix of classifications.
 router.get('/matrix', async (req, res) => {
-  const ef = eventFilter({ ...rangeFilters(req.query), user: req.user });
+  const rf = rangeFilters(req.query);
+  const ef = eventFilter({ ...rf, user: req.user });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+  const programFilterSql = rf.programId ? ' AND s.program_id = ?' : '';
+  const programFilterParams = rf.programId ? [Number(rf.programId)] : [];
   const students = await all(
     `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName
      FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
      ${scope.join}
-     WHERE 1=1 ${scope.where}
+     WHERE 1=1 ${scope.where} ${programFilterSql}
      ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-    scope.params
+    [...scope.params, ...programFilterParams]
   );
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
   const eventById = new Map(events.map((e) => [e.id, e]));
@@ -103,7 +107,7 @@ router.get('/matrix', async (req, res) => {
 // Explainable attendance risk for every student (logistic model + exact SHAP),
 // sorted most-at-risk first.
 router.get('/risk', async (req, res) => {
-  const model = await buildRiskModel({ user: req.user });
+  const model = await buildRiskModel({ user: req.user, ...rangeFilters(req.query) });
   const students = [...model.students].sort(
     (a, b) => b.risk - a.risk || String(a.lastName || '').localeCompare(String(b.lastName || ''))
   );
@@ -112,7 +116,7 @@ router.get('/risk', async (req, res) => {
 
 // Full explanation (all feature contributions) for a single student.
 router.get('/risk/:studentId', async (req, res) => {
-  const model = await buildRiskModel({ user: req.user });
+  const model = await buildRiskModel({ user: req.user, ...rangeFilters(req.query) });
   const student = model.byStudent.get(Number(req.params.studentId));
   if (!student) return res.status(404).json({ error: 'Student not found' });
   res.json({ totalEvents: model.totalEvents, context: model.context, student });
@@ -162,15 +166,17 @@ router.get('/export', async (req, res) => {
     );
     const byStudent = new Map(records.map((r) => [r.studentId, r]));
     const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+    const programFilterSql = range.programId ? ' AND s.program_id = ?' : '';
+    const programFilterParams = range.programId ? [Number(range.programId)] : [];
     const students = await all(
       `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level
        FROM students s
        LEFT JOIN programs p ON p.id = s.program_id
        LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
        ${scope.join}
-       WHERE 1=1 ${scope.where}
+       WHERE 1=1 ${scope.where} ${programFilterSql}
        ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-      scope.params
+      [...scope.params, ...programFilterParams]
     );
     const cutoff = absentCutoff(event);
     const windowPassed = cutoff ? new Date() > cutoff : false;
@@ -200,15 +206,17 @@ router.get('/export', async (req, res) => {
     const ef = eventFilter({ ...range, user: req.user });
     const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
     const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+    const programFilterSql = range.programId ? ' AND s.program_id = ?' : '';
+    const programFilterParams = range.programId ? [Number(range.programId)] : [];
     const students = await all(
       `SELECT s.id, s.student_no, s.first_name, s.last_name
        FROM students s
        LEFT JOIN programs p ON p.id = s.program_id
        LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
        ${scope.join}
-       WHERE 1=1 ${scope.where}
+       WHERE 1=1 ${scope.where} ${programFilterSql}
        ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-      scope.params
+      [...scope.params, ...programFilterParams]
     );
     const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
     const eventById = new Map(events.map((e) => [e.id, e]));
@@ -232,16 +240,25 @@ router.get('/export', async (req, res) => {
   }
 
   // default: per-student summary (within the selected date range / term)
-  const ef = eventFilter(range);
+  const ef = eventFilter({ ...range, user: req.user });
   const evRows = await all(`SELECT id, name, event_date AS eventDate, start_time AS startTime, end_time AS endTime, series_id AS seriesId FROM events${ef.sql}`, ef.params);
   const seriesNames = await seriesNameMap();
   const units = logicalUnits(evRows, seriesNames);
   const totalEvents = units.length;
+  const scope = (await import('../services/academic.js')).studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
+  const programFilterSql = range.programId ? ' AND s.program_id = ?' : '';
+  const programFilterParams = range.programId ? [Number(range.programId)] : [];
   let rows;
   if (totalEvents === 0) {
     rows = await all(
-      `SELECT id, student_no, first_name, last_name, course, year_level, 0 AS attended
-       FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
+      `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level, 0 AS attended
+       FROM students s
+       LEFT JOIN programs p ON p.id = s.program_id
+       LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+       ${scope.join}
+       WHERE 1=1 ${scope.where} ${programFilterSql}
+       ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+      [...scope.params, ...programFilterParams]
     );
     const csv = toCsv(
       ['Student No', 'First Name', 'Last Name', 'Course', 'Year Level', 'Events Attended', 'Total Events', 'Rate %'],
@@ -253,7 +270,14 @@ router.get('/export', async (req, res) => {
   }
   const eventIds = evRows.map((e) => e.id);
   const students = await all(
-    'SELECT id, student_no, first_name, last_name, course, year_level FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE'
+    `SELECT s.id, s.student_no, s.first_name, s.last_name, s.course, s.year_level
+     FROM students s
+     LEFT JOIN programs p ON p.id = s.program_id
+     LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
+     ${scope.join}
+     WHERE 1=1 ${scope.where} ${programFilterSql}
+     ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
+    [...scope.params, ...programFilterParams]
   );
   const records = await all(
     `SELECT event_id AS eventId, student_id AS studentId, status, method, checked_in_at AS checkedInAt FROM attendance WHERE event_id IN (${eventIds.map(() => '?').join(',')})`,

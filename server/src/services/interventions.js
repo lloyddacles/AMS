@@ -165,8 +165,8 @@ async function latestInterventionMap(studentIds = []) {
   return map;
 }
 
-export async function listFlaggedForIntervention({ search = '', course = '', user = null } = {}) {
-  const [model, overview] = await Promise.all([buildRiskModel({ user }), buildOverview({ search, course, user })]);
+export async function listFlaggedForIntervention({ search = '', course = '', user = null, programId = null } = {}) {
+  const [model, overview] = await Promise.all([buildRiskModel({ user, programId }), buildOverview({ search, course, user, programId })]);
   const ovById = new Map((overview.students || []).map((s) => [s.id, s]));
   const ids = [];
   const base = [];

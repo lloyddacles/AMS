@@ -125,7 +125,7 @@ export default function Dashboard() {
         <div className="dash-hero-actions dashboard-hero-actions">
           <Link to="/live" className="btn btn-primary">Open Live Scan</Link>
           <Link to="/events" className="btn">Events</Link>
-          <Link to="/reports" className="btn">Reports & Details</Link>
+          {user?.role === 'admin' && <Link to="/reports" className="btn">Reports & Details</Link>}
         </div>
       </section>
 
@@ -147,7 +147,7 @@ export default function Dashboard() {
                   : 'Weekly attendance summary (real-time)'}
               </p>
             </div>
-            <Link className="link" to="/reports?view=trends">Detailed trends</Link>
+            {user?.role === 'admin' && <Link className="link" to="/reports?view=trends">Detailed trends</Link>}
           </div>
           {stats.trend?.length ? (
             <>
@@ -229,6 +229,7 @@ export default function Dashboard() {
         </section>
       </div>
 
+      {user?.role === 'admin' && (
       <section className="card dashboard-panel">
         <div className="dash-card-head">
           <div>
@@ -264,6 +265,7 @@ export default function Dashboard() {
           </div>
         </div>
       </section>
+      )}
     </div>
   );
 }

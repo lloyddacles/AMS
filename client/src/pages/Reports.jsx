@@ -73,7 +73,9 @@ export default function Reports() {
   const [from, setFrom] = useState(params.get('from') || '');
   const [to, setTo] = useState(params.get('to') || '');
   const [termId, setTermId] = useState(params.get('termId') || '');
+  const [programId, setProgramId] = useState(params.get('programId') || '');
   const [terms, setTerms] = useState([]);
+  const [academic, setAcademic] = useState({ departments: [], programs: [] });
   const [granularity, setGranularity] = useState('day');
   const [overview, setOverview] = useState(null);
   const [matrix, setMatrix] = useState(null);
@@ -111,10 +113,11 @@ export default function Reports() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const rangeParams = { from, to, termId: termId || '' };
+  const rangeParams = useMemo(() => ({ from, to, termId: termId || '', programId: programId || '' }), [from, to, termId, programId]);
 
   useEffect(() => {
     api.getTerms().then(setTerms).catch(() => setTerms([]));
+    api.getAcademicStructure().then((s) => setAcademic(s || { departments: [], programs: [] })).catch(() => setAcademic({ departments: [], programs: [] }));
   }, []);
 
   useEffect(() => {
@@ -125,13 +128,13 @@ export default function Reports() {
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [search, course, from, to, termId]);
+  }, [search, course, rangeParams]);
 
   useEffect(() => {
     let alive = true;
-    api.getRisk().then((d) => { if (alive) setRiskModel(d); }).catch(() => { if (alive) setRiskModel(null); });
+    api.getRisk({ ...rangeParams }).then((d) => { if (alive) setRiskModel(d); }).catch(() => { if (alive) setRiskModel(null); });
     return () => { alive = false; };
-  }, [from, to, termId]);
+  }, [rangeParams]);
 
   // Load overall trend points for visual summaries (all courses, archived + active events).
   useEffect(() => {
@@ -142,7 +145,7 @@ export default function Reports() {
       .then((d) => { if (alive) setVisualTrends(d); })
       .catch(() => { if (alive) setVisualTrends(null); });
     return () => { alive = false; };
-  }, [from, to, termId, visualGranularity]);
+  }, [rangeParams, visualGranularity]);
 
   useEffect(() => {
     if (view !== 'matrix') return undefined;
@@ -153,7 +156,7 @@ export default function Reports() {
       .then((d) => { if (alive) setMatrix(d); })
       .catch((e) => setError(e.message));
     return () => { alive = false; };
-  }, [view, from, to, termId]);
+  }, [view, rangeParams]);
 
   useEffect(() => {
     if (view !== 'at-risk') return undefined;
@@ -167,7 +170,7 @@ export default function Reports() {
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [view, search, course, from, to, termId]);
+  }, [view, search, course, rangeParams]);
 
   useEffect(() => {
     if (view !== 'compliance') return undefined;
@@ -178,7 +181,7 @@ export default function Reports() {
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [view, search, course, from, to, termId]);
+  }, [view, search, course, rangeParams]);
 
   useEffect(() => {
     if (view !== 'trends') return undefined;
@@ -189,18 +192,18 @@ export default function Reports() {
       .then((d) => { if (alive) setTrends(d); })
       .catch((e) => setError(e.message));
     return () => { alive = false; };
-  }, [view, course, granularity, from, to, termId]);
+  }, [view, course, granularity, rangeParams]);
 
   useEffect(() => {
     if (view !== 'interventions') return undefined;
     const t = setTimeout(() => {
       api
-        .getInterventionFlags({ search, course })
+        .getInterventionFlags({ search, course, programId: programId || '' })
         .then(setInterventionData)
         .catch((e) => setError(e.message));
     }, 250);
     return () => clearTimeout(t);
-  }, [view, search, course]);
+  }, [view, search, course, programId]);
 
   useEffect(() => {
     setParams((prev) => {
@@ -210,9 +213,10 @@ export default function Reports() {
       if (from) next.set('from', from); else next.delete('from');
       if (to) next.set('to', to); else next.delete('to');
       if (termId) next.set('termId', termId); else next.delete('termId');
+      if (programId) next.set('programId', programId); else next.delete('programId');
       return next;
     }, { replace: true });
-  }, [view, from, to, termId, setParams]);
+  }, [view, from, to, termId, programId, setParams]);
 
   const courses = overview ? [...new Set(overview.students.map((s) => s.course).filter(Boolean))].sort() : [];
   const perfectCount = overview ? overview.students.filter((s) => Number(s.rate) === 100).length : 0;
@@ -227,8 +231,18 @@ export default function Reports() {
     atRisk,
     compliance,
     riskModel,
-    filters: { search, course, from, to, termId },
-  }), [overview, trends, atRisk, compliance, riskModel, search, course, from, to, termId]);
+    filters: { search, course, from, to, termId, programId },
+  }), [overview, trends, atRisk, compliance, riskModel, search, course, from, to, termId, programId]);
+
+  const selectedProgram = (academic.programs || []).find((p) => String(p.id) === String(programId));
+  const activeFilters = [
+    search ? `Search: ${search}` : null,
+    course ? `Course: ${course}` : null,
+    selectedProgram ? `Program: ${selectedProgram.name}` : null,
+    from ? `From: ${from}` : null,
+    to ? `To: ${to}` : null,
+    termId ? `Term: ${(terms.find((t) => String(t.id) === String(termId))?.name || termId)}` : null,
+  ].filter(Boolean);
 
   const VIEW_COPY = {
     summary: 'Clear per-student attendance totals, rates, and status details for confident reporting.',
@@ -261,7 +275,7 @@ export default function Reports() {
 
   useEffect(() => {
     setPage(1);
-  }, [search, course, from, to, termId, sort, pageSize, view]);
+  }, [search, course, from, to, termId, programId, sort, pageSize, view]);
 
   function quickRange(kind) {
     const iso = (d) => d.toISOString().slice(0, 10);
@@ -324,6 +338,7 @@ export default function Reports() {
         captureChartImage(chartRefs.trend),
       ]);
       const termName = termId ? (terms.find((t) => String(t.id) === String(termId))?.name || '') : '';
+      const programName = programId ? ((academic.programs || []).find((p) => String(p.id) === String(programId))?.name || '') : '';
       const preparedBy = String(user?.name || '').trim() || '—';
       const viewLabelMap = {
         summary: 'Student Summary',
@@ -339,7 +354,7 @@ export default function Reports() {
         trends: trendsData,
         atRisk: atRiskData,
         compliance: complianceData,
-        filters: { search, course, from, to, termId, termName },
+        filters: { search, course, from, to, termId, termName, programId, programName },
         preparedBy,
         viewLabel: viewLabelMap[view] || 'Reports',
         visuals: { status: statusImg, distribution: distImg, trend: trendImg },
@@ -386,19 +401,11 @@ export default function Reports() {
     setExpandedRisk((cur) => (cur === student.id ? null : student.id));
     if (!riskCache[student.id]) {
       api
-        .getStudentRisk(student.id)
+        .getStudentRisk(student.id, rangeParams)
         .then((d) => setRiskCache((c) => ({ ...c, [student.id]: d })))
         .catch(() => setRiskCache((c) => ({ ...c, [student.id]: { error: true } })));
     }
   }
-
-  const activeFilters = [
-    course ? `Course: ${course}` : null,
-    search ? `Search: "${search}"` : null,
-    from ? `From: ${from}` : null,
-    to ? `To: ${to}` : null,
-    termId ? `Term: ${terms.find((t) => String(t.id) === String(termId))?.name || termId}` : null,
-  ].filter(Boolean);
 
   async function openInterventionModal(student) {
     const today = new Date().toISOString().slice(0, 10);
@@ -647,6 +654,12 @@ export default function Reports() {
           <option value="">All terms</option>
           {terms.map((t) => <option key={t.id} value={t.id}>{t.name}{Number(t.isCurrent) === 1 ? ' (current)' : ''}</option>)}
         </select>
+        <select className="term-filter" value={programId} onChange={(e) => setProgramId(e.target.value)}>
+          <option value="">All programs</option>
+          {(academic.programs || []).map((p) => (
+            <option key={p.id} value={p.id}>{p.departmentName ? `${p.departmentName} — ` : ''}{p.name}</option>
+          ))}
+        </select>
         {view === 'trends' && (
           <select value={granularity} onChange={(e) => setGranularity(e.target.value)}>
             <option value="day">Daily</option>
@@ -660,8 +673,8 @@ export default function Reports() {
           <button type="button" className="btn btn-sm" onClick={() => quickRange('30')}>Last 30d</button>
           <button type="button" className="btn btn-sm" onClick={() => quickRange('month')}>This month</button>
           <button type="button" className="btn btn-sm" onClick={() => quickRange('year')}>This year</button>
-          {(from || to || termId || search || course) && (
-            <button type="button" className="btn btn-sm" onClick={() => { setFrom(''); setTo(''); setTermId(''); setSearch(''); setCourse(''); }}>Clear</button>
+          {(from || to || termId || programId || search || course) && (
+            <button type="button" className="btn btn-sm" onClick={() => { setFrom(''); setTo(''); setTermId(''); setProgramId(''); setSearch(''); setCourse(''); }}>Clear</button>
           )}
         </div>
       </div>

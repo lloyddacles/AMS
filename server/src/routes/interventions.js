@@ -12,8 +12,8 @@ const router = Router();
 router.use(requireAuth);
 
 router.get('/flagged', async (req, res) => {
-  const { search = '', course = '' } = req.query;
-  res.json(await listFlaggedForIntervention({ search, course, user: req.user }));
+  const { search = '', course = '', programId } = req.query;
+  res.json(await listFlaggedForIntervention({ search, course, user: req.user, programId: programId ? Number(programId) : null }));
 });
 
 router.get('/causes', (req, res) => {

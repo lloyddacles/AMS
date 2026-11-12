@@ -69,12 +69,14 @@ function isRiskExempt(status) {
   return RISK_EXEMPT_STATUSES.has(String(status || '').trim());
 }
 
-export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null, user = null } = {}) {
+export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null, user = null, programId = null } = {}) {
   const like = `%${search}%`;
   const ef = eventFilter({ from, to, termId, user });
   const events = await all(`SELECT ${EVENT_COLS} FROM events${ef.sql}`, ef.params);
   const seriesNames = await seriesNameMap();
   const scope = scopeStudents(user, 's');
+  const programFilterSql = programId ? ' AND s.program_id = ?' : '';
+  const programFilterParams = programId ? [Number(programId)] : [];
   const students = await all(
     `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
             s.course, s.year_level AS yearLevel, s.status, s.program_id AS programId, s.department_id AS departmentId,
@@ -86,8 +88,9 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
      WHERE (s.student_no LIKE ? OR s.first_name LIKE ? OR s.last_name LIKE ?)
        AND (? = '' OR s.course = ?)
        ${scope.where}
+       ${programFilterSql}
      ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-    [like, like, like, course, course, ...scope.params]
+    [like, like, like, course, course, ...scope.params, ...programFilterParams]
   );
   const records = await all(`SELECT ${RECORD_COLS} FROM attendance`);
   const excluded = await exclusionsByEvent(events.map((e) => e.id));
@@ -165,7 +168,7 @@ export async function buildAtRisk(filters = {}) {
   // Attach the explainable risk model (best-effort: never block the report).
   let model = null;
   try {
-    model = await buildRiskModel({ user });
+    model = await buildRiskModel({ user, programId: rest.programId || null });
   } catch {
     model = null;
   }
@@ -205,9 +208,9 @@ export async function resolveComplianceTarget({ termId = null } = {}) {
 
 // Students who fall below their term's minimum attendance percentage. Each row
 // is annotated with how many more attendances they need to reach the minimum.
-export async function buildCompliance({ search = '', course = '', termId = null, from = '', to = '', user = null } = {}) {
+export async function buildCompliance({ search = '', course = '', termId = null, from = '', to = '', user = null, programId = null } = {}) {
   const target = await resolveComplianceTarget({ termId });
-  const { totalEvents, students } = await buildOverview({ search, course, termId, from, to, user });
+  const { totalEvents, students } = await buildOverview({ search, course, termId, from, to, user, programId });
   const minimum = target.minimum;
   const eligible = totalEvents > 0;
   const list = eligible
@@ -241,7 +244,7 @@ export async function buildCompliance({ search = '', course = '', termId = null,
 // week / month), each with status counts and an attendance rate computed over
 // decided slots (present + excused + absent) so future/open events don't drag
 // the line down.
-export async function buildTrends({ from = '', to = '', termId = null, course = '', granularity = 'day', user = null } = {}) {
+export async function buildTrends({ from = '', to = '', termId = null, course = '', granularity = 'day', user = null, programId = null } = {}) {
   const ef = eventFilter({ from, to, termId, user });
   const events = await all(
     `SELECT ${EVENT_COLS} FROM events${ef.sql} ORDER BY event_date, start_time`,
@@ -250,13 +253,15 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
   const seriesNames = await seriesNameMap();
 
   const sScope = scopeStudents(user, 's');
+  const programFilterSql = programId ? ' AND s.program_id = ?' : '';
+  const programFilterParams = programId ? [Number(programId)] : [];
   const students = await all(
     `SELECT s.id FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
      ${sScope.join}
-     WHERE (? = '' OR s.course = ?) ${sScope.where}`,
-    [course, course, ...sScope.params]
+     WHERE (? = '' OR s.course = ?) ${sScope.where} ${programFilterSql}`,
+    [course, course, ...sScope.params, ...programFilterParams]
   );
   const studentIds = new Set(students.map((s) => s.id));
   const totalStudents = studentIds.size;

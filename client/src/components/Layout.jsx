@@ -16,7 +16,7 @@ const links = [
   { to: '/students', label: 'Students', icon: '◔' },
   { to: '/events', label: 'Events', icon: '★' },
   { to: '/schedules', label: 'Schedules', icon: '❖' },
-  { to: '/reports', label: 'Reports', icon: '▤' },
+  { to: '/reports', label: 'Reports', icon: '▤', roles: ['admin'] },
   { to: '/corrections/review', label: 'Corrections', icon: '✎' },
   { to: '/terms', label: 'Terms', icon: '▦', roles: ['admin'] },
   { to: '/settings', label: 'Settings', icon: '⚙', roles: ['admin'] },

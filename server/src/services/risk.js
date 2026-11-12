@@ -74,12 +74,14 @@ function featureText(key, raw) {
 
 // Compute the risk model for every student. Returns the cohort context (feature
 // means/weights used as the SHAP background) plus a per-student result.
-export async function buildRiskModel({ user = null } = {}) {
+export async function buildRiskModel({ user = null, programId = null } = {}) {
   const events = await all(
     `SELECT ${EVENT_COLS_RISK} FROM events ORDER BY event_date ASC, id ASC`
   );
   const seriesNames = await seriesNameMap();
   const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
+  const programFilterSql = programId ? ' AND s.program_id = ?' : '';
+  const programFilterParams = programId ? [Number(programId)] : [];
   const students = await all(
     `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.status,
             s.program_id AS programId, s.department_id AS departmentId
@@ -87,9 +89,9 @@ export async function buildRiskModel({ user = null } = {}) {
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
      ${scope.join}
-     WHERE 1=1 ${scope.where}
+     WHERE 1=1 ${scope.where} ${programFilterSql}
      ORDER BY s.last_name COLLATE NOCASE, s.first_name COLLATE NOCASE`,
-    scope.params
+    [...scope.params, ...programFilterParams]
   );
   const riskStudents = students.filter((s) => !RISK_EXEMPT_STATUSES.has(String(s.status || '').trim()));
 

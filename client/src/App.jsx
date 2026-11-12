@@ -88,7 +88,7 @@ export default function App() {
       <Route path="/schedules" element={<Protected><Schedules /></Protected>} />
       <Route path="/terms" element={<Protected><AdminOnly><Terms /></AdminOnly></Protected>} />
       <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />
-      <Route path="/reports" element={<Protected><Reports /></Protected>} />
+      <Route path="/reports" element={<Protected><AdminOnly><Reports /></AdminOnly></Protected>} />
       <Route path="/about" element={<Protected><About /></Protected>} />
       <Route path="/profile" element={<Protected><Profile /></Protected>} />
       <Route path="/users" element={<Protected><AdminOnly><Users /></AdminOnly></Protected>} />
