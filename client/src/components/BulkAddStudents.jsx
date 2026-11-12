@@ -176,7 +176,7 @@ export default function BulkAddStudents({ onClose, onDone }) {
     >
       <p className="muted small">
         Paste rows or upload a CSV. Columns: <strong>Student No, First Name, Last Name, Email, Course, Year Level, Section, Status</strong>.
-        Status can be Active, Inactive, Deceased, Dropped, Regular, or Irregular (defaults to Active). A header row is optional; extra columns are ignored.
+        Status can be Active, Inactive, Deceased, Dropped, LOA, Regular, or Irregular (defaults to Active). A header row is optional; extra columns are ignored.
       </p>
       <label className="bulk-update-toggle">
         <input type="checkbox" checked={updateExisting} onChange={(e) => setUpdateExisting(e.target.checked)} />

@@ -11,7 +11,7 @@ router.use(requireAuth);
 const selectFields = `id, student_no AS studentNo, first_name AS firstName,
   last_name AS lastName, email, course, year_level AS yearLevel, section, status, qr_token AS qrToken, created_at AS createdAt`;
 
-const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'Regular', 'Irregular'];
+const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'LOA', 'Regular', 'Irregular'];
 
 function normalizeStatus(value, fallback = 'Active') {
   const s = String(value ?? '').trim();

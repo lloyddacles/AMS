@@ -52,6 +52,12 @@ function bucketKey(dateStr, granularity) {
 
 // Per-student summary, classified early / on-time / late / absent, over an
 // optional date range and term.
+const RISK_EXEMPT_STATUSES = new Set(['Deceased', 'Dropped', 'LOA']);
+
+function isRiskExempt(status) {
+  return RISK_EXEMPT_STATUSES.has(String(status || '').trim());
+}
+
 export async function buildOverview({ search = '', course = '', from = '', to = '', termId = null } = {}) {
   const like = `%${search}%`;
   const ef = eventFilter({ from, to, termId });
@@ -59,7 +65,7 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
   const seriesNames = await seriesNameMap();
   const students = await all(
     `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName,
-            course, year_level AS yearLevel
+            course, year_level AS yearLevel, status
      FROM students
      WHERE (student_no LIKE ? OR first_name LIKE ? OR last_name LIKE ?)
        AND (? = '' OR course = ?)
@@ -100,6 +106,7 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
       lastName: s.lastName,
       course: s.course,
       yearLevel: s.yearLevel,
+      status: s.status || 'Active',
       ...counts,
       attended,
       expected,
@@ -123,7 +130,8 @@ export async function buildAtRisk(filters = {}) {
   const list = eligible
     ? students
         // A student off every event's attendee list has no rate to judge.
-        .filter((s) => s.expected > 0 && s.rate < threshold)
+        // Deceased, Dropped, and LOA students are not flagged for follow-up/intervention.
+        .filter((s) => !isRiskExempt(s.status) && s.expected > 0 && s.rate < threshold)
         .sort(
           (a, b) =>
             a.rate - b.rate ||
@@ -183,7 +191,8 @@ export async function buildCompliance({ search = '', course = '', termId = null,
   const list = eligible
     ? students
         // Each student needs the minimum across the events they actually attend.
-        .filter((s) => s.expected > 0 && s.rate < minimum)
+        // Deceased, Dropped, and LOA students are excluded from compliance follow-up.
+        .filter((s) => !isRiskExempt(s.status) && s.expected > 0 && s.rate < minimum)
         .map((s) => ({ ...s, needed: Math.max(0, Math.ceil((minimum / 100) * s.expected) - s.attended) }))
         .sort(
           (a, b) =>

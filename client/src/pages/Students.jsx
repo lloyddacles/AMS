@@ -10,11 +10,12 @@ import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
 
-const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'Regular', 'Irregular'];
+const STUDENT_STATUSES = ['Active', 'Inactive', 'Deceased', 'Dropped', 'LOA', 'Regular', 'Irregular'];
 const STATUS_META = {
   Active: { pill: 'pill-green', icon: '●' },
   Regular: { pill: 'pill-blue', icon: '●' },
   Irregular: { pill: 'pill-amber', icon: '●' },
+  LOA: { pill: 'pill-amber', icon: '◐' },
   Inactive: { pill: 'pill-gray', icon: '○' },
   Dropped: { pill: 'pill-red', icon: '■' },
   Deceased: { pill: 'pill-purple', icon: '◆' },
@@ -471,7 +472,7 @@ export default function Students() {
               )}
               {pageRows.map((s) => {
                 const status = s.status || 'Active';
-                const inactiveLike = ['Inactive', 'Deceased', 'Dropped'].includes(status);
+                const inactiveLike = ['Inactive', 'Deceased', 'Dropped', 'LOA'].includes(status);
                 return (
                   <tr key={s.id} className={`${selected.has(s.id) ? 'row-selected' : ''} ${inactiveLike ? 'row-muted' : ''}`}>
                     <td className="check-col">

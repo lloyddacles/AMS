@@ -31,6 +31,7 @@ export const RISK_BIAS = -3.0;
 const STREAK_CAP = 5;
 const RECENCY_CAP_DAYS = 21;
 const RECENT_WINDOW = 3;
+const RISK_EXEMPT_STATUSES = new Set(['Deceased', 'Dropped', 'LOA']);
 
 const LABELS = Object.fromEntries(RISK_FEATURES.map((f) => [f.key, f.label]));
 
@@ -78,9 +79,10 @@ export async function buildRiskModel() {
   );
   const seriesNames = await seriesNameMap();
   const students = await all(
-    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel
+    `SELECT id, student_no AS studentNo, first_name AS firstName, last_name AS lastName, course, year_level AS yearLevel, status
      FROM students ORDER BY last_name COLLATE NOCASE, first_name COLLATE NOCASE`
   );
+  const riskStudents = students.filter((s) => !RISK_EXEMPT_STATUSES.has(String(s.status || '').trim()));
 
   const emptyContext = {
     bias: RISK_BIAS,
@@ -108,7 +110,7 @@ export async function buildRiskModel() {
   };
 
   const rows = [];
-  for (const s of students) {
+  for (const s of riskStudents) {
     let attended = 0;
     let absent = 0;
     let late = 0;
@@ -196,6 +198,7 @@ export async function buildRiskModel() {
       lastName: student.lastName,
       course: student.course,
       yearLevel: student.yearLevel,
+      status: student.status || 'Active',
       risk: Math.round(probability * 100),
       riskProbability: Number(probability.toFixed(4)),
       riskMargin: Number(margin.toFixed(4)),
