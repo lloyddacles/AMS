@@ -399,6 +399,7 @@ button { font-family: inherit; }
 .form { display: flex; flex-direction: column; gap: 0.9rem; }
 .form label { display: flex; flex-direction: column; gap: 0.35rem; font-size: 0.82rem; font-weight: 600; color: #334155; }
 .grid-form { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+.grid-form > * { min-width: 0; }
 .span-2 { grid-column: span 2; }
 input, select, textarea {
   font-family: inherit;

@@ -306,7 +306,7 @@ export default function Schedules() {
             <section className="event-form-section">
               <div className="event-form-section-head">
                 <h4>Schedule details</h4>
-                <p className="muted small">Name this recurring session, scope, and where it takes place.</p>
+                <p className="muted small">Name this recurring session and where it takes place.</p>
               </div>
               <div className="form grid-form">
                 <label className="span-2">
@@ -330,24 +330,36 @@ export default function Schedules() {
                   <span>Description</span>
                   <input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Optional notes for generated events" />
                 </label>
+              </div>
+            </section>
 
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>College / Program scope</h4>
+                <p className="muted small">
+                  {isAdmin
+                    ? 'Assign this schedule to a college/program so scoped staff only see and generate schedules relevant to them. Generated events inherit this scope.'
+                    : 'This schedule is scoped to your assigned college/program. Generated events will inherit this scope.'}
+                </p>
+              </div>
+              <div className="form grid-form">
                 <label>
-                  <span>College / Department {isAdmin ? '' : '(assigned scope)'}</span>
+                  <span>College / Department</span>
                   <select
                     value={form.departmentId}
                     onChange={(e) => {
                       const did = e.target.value;
-                      const currentOk = programsForDept.some((p) => String(p.id) === String(form.programId) && String(p.departmentId) === did);
-                      setForm((f) => ({ ...f, departmentId: did, programId: currentOk ? f.programId : '' }));
+                      const ok = (academic.programs || []).some((p) => String(p.id) === String(form.programId) && String(p.departmentId) === did);
+                      setForm((f) => ({ ...f, departmentId: did, programId: ok ? f.programId : '' }));
                     }}
                     disabled={!isAdmin && !!(user?.departmentId || user?.programId)}
                   >
-                    <option value="">{isAdmin ? 'All colleges (global/unscoped)' : '—'}</option>
+                    <option value="">{isAdmin ? 'All colleges (global)' : '—'}</option>
                     {(academic.departments || []).map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
                   </select>
                 </label>
                 <label>
-                  <span>Program {isAdmin ? '' : '(assigned scope)'}</span>
+                  <span>Program</span>
                   <select
                     value={form.programId}
                     onChange={(e) => {
@@ -357,7 +369,7 @@ export default function Schedules() {
                     }}
                     disabled={!isAdmin && !!user?.programId}
                   >
-                    <option value="">{form.departmentId ? 'All programs in college' : 'Select a college first (optional)'}</option>
+                    <option value="">{form.departmentId ? 'All programs in college' : 'Select a college first'}</option>
                     {(form.departmentId ? (academic.programs || []).filter((p) => String(p.departmentId) === String(form.departmentId)) : (academic.programs || [])).map((p) => (
                       <option key={p.id} value={p.id}>{p.name}</option>
                     ))}
