@@ -1,7 +1,8 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  ResponsiveContainer, AreaChart, Area, CartesianGrid, XAxis, YAxis, Tooltip, Legend,
+  ResponsiveContainer, AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  CartesianGrid, XAxis, YAxis, Tooltip, Legend,
 } from 'recharts';
 import { api, exportCsv } from '../api.js';
 import { useAuth } from '../auth.jsx';
@@ -85,6 +86,12 @@ export default function Reports() {
   const [expandedRisk, setExpandedRisk] = useState(null);
   const [riskCache, setRiskCache] = useState({});
   const [insightsOpen, setInsightsOpen] = useState(true);
+  const [visualTrends, setVisualTrends] = useState(null);
+  const chartRefs = {
+    status: useRef(null),
+    distribution: useRef(null),
+    trend: useRef(null),
+  };
 
   const rangeParams = { from, to, termId: termId || '' };
 
@@ -107,6 +114,17 @@ export default function Reports() {
     api.getRisk().then((d) => { if (alive) setRiskModel(d); }).catch(() => { if (alive) setRiskModel(null); });
     return () => { alive = false; };
   }, [from, to, termId]);
+
+  // Load trend points for visual summaries even when not on the Trends tab.
+  useEffect(() => {
+    let alive = true;
+    setVisualTrends(null);
+    api
+      .getReportTrends({ course, granularity: 'day', ...rangeParams })
+      .then((d) => { if (alive) setVisualTrends(d); })
+      .catch(() => { if (alive) setVisualTrends(null); });
+    return () => { alive = false; };
+  }, [course, from, to, termId]);
 
   useEffect(() => {
     if (view !== 'matrix') return undefined;
@@ -268,6 +286,13 @@ export default function Reports() {
         atRisk ? Promise.resolve(atRisk) : api.getAtRisk({ search, course, ...rangeParams }).catch(() => null),
         compliance ? Promise.resolve(compliance) : api.getReportCompliance({ search, course, ...rangeParams }).catch(() => null),
       ]);
+      // Give charts a moment to render if needed (e.g. when switching views)
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const [statusImg, distImg, trendImg] = await Promise.all([
+        captureChartImage(chartRefs.status),
+        captureChartImage(chartRefs.distribution),
+        captureChartImage(chartRefs.trend),
+      ]);
       const termName = termId ? (terms.find((t) => String(t.id) === String(termId))?.name || '') : '';
       const preparedBy = String(user?.name || '').trim() || '—';
       const viewLabelMap = {
@@ -287,6 +312,7 @@ export default function Reports() {
         filters: { search, course, from, to, termId, termName },
         preparedBy,
         viewLabel: viewLabelMap[view] || 'Reports',
+        visuals: { status: statusImg, distribution: distImg, trend: trendImg },
       });
     } catch (e) {
       alert(e.message);
@@ -342,6 +368,108 @@ export default function Reports() {
     to ? `To: ${to}` : null,
     termId ? `Term: ${terms.find((t) => String(t.id) === String(termId))?.name || termId}` : null,
   ].filter(Boolean);
+
+  const statusChartData = useMemo(() => {
+    if (!overview) return [];
+    const totals = { Early: 0, 'On-time': 0, Late: 0, Excused: 0, Absent: 0 };
+    for (const s of overview.students || []) {
+      totals.Early += Number(s.early) || 0;
+      totals['On-time'] += Number(s.onTime) || 0;
+      totals.Late += Number(s.late) || 0;
+      totals.Excused += Number(s.excused) || 0;
+      totals.Absent += Number(s.absent) || 0;
+    }
+    return Object.entries(totals)
+      .map(([name, value]) => ({ name, value }))
+      .filter((d) => d.value > 0);
+  }, [overview]);
+
+  const rateDistributionData = useMemo(() => {
+    if (!overview) return [];
+    const buckets = [
+      { name: '0-59%', min: 0, max: 59, count: 0 },
+      { name: '60-74%', min: 60, max: 74, count: 0 },
+      { name: '75-89%', min: 75, max: 89, count: 0 },
+      { name: '90-99%', min: 90, max: 99, count: 0 },
+      { name: '100%', min: 100, max: 100, count: 0 },
+    ];
+    for (const s of overview.students || []) {
+      if (Number(s.expected || 0) <= 0) continue;
+      const r = Number(s.rate) || 0;
+      const b = buckets.find((x) => r >= x.min && r <= x.max);
+      if (b) b.count += 1;
+    }
+    return buckets;
+  }, [overview]);
+
+  const trendVisualData = useMemo(() => {
+    const src = trends || visualTrends;
+    const points = src?.points || [];
+    return points.slice(-12);
+  }, [trends, visualTrends]);
+
+  const STATUS_COLORS = {
+    Early: '#06b6d4',
+    'On-time': '#22c55e',
+    Late: '#f59e0b',
+    Excused: '#8b5cf6',
+    Absent: '#ef4444',
+  };
+  const DIST_COLORS = ['#ef4444', '#f59e0b', '#3b82f6', '#22c55e', '#16a34a'];
+
+  async function captureChartImage(container) {
+    const node = container?.current || container;
+    if (!node) return null;
+    const svg = node.querySelector('svg');
+    if (!svg) return null;
+    const rect = svg.getBoundingClientRect();
+    const width = Math.max(1, Math.ceil(rect.width || svg.clientWidth || 600));
+    const height = Math.max(1, Math.ceil(rect.height || svg.clientHeight || 260));
+    const clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+    clone.setAttribute('width', String(width));
+    clone.setAttribute('height', String(height));
+    // Inline computed styles for reliable rasterization
+    const srcEls = svg.querySelectorAll('*');
+    const cloneEls = clone.querySelectorAll('*');
+    srcEls.forEach((el, i) => {
+      const c = cloneEls[i];
+      if (!c) return;
+      const cs = window.getComputedStyle(el);
+      const props = ['fill', 'stroke', 'stroke-width', 'font-size', 'font-family', 'font-weight', 'opacity', 'text-anchor', 'dominant-baseline'];
+      let style = c.getAttribute('style') || '';
+      for (const p of props) {
+        const v = cs.getPropertyValue(p);
+        if (v) style += `${p}:${v};`;
+      }
+      c.setAttribute('style', style);
+    });
+    const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('width', '100%');
+    bg.setAttribute('height', '100%');
+    bg.setAttribute('fill', '#ffffff');
+    clone.insertBefore(bg, clone.firstChild);
+    const xml = new XMLSerializer().serializeToString(clone);
+    const svgUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+    const img = await new Promise((resolve, reject) => {
+      const im = new Image();
+      im.onload = () => resolve(im);
+      im.onerror = reject;
+      im.src = svgUrl;
+    }).catch(() => null);
+    if (!img) return null;
+    const scale = 2;
+    const canvas = document.createElement('canvas');
+    canvas.width = width * scale;
+    canvas.height = height * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return null;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.scale(scale, scale);
+    ctx.drawImage(img, 0, 0, width, height);
+    return { dataUrl: canvas.toDataURL('image/png'), width, height };
+  }
 
   return (
     <div className="page reports-page">
@@ -469,6 +597,77 @@ export default function Reports() {
             </ul>
           )}
         </div>
+
+        {overview && (
+          <div className="ai-visuals">
+            <div className="ai-visuals-head">
+              <h4 style={{ margin: 0 }}>Visual overview</h4>
+              <span className="muted small">Charts for quick identification (included in Full Report PDF)</span>
+            </div>
+            <div className="ai-visuals-grid">
+              <div className="ai-visual-card" ref={chartRefs.status}>
+                <div className="ai-visual-title">Attendance status breakdown</div>
+                {statusChartData.length === 0 ? (
+                  <div className="muted small">No attendance records in range.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={statusChartData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={75} label>
+                        {statusChartData.map((entry) => (
+                          <Cell key={entry.name} fill={STATUS_COLORS[entry.name] || '#94a3b8'} />
+                        ))}
+                      </Pie>
+                      <Tooltip />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="ai-visual-card" ref={chartRefs.distribution}>
+                <div className="ai-visual-title">Student attendance rate distribution</div>
+                {rateDistributionData.every((d) => d.count === 0) ? (
+                  <div className="muted small">No students with expected attendance in range.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <BarChart data={rateDistributionData} margin={{ top: 8, right: 8, left: -8, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="name" tick={{ fontSize: 11 }} />
+                      <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
+                      <Tooltip />
+                      <Bar dataKey="count" name="Students" radius={[4, 4, 0, 0]}>
+                        {rateDistributionData.map((_, i) => (
+                          <Cell key={i} fill={DIST_COLORS[i] || '#3b82f6'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+              <div className="ai-visual-card ai-visual-card-wide" ref={chartRefs.trend}>
+                <div className="ai-visual-title">Attendance rate trend (recent periods)</div>
+                {trendVisualData.length === 0 ? (
+                  <div className="muted small">No trend data available for the selected range.</div>
+                ) : (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={trendVisualData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="rateFillInsights" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.35} />
+                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0.02} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 11 }} interval="preserveStartEnd" />
+                      <YAxis domain={[0, 100]} tick={{ fontSize: 11 }} unit="%" />
+                      <Tooltip formatter={(value, name) => [name === 'rate' ? `${value}%` : value, name === 'rate' ? 'Rate' : name]} />
+                      <Area type="monotone" dataKey="rate" stroke="#2563eb" strokeWidth={2} fill="url(#rateFillInsights)" name="Rate" />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
 
         {insightsOpen && (
           <div className="ai-insights-grid">

@@ -233,6 +233,7 @@ export function exportComprehensiveReportPdf({
   filters = {},
   preparedBy = '—',
   viewLabel = 'Reports',
+  visuals = null,
 }) {
   const students = overview?.students || [];
   const totalEvents = Number(overview?.totalEvents || 0);
@@ -388,6 +389,58 @@ export function exportComprehensiveReportPdf({
     margin: { left: 14, right: 14 },
   });
   y = doc.lastAutoTable.finalY + 4;
+
+  if (visuals && (visuals.status || visuals.distribution || visuals.trend)) {
+    y = sectionTitle(doc, y, 'Visual Overview');
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const left = 14;
+    const right = 14;
+    const usable = pageWidth - left - right;
+    const gap = 6;
+
+    const addChart = (img, title, x, w, maxH = 60) => {
+      if (!img?.dataUrl) return 0;
+      const aspect = (img.height || 1) / (img.width || 1);
+      let drawW = w;
+      let drawH = drawW * aspect;
+      if (drawH > maxH) {
+        drawH = maxH;
+        drawW = drawH / aspect;
+      }
+      y = ensureSpace(doc, y, drawH + 10);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8.5);
+      doc.setTextColor(51, 65, 85);
+      doc.text(title, x, y);
+      y += 2.5;
+      try {
+        doc.addImage(img.dataUrl, 'PNG', x, y, drawW, drawH, undefined, 'FAST');
+      } catch {
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(8);
+        doc.setTextColor(...MUTED);
+        doc.text('Chart could not be rendered.', x, y + 4);
+      }
+      return drawH + 6;
+    };
+
+    const halfW = (usable - gap) / 2;
+    const startY = y;
+    let leftH = 0;
+    let rightH = 0;
+    if (visuals.status) leftH = addChart(visuals.status, 'Attendance status breakdown', left, halfW, 55);
+    const afterLeftY = y;
+    y = startY;
+    if (visuals.distribution) rightH = addChart(visuals.distribution, 'Attendance rate distribution', left + halfW + gap, halfW, 55);
+    y = Math.max(afterLeftY, y) + 2;
+
+    if (visuals.trend) {
+      addChart(visuals.trend, 'Attendance rate trend (recent periods)', left, usable, 55);
+      y += 2;
+    } else {
+      y += 1;
+    }
+  }
 
   y = sectionTitle(doc, y, 'Student Attendance Details');
   autoTable(doc, {

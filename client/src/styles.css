@@ -3754,6 +3754,14 @@ input[type="radio"] {
   padding: 0;
 }
 
+.ai-visuals { margin-top: 1rem; }
+.ai-visuals-head { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.6rem; flex-wrap: wrap; }
+.ai-visuals-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
+.ai-visual-card { background: #fff; border: 1px solid var(--border); border-radius: 12px; padding: 0.75rem 0.9rem; min-width: 0; }
+.ai-visual-card-wide { grid-column: 1 / -1; }
+.ai-visual-title { font-size: 0.88rem; font-weight: 600; color: #334155; margin-bottom: 0.35rem; }
+@media (max-width: 900px) { .ai-visuals-grid { grid-template-columns: 1fr; } .ai-visual-card-wide { grid-column: auto; } }
+
 @media (max-width: 900px) {
   .student-login-page .login-shell {
     grid-template-columns: 1fr;
