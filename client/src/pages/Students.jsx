@@ -52,6 +52,7 @@ function studentMeta(s) {
 
 export default function Students() {
   const { user } = useAuth();
+  const { confirm, notify } = useDialog();
   const isAdmin = user?.role === 'admin';
   const [students, setStudents] = useState([]);
   const [academic, setAcademic] = useState({ departments: [], programs: [] });
@@ -248,8 +249,10 @@ export default function Students() {
     try {
       if (editing?.id) await api.updateStudent(editing.id, form);
       else await api.createStudent(form);
+      const wasEdit = Boolean(editing?.id);
       setEditing(null);
       await load();
+      await notify({ title: wasEdit ? 'Student updated' : 'Student added', message: wasEdit ? 'Student details were saved successfully.' : 'The student was added successfully.' });
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -258,43 +261,63 @@ export default function Students() {
   }
 
   async function remove(s) {
-    if (!confirm(`Delete ${s.firstName} ${s.lastName}? Their attendance records will also be removed.`)) return;
+    const ok = await confirm({
+      title: 'Delete student',
+      message: `Delete ${s.firstName} ${s.lastName}? Their attendance records will also be removed.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteStudent(s.id);
       await load();
+      await notify({ title: 'Student deleted', message: `${s.firstName} ${s.lastName} was deleted successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete the student.' });
     }
   }
 
   async function regenerateSelected() {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!confirm(`Regenerate QR codes for ${ids.length} selected student(s)?\n\nTheir previously printed ID cards will stop working.`)) return;
+    const ok = await confirm({
+      title: 'Regenerate QR codes',
+      message: `Regenerate QR codes for ${ids.length} selected student(s)?\n\nTheir previously printed ID cards will stop working.`,
+      confirmLabel: 'Regenerate',
+      danger: true,
+    });
+    if (!ok) return;
     setRegenBusy(true);
     try {
       const res = await api.regenerateStudentQrBulk({ ids });
       setSelected(new Set());
       await load();
-      alert(`Regenerated QR codes for ${res.count} student(s).`);
+      await notify({ title: 'QR codes regenerated', message: `Regenerated QR codes for ${res.count} student(s).` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to regenerate QR codes.' });
     } finally {
       setRegenBusy(false);
     }
   }
 
   async function regenerateAll() {
-    if (!confirm('Regenerate QR codes for ALL students?\n\nEvery previously printed ID card will stop working.')) return;
-    if (!confirm('This cannot be undone. Continue?')) return;
+    const ok1 = await confirm({
+      title: 'Regenerate all QR codes',
+      message: 'Regenerate QR codes for ALL students?\n\nEvery previously printed ID card will stop working.',
+      confirmLabel: 'Continue',
+      danger: true,
+    });
+    if (!ok1) return;
+    const ok2 = await confirm({ title: 'Confirm action', message: 'This cannot be undone. Continue?', confirmLabel: 'Regenerate all', danger: true });
+    if (!ok2) return;
     setRegenBusy(true);
     try {
       const res = await api.regenerateStudentQrBulk({ all: true });
       setSelected(new Set());
       await load();
-      alert(`Regenerated QR codes for ${res.count} student(s).`);
+      await notify({ title: 'QR codes regenerated', message: `Regenerated QR codes for ${res.count} student(s).` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to regenerate QR codes.' });
     } finally {
       setRegenBusy(false);
     }
@@ -325,7 +348,7 @@ export default function Students() {
       setBulkEditOpen(false);
       setSelected(new Set());
       await load();
-      alert(`Updated ${res.count} student(s).`);
+      await notify({ title: 'Students updated', message: `Updated ${res.count} student(s).` });
     } catch (err) {
       setBulkError(err.message);
     } finally {
@@ -336,15 +359,22 @@ export default function Students() {
   async function bulkRemove() {
     const ids = [...selected];
     if (ids.length === 0) return;
-    if (!confirm(`Delete ${ids.length} selected student(s)?\n\nTheir attendance records will also be removed.`)) return;
-    if (!confirm('This cannot be undone. Continue?')) return;
+    const ok1 = await confirm({
+      title: 'Delete selected students',
+      message: `Delete ${ids.length} selected student(s)?\n\nTheir attendance records will also be removed.`,
+      confirmLabel: 'Continue',
+      danger: true,
+    });
+    if (!ok1) return;
+    const ok2 = await confirm({ title: 'Confirm deletion', message: 'This cannot be undone. Continue?', confirmLabel: 'Delete', danger: true });
+    if (!ok2) return;
     try {
       const res = await api.bulkDeleteStudents(ids);
       setSelected(new Set());
       await load();
-      alert(`Deleted ${res.count} student(s).`);
+      await notify({ title: 'Students deleted', message: `Deleted ${res.count} student(s).` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete students.' });
     }
   }
 
@@ -489,7 +519,7 @@ export default function Students() {
                   Status <span className="sort-arrow">{sort.key === 'status' ? (sort.dir === 'asc' ? '▲' : '▼') : '↕'}</span>
                 </button>
               </div>
-              <div className="scol actions right">Actions</div>
+              <div className="scol actions right"><span className="muted">Actions</span></div>
             </div>
             {pageRows.map((s) => {
               const status = s.status || 'Active';
@@ -764,13 +794,10 @@ export default function Students() {
           student={qrStudent}
           onClose={() => setQrStudent(null)}
           onRegenerate={async () => {
-            try {
-              const updated = await api.regenerateStudentQr(qrStudent.id);
-              setQrStudent(updated);
-              await load();
-            } catch (e) {
-              alert(e.message);
-            }
+            const updated = await api.regenerateStudentQr(qrStudent.id);
+            setQrStudent(updated);
+            await load();
+            return updated;
           }}
         />
       )}
@@ -779,7 +806,24 @@ export default function Students() {
 }
 
 function StudentQrModal({ student, onClose, onRegenerate }) {
+  const { confirm, notify } = useDialog();
   const wrapRef = useRef(null);
+
+  async function handleRegenerate() {
+    const ok = await confirm({
+      title: 'Regenerate QR code',
+      message: `Regenerate the QR code for ${student.firstName} ${student.lastName}?\n\nTheir previously printed ID card will stop working.`,
+      confirmLabel: 'Regenerate',
+      danger: true,
+    });
+    if (!ok) return;
+    try {
+      await onRegenerate();
+      await notify({ title: 'QR code regenerated', message: 'The student QR code was regenerated successfully.' });
+    } catch (e) {
+      await notify({ title: 'Action failed', message: e.message || 'Unable to regenerate the QR code.' });
+    }
+  }
 
   function download() {
     const qrCanvas = wrapRef.current?.querySelector('.id-card canvas');
@@ -798,7 +842,7 @@ function StudentQrModal({ student, onClose, onRegenerate }) {
       onClose={onClose}
       footer={
         <>
-          <button className="btn" onClick={onRegenerate}>Regenerate QR</button>
+          <button className="btn" onClick={handleRegenerate}>Regenerate QR</button>
           <button className="btn" onClick={() => window.print()}>Print</button>
           <button className="btn btn-primary" onClick={download}>Download PNG</button>
         </>

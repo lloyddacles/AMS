@@ -5,11 +5,13 @@ import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
 import Spinner from '../components/Spinner.jsx';
+import { useDialog } from '../dialogs.jsx';
 
 const emptyForm = { username: '', password: '', name: '', role: 'staff', departmentId: '', programId: '' };
 
 export default function Users() {
   const { user: me } = useAuth();
+  const { confirm, notify } = useDialog();
   const [users, setUsers] = useState([]);
   const [structure, setStructure] = useState({ departments: [], programs: [] });
   const [loading, setLoading] = useState(true);
@@ -98,8 +100,13 @@ export default function Users() {
           programId: form.programId || null,
         });
       }
+      const wasEdit = Boolean(editing?.id);
       setEditing(null);
       await load();
+      await notify({
+        title: wasEdit ? 'Account updated' : 'Account created',
+        message: wasEdit ? 'The account changes were saved successfully.' : 'The new account was created successfully.',
+      });
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -109,22 +116,36 @@ export default function Users() {
 
   async function toggleActive(u) {
     const verb = Number(u.active) ? 'Deactivate' : 'Activate';
-    if (!confirm(`${verb} ${u.name}?`)) return;
+    const ok = await confirm({
+      title: `${verb} account`,
+      message: `${verb} ${u.name}?`,
+      confirmLabel: verb,
+      danger: Number(u.active) ? true : false,
+    });
+    if (!ok) return;
     try {
       await api.updateUser(u.id, { active: !Number(u.active) });
       await load();
+      await notify({ title: 'Account updated', message: `${u.name} is now ${Number(u.active) ? 'inactive' : 'active'}.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to update the account.' });
     }
   }
 
   async function remove(u) {
-    if (!confirm(`Delete ${u.name}? This cannot be undone.`)) return;
+    const ok = await confirm({
+      title: 'Delete account',
+      message: `Delete ${u.name}? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      danger: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteUser(u.id);
       await load();
+      await notify({ title: 'Account deleted', message: `${u.name} was deleted successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete the account.' });
     }
   }
 
@@ -134,9 +155,9 @@ export default function Users() {
       await api.resetUserPassword(pwUser.id, newPw);
       setPwUser(null);
       setNewPw('');
-      alert('Password updated');
+      await notify({ title: 'Password updated', message: 'The password was updated successfully.' });
     } catch (err) {
-      alert(err.message);
+      await notify({ title: 'Action failed', message: err.message || 'Unable to update the password.' });
     }
   }
 
@@ -154,6 +175,7 @@ export default function Users() {
       setStructure(s || { departments: [], programs: [] });
       setProgForm({ departmentId: progForm.departmentId, name: '', code: '' });
       setProgOpen(false);
+      await notify({ title: 'Program added', message: 'The new program was added successfully.' });
     } catch (err) {
       setProgError(err.message);
     } finally {

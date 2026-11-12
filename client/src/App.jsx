@@ -2,6 +2,7 @@ import { Navigate, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
 import LoadingScreen from './components/LoadingScreen.jsx';
+import { DialogProvider } from './dialogs.jsx';
 import Login from './pages/Login.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Students from './pages/Students.jsx';
@@ -56,6 +57,7 @@ function AdminOnly({ children }) {
 
 export default function App() {
   return (
+    <DialogProvider>
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/checkin/:code" element={<PublicCheckin />} />
@@ -94,5 +96,6 @@ export default function App() {
       <Route path="/backup" element={<Protected><AdminOnly><Backup /></AdminOnly></Protected>} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    </DialogProvider>
   );
 }

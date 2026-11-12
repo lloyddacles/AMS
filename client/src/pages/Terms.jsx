@@ -3,11 +3,13 @@ import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
+import { useDialog } from '../dialogs.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const emptyForm = { name: '', startDate: '', endDate: '', minAttendance: 80, isCurrent: false };
 
 export default function Terms() {
+  const { confirm, notify } = useDialog();
   const [terms, setTerms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -52,8 +54,10 @@ export default function Terms() {
       const payload = { ...form, minAttendance: Number(form.minAttendance) || 80 };
       if (editing?.id) await api.updateTerm(editing.id, payload);
       else await api.createTerm(payload);
+      const wasEdit = Boolean(editing?.id);
       setEditing(null);
       await load();
+      await notify({ title: wasEdit ? 'Term updated' : 'Term created', message: wasEdit ? 'Term details were saved successfully.' : 'The term was created successfully.' });
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -65,18 +69,21 @@ export default function Terms() {
     try {
       await api.setCurrentTerm(t.id);
       await load();
+      await notify({ title: 'Current term updated', message: `"${t.name}" is now the current term.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to set the current term.' });
     }
   }
 
   async function remove(t) {
-    if (!confirm(`Delete "${t.name}"? Events and schedules keep their data but lose this term link.`)) return;
+    const ok = await confirm({ title: 'Delete term', message: `Delete "${t.name}"? Events and schedules keep their data but lose this term link.`, confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     try {
       await api.deleteTerm(t.id);
       await load();
+      await notify({ title: 'Term deleted', message: `"${t.name}" was deleted successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete the term.' });
     }
   }
 

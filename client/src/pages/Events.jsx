@@ -59,6 +59,7 @@ function generateEventDescription(form) {
 }
 
 export default function Events() {
+  const { confirm, notify } = useDialog();
   const [events, setEvents] = useState([]);
   const [archivedEvents, setArchivedEvents] = useState([]);
   const [view, setView] = useState('events');
@@ -129,8 +130,10 @@ export default function Events() {
       const payload = { ...form, termId: form.termId ? Number(form.termId) : null };
       if (editing?.id) await api.updateEvent(editing.id, payload);
       else await api.createEvent(payload);
+      const wasEdit = Boolean(editing?.id);
       setEditing(null);
       await load();
+      await notify({ title: wasEdit ? 'Event updated' : 'Event created', message: wasEdit ? 'Event details were saved successfully.' : 'The event was created successfully.' });
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -139,22 +142,26 @@ export default function Events() {
   }
 
   async function remove(ev) {
-    if (!confirm(`Delete event "${ev.name}"? Attendance records for it will also be removed.`)) return;
+    const ok = await confirm({ title: 'Delete event', message: `Delete event "${ev.name}"? Attendance records for it will also be removed.`, confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     try {
       await api.deleteEvent(ev.id);
       await load();
+      await notify({ title: 'Event deleted', message: `"${ev.name}" was deleted successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete the event.' });
     }
   }
 
   async function archive(ev) {
-    if (!confirm(`Archive "${ev.name}"?\n\nIt moves to the Archived section. Attendance and reports keep it.`)) return;
+    const ok = await confirm({ title: 'Archive event', message: `Archive "${ev.name}"?\n\nIt moves to the Archived section. Attendance and reports keep it.`, confirmLabel: 'Archive' });
+    if (!ok) return;
     try {
       await api.archiveEvent(ev.id);
       await load();
+      await notify({ title: 'Event archived', message: `"${ev.name}" was archived successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to archive the event.' });
     }
   }
 
@@ -162,8 +169,9 @@ export default function Events() {
     try {
       await api.unarchiveEvent(ev.id);
       await load();
+      await notify({ title: 'Event restored', message: `"${ev.name}" was restored from archive.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to restore the event.' });
     }
   }
 
@@ -180,9 +188,18 @@ export default function Events() {
     const ids = [...selected];
     if (ids.length === 0) return;
     const count = `${ids.length} event${ids.length === 1 ? '' : 's'}`;
-    if (action === 'close' && !confirm(`Close ${count}?\n\nMissing students will be marked absent and the event summary locked.`)) return;
-    if (action === 'reopen' && !confirm(`Reopen ${count}?\n\nAuto-recorded absences for those events will be cleared.`)) return;
-    if (action === 'archive' && !confirm(`Archive ${count}?\n\nOnly closed events can be archived.`)) return;
+    if (action === 'close') {
+      const ok = await confirm({ title: 'Close events', message: `Close ${count}?\n\nMissing students will be marked absent and the event summary locked.`, confirmLabel: 'Close events' });
+      if (!ok) return;
+    }
+    if (action === 'reopen') {
+      const ok = await confirm({ title: 'Reopen events', message: `Reopen ${count}?\n\nAuto-recorded absences for those events will be cleared.`, confirmLabel: 'Reopen events' });
+      if (!ok) return;
+    }
+    if (action === 'archive') {
+      const ok = await confirm({ title: 'Archive events', message: `Archive ${count}?\n\nOnly closed events can be archived.`, confirmLabel: 'Archive' });
+      if (!ok) return;
+    }
 
     setBulkBusy(true);
     try {
@@ -191,14 +208,15 @@ export default function Events() {
       await load();
       const skipped = res.skipped || [];
       let message = `${res.updated?.length || 0} event(s) updated.`;
+      let details = '';
       if (skipped.length) {
-        message += `\n\nSkipped ${skipped.length}:\n` +
+        details = `Skipped ${skipped.length}:\n` +
           skipped.slice(0, 8).map((s) => `• ${s.name}: ${s.reason}`).join('\n') +
           (skipped.length > 8 ? `\n…and ${skipped.length - 8} more` : '');
       }
-      alert(message);
+      await notify({ title: 'Bulk action completed', message, details });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to complete the bulk action.' });
     } finally {
       setBulkBusy(false);
     }

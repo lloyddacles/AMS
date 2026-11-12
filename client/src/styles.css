@@ -3190,6 +3190,44 @@ input[type="radio"] {
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+.students-compact-header .sortable {
+  appearance: none;
+  border: 1px solid #dbe5ef;
+  background: #ffffff;
+  color: #334155;
+  border-radius: 999px;
+  padding: 0.34rem 0.65rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-shadow: 0 1px 2px rgba(15,23,42,0.03);
+}
+.students-compact-header .sortable:hover {
+  color: #1d4ed8;
+  border-color: #bfd7fb;
+  background: #f8fbff;
+}
+.students-compact-header .sortable.active {
+  color: #1d4ed8;
+  border-color: #93c5fd;
+  background: #eff6ff;
+  box-shadow: 0 0 0 1px rgba(59,130,246,0.08) inset;
+}
+.students-compact-header .scol.actions {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #64748b;
+  padding-right: 0.2rem;
+}
 .students-compact-row {
   border-bottom: 1px solid #edf2f7;
   transition: background 0.12s ease;

@@ -357,7 +357,7 @@ async function seedAcademicStructure() {
         'Bachelor of Science in Accounting Information Systems',
       ],
     },
-    { department: 'College of Computer Studies', programs: [] },
+    { department: 'College of Computer Studies', programs: ['Bachelor of Science in Information Systems'] },
     { department: 'College of Criminal Justice', programs: [] },
   ];
 

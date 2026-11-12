@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import Modal from '../components/Modal.jsx';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
+import { useDialog } from '../dialogs.jsx';
 import Spinner from '../components/Spinner.jsx';
 
 const WEEKDAYS = [
@@ -30,6 +31,7 @@ const emptyForm = {
 };
 
 export default function Schedules() {
+  const { confirm, notify } = useDialog();
   const [schedules, setSchedules] = useState([]);
   const [terms, setTerms] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -121,8 +123,10 @@ export default function Schedules() {
       };
       if (editing?.id) await api.updateSchedule(editing.id, payload);
       else await api.createSchedule(payload);
+      const wasEdit = Boolean(editing?.id);
       setEditing(null);
       await load();
+      await notify({ title: wasEdit ? 'Schedule updated' : 'Schedule created', message: wasEdit ? 'Schedule details were saved successfully.' : 'The schedule was created successfully.' });
     } catch (err) {
       setFormError(err.message);
     } finally {
@@ -135,26 +139,28 @@ export default function Schedules() {
     setResult('');
     try {
       const r = await api.generateSchedule(s.id);
-      setResult(
-        r.created > 0
-          ? `Generated ${r.created} event${r.created === 1 ? '' : 's'} for “${s.name}” (${r.skipped} already existed).`
-          : `No new events for “${s.name}” — all ${r.skipped} already exist.`
-      );
+      const msg = r.created > 0
+        ? `Generated ${r.created} event${r.created === 1 ? '' : 's'} for “${s.name}” (${r.skipped} already existed).`
+        : `No new events for “${s.name}” — all ${r.skipped} already exist.`;
+      setResult(msg);
       await load();
+      await notify({ title: 'Schedule generated', message: msg });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to generate events.' });
     } finally {
       setGenerating(null);
     }
   }
 
   async function remove(s) {
-    if (!confirm(`Delete schedule "${s.name}"? Generated events are kept.`)) return;
+    const ok = await confirm({ title: 'Delete schedule', message: `Delete schedule "${s.name}"? Generated events are kept.`, confirmLabel: 'Delete', danger: true });
+    if (!ok) return;
     try {
       await api.deleteSchedule(s.id);
       await load();
+      await notify({ title: 'Schedule deleted', message: `"${s.name}" was deleted successfully.` });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Action failed', message: e.message || 'Unable to delete the schedule.' });
     }
   }
 

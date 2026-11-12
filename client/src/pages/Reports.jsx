@@ -62,6 +62,7 @@ function priorityClass(priority) {
 }
 
 export default function Reports() {
+  const { notify } = useDialog();
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
   const initialView = params.get('view');
@@ -292,7 +293,7 @@ export default function Reports() {
       const { exportSummaryPdf } = await import('../pdf.js');
       exportSummaryPdf(sortedStudents, overview.totalEvents);
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Export failed', message: e.message || 'Unable to export the PDF.' });
     }
   }
 
@@ -302,7 +303,7 @@ export default function Reports() {
       const { exportAtRiskPdf: render } = await import('../pdf.js');
       render(atRisk.students, atRisk.threshold, atRisk.totalEvents);
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Export failed', message: e.message || 'Unable to export the PDF.' });
     }
   }
 
@@ -343,7 +344,7 @@ export default function Reports() {
         visuals: { status: statusImg, distribution: distImg, trend: trendImg },
       });
     } catch (e) {
-      alert(e.message);
+      await notify({ title: 'Export failed', message: e.message || 'Unable to export the full report PDF.' });
     }
   }
 
@@ -356,8 +357,9 @@ export default function Reports() {
       const d = await api.getAtRisk({ search, course, ...rangeParams });
       setAtRisk(d);
       setThresholdInput(String(d.threshold));
+      await notify({ title: 'Settings updated', message: 'The at-risk threshold was updated successfully.' });
     } catch (err) {
-      alert(err.message);
+      await notify({ title: 'Action failed', message: err.message || 'Unable to update the threshold.' });
     }
   }
 
