@@ -422,12 +422,21 @@ export default function Reports() {
     }
   }
 
-  async function generateInterventionDraft() {
+  async function generateInterventionDraft(mode = 'all') {
     if (!interventionModal) return;
     setInterventionModal((m) => ({ ...m, generating: true, error: '' }));
     try {
       const draft = await api.generateInterventionSummary(interventionModal.student.id, interventionModal.form);
-      setInterventionModal((m) => (m ? { ...m, generating: false, form: { ...m.form, summary: draft.summary || m.form.summary } } : m));
+      setInterventionModal((m) => {
+        if (!m) return m;
+        const next = { ...m.form };
+        if (mode === 'all' || mode === 'summary') next.summary = draft.summary || next.summary;
+        if ((mode === 'all' || mode === 'cause') && draft.suggestedCauseDetails) next.causeDetails = draft.suggestedCauseDetails;
+        if ((mode === 'all' || mode === 'action') && draft.suggestedAction) next.actionTaken = draft.suggestedAction;
+        // if generating all, prefer freshly generated summary using suggestions too
+        if (mode === 'all' && draft.summary) next.summary = draft.summary;
+        return { ...m, generating: false, form: next };
+      });
     } catch (e) {
       setInterventionModal((m) => (m ? { ...m, generating: false, error: e.message } : m));
     }
@@ -1434,16 +1443,27 @@ export default function Reports() {
                   </select>
                 </label>
                 <label className="span-2">
-                  <span>Cause details (optional)</span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span>Cause details (optional)</span>
+                    <button type="button" className="btn btn-sm" onClick={() => generateInterventionDraft('cause')} disabled={interventionModal.generating}>
+                      {interventionModal.generating ? 'Generating…' : 'Generate cause details'}
+                    </button>
+                  </div>
                   <textarea
                     rows={2}
                     value={interventionModal.form.causeDetails}
                     onChange={(e) => setInterventionModal((m) => ({ ...m, form: { ...m.form, causeDetails: e.target.value } }))}
                     placeholder="e.g. Medical certificate provided, family emergency, transportation issues, etc."
                   />
+                  <span className="muted small">AI can suggest a simple explanation based on the selected cause and attendance flags.</span>
                 </label>
                 <label className="span-2">
-                  <span>Intervention / action taken (proof) <span className="req">*</span></span>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span>Intervention / action taken (proof) <span className="req">*</span></span>
+                    <button type="button" className="btn btn-sm" onClick={() => generateInterventionDraft('action')} disabled={interventionModal.generating}>
+                      {interventionModal.generating ? 'Generating…' : 'Generate action'}
+                    </button>
+                  </div>
                   <textarea
                     rows={3}
                     value={interventionModal.form.actionTaken}
@@ -1451,13 +1471,17 @@ export default function Reports() {
                     placeholder="What did you do? (e.g. called guardian, met with student, referred to CARES/counselor, agreed on attendance plan)"
                     required
                   />
+                  <span className="muted small">AI can suggest simple intervention steps you can edit before saving as proof.</span>
                 </label>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                <button type="button" className="btn btn-sm" onClick={generateInterventionDraft} disabled={interventionModal.generating}>
-                  {interventionModal.generating ? 'Generating…' : 'Generate AI summary'}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.5rem', alignItems: 'center' }}>
+                <button type="button" className="btn btn-sm btn-primary" onClick={() => generateInterventionDraft('all')} disabled={interventionModal.generating}>
+                  {interventionModal.generating ? 'Generating…' : 'Generate all suggestions'}
                 </button>
-                <span className="muted small" style={{ alignSelf: 'center' }}>Auto-generates a CARES-ready summary from flags, cause, and your action.</span>
+                <button type="button" className="btn btn-sm" onClick={() => generateInterventionDraft('summary')} disabled={interventionModal.generating}>
+                  {interventionModal.generating ? 'Generating…' : 'Generate summary only'}
+                </button>
+                <span className="muted small">Auto-generates simple-English cause details, intervention action, and a CARES-ready summary from flags and your inputs.</span>
               </div>
               {interventionModal.form.summary && (
                 <div className="card" style={{ marginTop: '0.75rem', padding: '0.75rem 1rem', background: '#f8fafc' }}>
