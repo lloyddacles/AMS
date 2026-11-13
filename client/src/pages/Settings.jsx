@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import PageHeader from '../components/PageHeader.jsx';
 import StatCard from '../components/StatCard.jsx';
@@ -82,6 +83,34 @@ const RISK_FIELDS = [
   },
 ];
 
+const DIGEST_FIELDS = [
+  {
+    key: 'digestEveryDays',
+    label: 'Digest frequency',
+    suffix: 'days (0 = off)',
+    min: 0,
+    max: 365,
+    hint: 'Send at most one scheduled summary digest every N days. Set to 0 to disable email digests.',
+  },
+  {
+    key: 'digestHour',
+    label: 'Preferred send hour',
+    suffix: 'hour (0–23)',
+    min: 0,
+    max: 23,
+    hint: 'Target hour (server/app schedule) for sending the digest when due.',
+  },
+];
+
+const CONFIG_LINKS = [
+  { to: '/colleges', icon: '🏛', title: 'Colleges & Programs', desc: 'Manage departments/colleges and academic programs used for scoping.' },
+  { to: '/terms', icon: '▦', title: 'Terms', desc: 'Configure school terms/periods and attendance minimum targets.' },
+  { to: '/schedules', icon: '📅', title: 'Schedules', desc: 'Manage recurring class/event schedules and generate events.' },
+  { to: '/users', icon: '👥', title: 'Users & Access', desc: 'Manage staff/admin accounts, roles, and department/program scope.' },
+  { to: '/backup', icon: '⭳', title: 'Backup & Restore', desc: 'Export or restore system data and review backup contents.' },
+  { to: '/audit-log', icon: '🧾', title: 'Audit Log', desc: 'Review configuration and activity history across the system.' },
+];
+
 function Field({ field, value, onChange }) {
   return (
     <label>
@@ -124,6 +153,10 @@ export default function Settings() {
     setForm((current) => ({ ...current, [key]: Number.isFinite(value) ? value : 0 }));
   }
 
+  function setTextField(key, value) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
   async function save(e) {
     e.preventDefault();
     setSaving(true);
@@ -133,7 +166,7 @@ export default function Settings() {
       const next = await api.updateSettings(form);
       setSettings(next);
       setForm(next);
-      setSaved('Policy saved. New scans and reports use it immediately.');
+      setSaved('Settings saved. Changes take effect immediately where applicable.');
       setTimeout(() => setSaved(''), 3500);
     } catch (err) {
       setError(err.message);
@@ -172,7 +205,7 @@ export default function Settings() {
       <PageHeader
         eyebrow="System"
         title="Settings"
-        subtitle="Tune attendance classification, alerts, and automatic event cleanup."
+        subtitle="Central web app configuration: attendance policy, alerts, digests, automation, and admin tools."
         actions={
           <button className="btn" onClick={runNow} disabled={running}>
             {running ? 'Running…' : 'Run maintenance now'}
@@ -241,9 +274,33 @@ export default function Settings() {
           </div>
         </div>
 
+        <div className="settings-section">
+          <div className="dash-card-head">
+            <div>
+              <h3>Scheduled digest</h3>
+              <p className="muted small">Configure summary digest scheduling and recipients (email delivery requires server mail configuration).</p>
+            </div>
+          </div>
+          <div className="form grid-form settings-fields">
+            {DIGEST_FIELDS.map((field) => (
+              <Field key={field.key} field={field} value={form[field.key]} onChange={setField} />
+            ))}
+            <label style={{ gridColumn: '1 / -1' }}>
+              Digest recipients
+              <textarea
+                rows={3}
+                value={form.digestRecipients || ''}
+                onChange={(e) => setTextField('digestRecipients', e.target.value)}
+                placeholder="admin@example.edu, staff@example.edu"
+              />
+              <span className="settings-hint">Comma, semicolon, or whitespace separated email addresses (up to 20). Leave blank to keep in-app notifications only.</span>
+            </label>
+          </div>
+        </div>
+
         <div className="settings-actions">
           <button className="btn btn-primary" type="submit" disabled={saving}>
-            {saving ? 'Saving…' : 'Save policy'}
+            {saving ? 'Saving…' : 'Save settings'}
           </button>
         </div>
       </form>
@@ -282,6 +339,24 @@ export default function Settings() {
           Cron secret: configure <code>CRON_SECRET</code> on the API project. The daily schedule lives in{' '}
           <code>server/vercel.json</code>.
         </p>
+      </div>
+
+      <div className="card settings-card">
+        <div className="dash-card-head">
+          <div>
+            <h3>Configuration areas</h3>
+            <p className="muted small">Manage other web app configurations and administrative data from one place.</p>
+          </div>
+        </div>
+        <div className="settings-config-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '12px', marginTop: '12px' }}>
+          {CONFIG_LINKS.map((item) => (
+            <Link key={item.to} to={item.to} className="settings-config-link" style={{ display: 'block', padding: '14px', border: '1px solid var(--border, #e5e7eb)', borderRadius: '10px', textDecoration: 'none', color: 'inherit', background: 'var(--card, #fff)' }}>
+              <div style={{ fontSize: '20px', marginBottom: '6px' }} aria-hidden="true">{item.icon}</div>
+              <div style={{ fontWeight: 600, marginBottom: '4px' }}>{item.title}</div>
+              <div className="muted small">{item.desc}</div>
+            </Link>
+          ))}
+        </div>
       </div>
     </div>
   );
