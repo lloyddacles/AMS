@@ -31,6 +31,16 @@ export function publicWriteRateLimit() {
   });
 }
 
+export function publicReadRateLimit() {
+  return rateLimit({
+    windowMs: 60 * 1000,
+    limit: 120,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many requests. Please slow down and try again.' },
+  });
+}
+
 export function apiRateLimit() {
   return rateLimit({
     windowMs: 60 * 1000,

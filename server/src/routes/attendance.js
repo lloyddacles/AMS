@@ -4,7 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
 import { isExcluded, exclusionsByEvent, includeStudents } from '../services/roster.js';
 import { validate, schemas } from '../validate.js';
-import { publicWriteRateLimit } from '../middleware/security.js';
+import { publicReadRateLimit, publicWriteRateLimit } from '../middleware/security.js';
 import {
   classifyByTime,
   displayStatus,
@@ -288,7 +288,7 @@ function studentNoMatches(provided, expected) {
 // ---- Public self check-in (student scans event QR and enters their student number) ----
 
 // Public list of everyone who has checked in today (names only, no numbers).
-router.get('/public/today/checkins', async (req, res) => {
+router.get('/public/today/checkins', publicReadRateLimit(), async (req, res) => {
   const date = todayInTz();
   const records = await todaysCheckins(date);
   res.json({
@@ -304,7 +304,7 @@ router.get('/public/today/checkins', async (req, res) => {
   });
 });
 
-router.get('/public/:code', async (req, res) => {
+router.get('/public/:code', publicReadRateLimit(), async (req, res) => {
   const event = await get(
     'SELECT id, name, location, event_date AS eventDate, start_time AS startTime, end_time AS endTime, status FROM events WHERE checkin_code = ?',
     [req.params.code]

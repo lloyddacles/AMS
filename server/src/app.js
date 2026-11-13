@@ -90,7 +90,6 @@ app.get('/api/ready', async (req, res) => {
 app.use('/api/auth/login', authRateLimit());
 app.use('/api/student/login', authRateLimit());
 app.use('/api/student/setup', publicWriteRateLimit());
-app.use('/api/corrections', publicWriteRateLimit());
 app.use('/api/auth', authRoutes);
 app.use('/api/students', studentRoutes);
 app.use('/api/events', eventRoutes);
