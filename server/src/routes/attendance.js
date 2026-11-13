@@ -4,6 +4,7 @@ import { requireAuth } from '../middleware/auth.js';
 import { logAudit } from '../services/audit.js';
 import { isExcluded, exclusionsByEvent, includeStudents } from '../services/roster.js';
 import { validate, schemas } from '../validate.js';
+import { publicWriteRateLimit } from '../middleware/security.js';
 import {
   classifyByTime,
   displayStatus,
@@ -312,7 +313,7 @@ router.get('/public/:code', async (req, res) => {
   res.json({ ...event, phase: eventPhase(event) });
 });
 
-router.post('/public/:code/checkin', async (req, res) => {
+router.post('/public/:code/checkin', publicWriteRateLimit(), async (req, res) => {
   const event = await get('SELECT * FROM events WHERE checkin_code = ?', [req.params.code]);
   if (!event) return res.status(404).json({ error: 'Invalid or unknown check-in code' });
   if (event.status !== 'active') return res.status(400).json({ error: 'Check-in for this event is closed' });
