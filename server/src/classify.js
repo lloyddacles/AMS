@@ -6,6 +6,19 @@ const MS_MIN = 60000;
 
 const ATTENDED = ['early', 'on-time', 'late', 'present'];
 
+// Students with these statuses are not expected to attend and are treated as
+// excused for all events (reason = the status), even if listed as attendees.
+export const NON_ATTENDING_STUDENT_STATUSES = new Set(['Deceased', 'Dropped', 'LOA']);
+
+export function isNonAttendingStudentStatus(status) {
+  return NON_ATTENDING_STUDENT_STATUSES.has(String(status || '').trim());
+}
+
+export function studentStatusExcuseReason(status) {
+  const s = String(status || '').trim();
+  return NON_ATTENDING_STUDENT_STATUSES.has(s) ? s : null;
+}
+
 export const isAttendedStatus = (status) => ATTENDED.includes(status);
 
 // Offset (in ms) of the configured timezone from UTC at a given instant.

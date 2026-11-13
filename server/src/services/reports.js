@@ -104,6 +104,7 @@ export async function buildOverview({ search = '', course = '', from = '', to = 
     records: recordsByEvent(records),
     cutoffs: cutoffsFor(events),
     now,
+    studentStatusById: new Map(students.map((s) => [s.id, s.status || 'Active'])),
   };
 
   const totalEvents = units.length;
@@ -256,7 +257,7 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
   const programFilterSql = programId ? ' AND s.program_id = ?' : '';
   const programFilterParams = programId ? [Number(programId)] : [];
   const students = await all(
-    `SELECT s.id FROM students s
+    `SELECT s.id, s.status FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
      ${sScope.join}
@@ -284,6 +285,7 @@ export async function buildTrends({ from = '', to = '', termId = null, course = 
     records: recordsByEvent(records),
     cutoffs: cutoffsFor(events),
     now,
+    studentStatusById: new Map(students.map((s) => [s.id, s.status || 'Active'])),
   };
 
   const buckets = new Map();

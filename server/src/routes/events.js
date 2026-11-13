@@ -15,6 +15,7 @@ import {
   setOnlyAttendees,
   clearExclusions,
   attendeeList,
+  applyEventScopeRoster,
 } from '../services/roster.js';
 import { config } from '../config.js';
 import { validate, schemas } from '../validate.js';
@@ -450,6 +451,7 @@ router.post('/', validate(schemas.eventCreate), async (req, res) => {
       scopeWrite.programId,
     ]
   );
+  await applyEventScopeRoster(info.lastInsertRowid, scopeWrite, req.user?.id || null);
   const created = await getScopedEvent(info.lastInsertRowid, req.user);
   await logAudit({
     user: req.user,
@@ -684,6 +686,8 @@ router.post('/:id/continue', async (req, res) => {
     ]
   );
   const newId = info2.lastInsertRowid;
+  // Ensure department/program-scoped events include only associated students.
+  await applyEventScopeRoster(newId, scopeWrite, req.user?.id || null);
   const first = await get('SELECT id FROM events WHERE series_id = ? ORDER BY event_date, id LIMIT 1', [seriesId]);
   if (first) {
     const exclusions = await all('SELECT student_id AS studentId, excluded_by AS excludedBy FROM event_exclusions WHERE event_id = ?', [first.id]);

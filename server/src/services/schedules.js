@@ -1,5 +1,6 @@
 import { get, all, batch, run } from '../db.js';
 import { newToken } from './users.js';
+import { applyEventScopeRoster } from './roster.js';
 
 // Weekdays are stored as a CSV of JS day numbers (0 = Sunday … 6 = Saturday).
 export function parseWeekdays(value) {
@@ -118,6 +119,17 @@ export async function generateScheduleEvents(scheduleId) {
   if (statements.length) await batch(statements, 'write');
   if (createdDates.length) {
     await run('UPDATE schedules SET last_generated_date = ? WHERE id = ?', [createdDates[createdDates.length - 1], scheduleId]);
+    // Auto-roster: for department/program-scoped schedules, only associated students attend generated events.
+    const placeholders = createdDates.map(() => '?').join(',');
+    const createdEvents = await all(
+      `SELECT id, department_id AS departmentId, program_id AS programId
+       FROM events
+       WHERE schedule_id = ? AND event_date IN (${placeholders})`,
+      [scheduleId, ...createdDates]
+    );
+    for (const ev of createdEvents) {
+      await applyEventScopeRoster(ev.id, { departmentId: ev.departmentId, programId: ev.programId }, null);
+    }
   }
 
   return { created: createdDates.length, skipped, dates: createdDates };

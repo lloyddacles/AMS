@@ -1,5 +1,5 @@
-import { all } from '../db.js';
-import { displayStatus, eventStart, eventPhase, todayInTz } from '../classify.js';
+import { all, get } from '../db.js';
+import { displayStatus, eventStart, eventPhase, todayInTz, studentStatusExcuseReason } from '../classify.js';
 import { logicalUnits, seriesNameMap, aggregateUnit, unitEntries, recordsByEvent, cutoffsFor } from './series.js';
 import { exclusionsByEvent } from './roster.js';
 
@@ -114,6 +114,8 @@ function emptyCounts() {
 }
 
 export async function dashboardFor(studentId) {
+  const student = await get('SELECT id, status FROM students WHERE id = ?', [studentId]);
+  const studentStatus = student?.status || null;
   const { sql, params } = filters();
   const events = await all(`SELECT ${EVENT_COLS} FROM events e ${sql}`, params);
   const seriesNames = await seriesNameMap();
@@ -127,6 +129,7 @@ export async function dashboardFor(studentId) {
     ),
     cutoffs: cutoffsFor(events),
     now,
+    studentStatusById: new Map([[studentId, studentStatus]]),
   };
   // excluded per student from context
   const exMap = await exclusionsByEvent(events.map((e) => e.id));
@@ -174,7 +177,8 @@ export async function dashboardFor(studentId) {
     pendingCorrections: ctx.corrections.filter((c) => c.status === 'pending').length,
   };
 
-  const upcoming = (await all(
+  const excuse = studentStatusExcuseReason(studentStatus);
+  const upcoming = excuse ? [] : (await all(
     `SELECT ${EVENT_COLS} FROM events e
      WHERE e.status = 'active' AND e.archived = 0 AND e.event_date >= ?
      ORDER BY e.event_date, e.start_time, e.id
@@ -197,6 +201,9 @@ export async function dashboardFor(studentId) {
 }
 
 export async function historyFor(studentId, { limit = 25, offset = 0, termId = null, from = '', to = '', q = '' } = {}) {
+  const student = await get('SELECT id, status FROM students WHERE id = ?', [studentId]);
+  const studentStatus = student?.status || null;
+  const statusExcuse = studentStatusExcuseReason(studentStatus);
   const { sql, params } = filters({ termId, from, to, q });
   const events = await all(
     `SELECT ${EVENT_COLS} FROM events e ${sql} ORDER BY e.event_date DESC, e.id DESC`,
@@ -213,6 +220,7 @@ export async function historyFor(studentId, { limit = 25, offset = 0, termId = n
     ),
     cutoffs: cutoffsFor(events),
     now,
+    studentStatusById: new Map([[studentId, studentStatus]]),
   };
   const exMap2 = await exclusionsByEvent(events.map((e) => e.id));
   for (const [eid, set] of exMap2) {
@@ -265,7 +273,8 @@ export async function historyFor(studentId, { limit = 25, offset = 0, termId = n
       method: att2 ? att2.method : null,
       onList: !allExcluded,
       correction: corr || null,
-      canRequest: !allExcluded && started && !Number(primary.archived) && !pendingCorr,
+      canRequest: !allExcluded && started && !Number(primary.archived) && !pendingCorr && !statusExcuse,
+      statusReason: status === 'excused' && statusExcuse ? statusExcuse : (att2?.note || null),
     });
   }
 

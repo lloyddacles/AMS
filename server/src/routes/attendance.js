@@ -11,6 +11,8 @@ import {
   absentCutoff,
   formatTzTime,
   isAttendedStatus,
+  isNonAttendingStudentStatus,
+  studentStatusExcuseReason,
   todayInTz,
   eventPhase,
 } from '../classify.js';
@@ -27,7 +29,7 @@ async function getScopedStudent(studentId, user) {
   const scope = studentScopeFilter(user, { studentAlias: 's', programAlias: 'p_scope' });
   return get(
     `SELECT s.id, s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
-            s.course, s.year_level AS yearLevel, s.section, s.department_id AS departmentId, s.program_id AS programId
+            s.course, s.year_level AS yearLevel, s.section, s.status, s.department_id AS departmentId, s.program_id AS programId
      FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
@@ -160,8 +162,40 @@ async function applyScan({ eventId, studentId, method, userId, event, scannedAt,
     }
   }
 
-  const at = scannedAt || nowUtc();
+  const student = await get('SELECT id, status FROM students WHERE id = ?', [studentId]);
+  const statusExcuse = studentStatusExcuseReason(student?.status);
   const existing = await get('SELECT * FROM attendance WHERE event_id = ? AND student_id = ?', [eventId, studentId]);
+
+  // Student status takes effect on all events: non-attending statuses are auto-excused.
+  if (statusExcuse) {
+    let id = existing?.id;
+    if (existing) {
+      await run(
+        `UPDATE attendance SET status = 'excused', method = ?, marked_by = ?, note = ? WHERE id = ?`,
+        [method || existing.method || 'auto', userId ?? existing.marked_by, statusExcuse, existing.id]
+      );
+      id = existing.id;
+    } else {
+      const info = await run(
+        `INSERT INTO attendance (event_id, student_id, status, method, marked_by, note)
+         VALUES (?, ?, 'excused', ?, ?, ?)`,
+        [eventId, studentId, method || 'auto', userId || null, statusExcuse]
+      );
+      id = info.lastInsertRowid;
+    }
+    const row = await getAttendanceRow(id);
+    const action = existing ? 'already-excused' : 'auto-excused';
+    if (clientScanId) {
+      await run(
+        `INSERT INTO scan_receipts (client_scan_id, attendance_id, action) VALUES (?, ?, ?)
+         ON CONFLICT(client_scan_id) DO NOTHING`,
+        [clientScanId, row.id, action]
+      );
+    }
+    return { row, action };
+  }
+
+  const at = scannedAt || nowUtc();
 
   let action;
   let id;
@@ -316,7 +350,7 @@ router.get('/event/:eventId', async (req, res) => {
   const sScope = studentScopeFilter(req.user, { studentAlias: 's', programAlias: 'p_scope' });
   const students = await all(
     `SELECT s.id AS studentId, s.student_no AS studentNo, s.first_name AS firstName,
-            s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.section
+            s.last_name AS lastName, s.course, s.year_level AS yearLevel, s.section, s.status AS studentStatus
      FROM students s
      LEFT JOIN programs p ON p.id = s.program_id
      LEFT JOIN departments d ON d.id = COALESCE(s.department_id, p.department_id)
@@ -350,6 +384,37 @@ router.get('/event/:eventId', async (req, res) => {
       };
     }
     const r = byStudent.get(s.studentId);
+    const excuse = studentStatusExcuseReason(s.studentStatus);
+    if (excuse) {
+      const base = r || {
+        id: null,
+        eventId: event.id,
+        studentId: s.studentId,
+        method: null,
+        checkedInAt: null,
+        checkedOutAt: null,
+      };
+      return {
+        ...base,
+        id: r?.id || null,
+        eventId: event.id,
+        studentId: s.studentId,
+        status: 'excused',
+        method: r?.method || 'auto',
+        note: excuse,
+        checkedInAt: r?.checkedInAt || null,
+        checkedOutAt: r?.checkedOutAt || null,
+        studentNo: s.studentNo,
+        firstName: s.firstName,
+        lastName: s.lastName,
+        course: s.course,
+        yearLevel: s.yearLevel,
+        section: s.section,
+        attending: true,
+        classification: 'excused',
+        autoExcused: true,
+      };
+    }
     if (r) return { ...r, attending: true, classification: displayStatus(event, r) };
     return {
       id: null,
@@ -394,13 +459,16 @@ router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
     'SELECT * FROM attendance WHERE event_id = ? AND student_id = ?',
     [eventId, student.id]
   );
+  const statusExcuse = studentStatusExcuseReason(student.status);
 
-  const nextAction = !existing ? 'time-in' : (!existing.checked_out_at ? 'time-out' : 'already-complete');
-
+  let nextAction = !existing ? 'time-in' : (!existing.checked_out_at ? 'time-out' : 'already-complete');
   let plannedStatus = null;
   let windowBlocked = false;
   let windowMessage = '';
-  if (nextAction === 'time-in') {
+  if (statusExcuse) {
+    nextAction = (existing && existing.status === 'excused') ? 'already-excused' : 'auto-excused';
+    plannedStatus = 'excused';
+  } else if (nextAction === 'time-in') {
     plannedStatus = classifyByTime(event, nowUtc()) || 'present';
   } else if (nextAction === 'time-out') {
     const opens = timeoutOpensAt(event);
@@ -417,7 +485,7 @@ router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
     alreadyCheckedIn: !!existing,
     checkedInAt: existing?.checked_in_at || null,
     checkedOutAt: existing?.checked_out_at || null,
-    classification: existing ? displayStatus(event, existing) : null,
+    classification: statusExcuse ? 'excused' : (existing ? displayStatus(event, existing) : null),
     nextAction,
     plannedStatus,
     windowBlocked,
@@ -426,6 +494,8 @@ router.post('/lookup', validate(schemas.scanLookup), async (req, res) => {
     startTime: event.start_time || null,
     endTime: event.end_time || null,
     attendance: existing || null,
+    autoExcused: !!statusExcuse,
+    statusReason: statusExcuse || null,
   });
 });
 
@@ -527,28 +597,34 @@ router.post('/scan/batch', validate(schemas.scanBatch), async (req, res) => {
 // Manual mark / update by student id
 router.post('/', validate(schemas.manualAttendance), async (req, res) => {
   const { eventId, studentId, status = 'present', note } = req.body;
-  if (status === 'excused' && !String(note || '').trim()) {
-    return res.status(400).json({ error: 'A reason is required when marking a student excused' });
-  }
   const event = await getScopedEvent(eventId, req.user);
   if (!event) return res.status(404).json({ error: 'Event not found' });
   const student = await getScopedStudent(studentId, req.user);
   if (!student) return res.status(404).json({ error: 'Student not found' });
+
+  const forcedReason = studentStatusExcuseReason(student.status);
+  const finalStatus = forcedReason ? 'excused' : status;
+  const finalNote = forcedReason || note;
+  if (finalStatus === 'excused' && !String(finalNote || '').trim()) {
+    return res.status(400).json({ error: 'A reason is required when marking a student excused' });
+  }
+
   // Marking a student by hand puts them back on the attendee list.
   let readded = false;
   if (await isExcluded(event.id, studentId)) {
     await includeStudents({ eventId: event.id, studentIds: [studentId] });
     readded = true;
   }
-  const { row, duplicate } = await markManual({ eventId, studentId, status, note, userId: req.user.id });
+  const { row, duplicate } = await markManual({ eventId, studentId, status: finalStatus, note: finalNote, userId: req.user.id });
+  const rowWithNote = forcedReason ? { ...row, status: 'excused', note: forcedReason } : row;
   await logAudit({
     user: req.user,
     action: 'attendance.mark',
     entity: 'attendance',
     entityId: row.id,
-    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${row.status}${note ? ` · ${note}` : ''}${readded ? ' · added to attendee list' : ''}`,
+    detail: `${row.studentNo} ${row.lastName}, ${row.firstName} · ${rowWithNote.status}${rowWithNote.note ? ` · ${rowWithNote.note}` : ''}${readded ? ' · added to attendee list' : ''}${forcedReason ? ' · auto by student status' : ''}`,
   });
-  res.status(duplicate ? 200 : 201).json({ ...row, duplicate });
+  res.status(duplicate ? 200 : 201).json({ ...rowWithNote, duplicate, autoExcused: !!forcedReason });
 });
 
 router.put('/:id', validate(schemas.attendanceUpdate), async (req, res) => {
@@ -559,8 +635,10 @@ router.put('/:id', validate(schemas.attendanceUpdate), async (req, res) => {
   const existing = await get('SELECT * FROM attendance WHERE id = ?', [id]);
   if (!existing) return res.status(404).json({ error: 'Attendance record not found' });
   const { status, note } = req.body;
-  const nextStatus = status ?? existing.status;
-  const nextNote = note === undefined ? existing.note : note;
+  const student = await get('SELECT status FROM students WHERE id = ?', [existing.student_id]);
+  const forcedReason = studentStatusExcuseReason(student?.status);
+  const nextStatus = forcedReason ? 'excused' : (status ?? existing.status);
+  const nextNote = forcedReason || (note === undefined ? existing.note : note);
   if (nextStatus === 'excused' && !String(nextNote || '').trim()) {
     return res.status(400).json({ error: 'A reason is required when marking a student excused' });
   }

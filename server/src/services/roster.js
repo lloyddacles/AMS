@@ -110,6 +110,40 @@ export async function clearExclusions(eventId) {
   return info.changes || 0;
 }
 
+// Auto-roster for scoped events: only students associated with the event's
+// department/program attend; everyone else is excluded. Unscoped events keep
+// the default "everyone attends" behavior (no changes).
+// Safe to call on a freshly created event; uses INSERT OR IGNORE.
+export async function applyEventScopeRoster(eventId, scope = {}, excludedBy = null) {
+  const departmentId = scope?.departmentId == null ? null : Number(scope.departmentId);
+  const programId = scope?.programId == null ? null : Number(scope.programId);
+  const hasDept = Number.isFinite(departmentId) && departmentId > 0;
+  const hasProg = Number.isFinite(programId) && programId > 0;
+  if (!hasDept && !hasProg) return 0;
+
+  let matchSql;
+  let matchParams;
+  if (hasProg) {
+    // Program-scoped event: include students assigned to this program.
+    // (Students in the same department but without this program are not included.)
+    matchSql = 's.program_id = ?';
+    matchParams = [programId];
+  } else {
+    // Department-scoped event: include students in this department directly or via their program.
+    matchSql = `(s.department_id = ? OR EXISTS (SELECT 1 FROM programs p WHERE p.id = s.program_id AND p.department_id = ?))`;
+    matchParams = [departmentId, departmentId];
+  }
+
+  const info = await run(
+    `INSERT OR IGNORE INTO event_exclusions (event_id, student_id, excluded_by)
+     SELECT ?, s.id, ?
+     FROM students s
+     WHERE NOT (${matchSql})`,
+    [eventId, excludedBy, ...matchParams]
+  );
+  return info.changes || 0;
+}
+
 // Attendee summary for the UI.
 export async function attendeeStats(eventId) {
   const total = (await get('SELECT COUNT(*) AS c FROM students')).c;

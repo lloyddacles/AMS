@@ -1,5 +1,5 @@
 import { get, all, run, batch } from '../db.js';
-import { displayStatus } from '../classify.js';
+import { displayStatus, isNonAttendingStudentStatus, studentStatusExcuseReason } from '../classify.js';
 import { exclusionsByEvent } from './roster.js';
 
 // Current time as a SQLite-style UTC timestamp.
@@ -9,31 +9,60 @@ export function nowUtc() {
 
 // Roster-aware snapshot of an event's attendance: who attends, what is recorded
 // and who has no record yet (those become absent when the event closes).
+// Students with non-attending statuses (e.g. Deceased, Dropped, LOA) are always
+// treated as excused for events they attend (reason = student status).
 export async function rosterSnapshot(eventId) {
   const excluded = (await exclusionsByEvent([Number(eventId)])).get(Number(eventId)) || new Set();
   const records = (await all('SELECT * FROM attendance WHERE event_id = ?', [eventId])).filter(
     (r) => !excluded.has(r.student_id)
   );
   const byStudent = new Map(records.map((r) => [r.student_id, r]));
-  const students = (await all('SELECT id FROM students')).filter((s) => !excluded.has(s.id));
+  const students = (await all('SELECT id, status FROM students')).filter((s) => !excluded.has(s.id));
   const missing = students.filter((s) => !byStudent.has(s.id));
   return { excluded, records, byStudent, students, missing };
 }
 
-// Final per-student classification counts plus the attendance rate. Students
-// off the attendee list are skipped entirely; no-record students count absent.
-export function buildSummary(event, snapshot, closedAt = null) {
-  const { records, students, missing } = snapshot;
-  const counts = { early: 0, onTime: 0, late: 0, excused: 0, absent: 0 };
-  for (const r of records) {
-    const cls = displayStatus(event, r);
-    if (cls === 'early') counts.early += 1;
-    else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
-    else if (cls === 'late') counts.late += 1;
-    else if (cls === 'excused') counts.excused += 1;
-    else counts.absent += 1;
+function effectiveRecordForStudent(event, record, student) {
+  const reason = studentStatusExcuseReason(student?.status);
+  if (reason) {
+    // Student status takes precedence on all events.
+    return { ...(record || {}), status: 'excused', method: record?.method || 'auto', note: reason, checked_in_at: record?.checked_in_at || null, checked_out_at: record?.checked_out_at || null };
   }
-  counts.absent += missing.length;
+  return record || null;
+}
+
+// Final per-student classification counts plus the attendance rate. Students
+// off the attendee list are skipped entirely. No-record students count absent,
+// except non-attending-status students who are auto-excused (reason = status).
+export function buildSummary(event, snapshot, closedAt = null) {
+  const { records, students, byStudent } = snapshot;
+  const byId = byStudent || new Map(records.map((r) => [r.student_id, r]));
+  const counts = { early: 0, onTime: 0, late: 0, excused: 0, absent: 0 };
+
+  if (students && students.length && 'status' in (students[0] || {})) {
+    for (const s of students) {
+      const eff = effectiveRecordForStudent(event, byId.get(s.id), s);
+      let cls;
+      if (eff) cls = displayStatus(event, eff);
+      else cls = 'absent';
+      if (cls === 'early') counts.early += 1;
+      else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
+      else if (cls === 'late') counts.late += 1;
+      else if (cls === 'excused') counts.excused += 1;
+      else counts.absent += 1;
+    }
+  } else {
+    // Backward-compatible fallback (should not be used by current callers).
+    for (const r of records) {
+      const cls = displayStatus(event, r);
+      if (cls === 'early') counts.early += 1;
+      else if (cls === 'on-time' || cls === 'present') counts.onTime += 1;
+      else if (cls === 'late') counts.late += 1;
+      else if (cls === 'excused') counts.excused += 1;
+      else counts.absent += 1;
+    }
+    counts.absent += (snapshot.missing || []).length;
+  }
 
   const attended = counts.early + counts.onTime + counts.late;
   const totalStudents = students.length;
@@ -51,15 +80,46 @@ export function buildSummary(event, snapshot, closedAt = null) {
   return summary;
 }
 
+async function applyNonAttendingStudentStatuses(eventId, snapshot) {
+  const statements = [];
+  for (const s of snapshot.students || []) {
+    const reason = studentStatusExcuseReason(s?.status);
+    if (!reason) continue;
+    const existing = snapshot.byStudent.get(s.id);
+    if (!existing) {
+      statements.push({
+        sql: `INSERT INTO attendance (event_id, student_id, status, method, note)
+              VALUES (?, ?, 'excused', 'auto', ?)`,
+        args: [eventId, s.id, reason],
+      });
+      continue;
+    }
+    if (String(existing.status) !== 'excused' || String(existing.note || '') !== reason) {
+      statements.push({
+        sql: `UPDATE attendance SET status = 'excused', method = 'auto', note = ? WHERE id = ?`,
+        args: [reason, existing.id],
+      });
+    }
+  }
+  if (statements.length) await batch(statements, 'write');
+}
+
 // Close an event and consolidate attendance: every student without a record is
 // locked in as absent, and a final summary is stored for reporting. Shared by
 // the manual close route and the background automation worker.
+// Students with non-attending statuses (Deceased/Dropped/LOA) are auto-excused.
 export async function consolidateEvent(eventId) {
   const event = await get('SELECT * FROM events WHERE id = ?', [eventId]);
   if (!event) return null;
 
   // Students off the attendee list are neither rolled in as absent nor counted.
-  const snapshot = await rosterSnapshot(eventId);
+  let snapshot = await rosterSnapshot(eventId);
+
+  // Enforce student-status excusals first (takes precedence over any record/missing state).
+  await applyNonAttendingStudentStatuses(eventId, snapshot);
+
+  // Re-read after enforcement so missing/summary are accurate.
+  snapshot = await rosterSnapshot(eventId);
   if (snapshot.missing.length) {
     const statements = snapshot.missing.map((s) => ({
       sql: `INSERT INTO attendance (event_id, student_id, status, method, note)
@@ -67,6 +127,7 @@ export async function consolidateEvent(eventId) {
       args: [eventId, s.id],
     }));
     await batch(statements, 'write');
+    snapshot = await rosterSnapshot(eventId);
   }
 
   const summary = buildSummary(event, snapshot, nowUtc());
@@ -91,7 +152,9 @@ export async function refreshClosedSummary(eventId) {
   } catch {
     previous = null;
   }
-  const snapshot = await rosterSnapshot(eventId);
+  let snapshot = await rosterSnapshot(eventId);
+  await applyNonAttendingStudentStatuses(eventId, snapshot);
+  snapshot = await rosterSnapshot(eventId);
   const summary = buildSummary(event, snapshot, previous?.closedAt || event.closed_at || null);
   await run('UPDATE events SET report_summary = ? WHERE id = ?', [JSON.stringify(summary), eventId]);
   return summary;

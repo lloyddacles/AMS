@@ -118,6 +118,7 @@ export async function buildRiskModel({ user = null, programId = null } = {}) {
     records: recordsByEvent(records),
     cutoffs: cutoffsFor(events),
     now,
+    studentStatusById: new Map(students.map((s) => [s.id, s.status || 'Active'])),
   };
 
   const rows = [];

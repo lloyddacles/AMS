@@ -1,5 +1,5 @@
 import { all } from '../db.js';
-import { displayStatus, absentCutoff } from '../classify.js';
+import { displayStatus, absentCutoff, studentStatusExcuseReason } from '../classify.js';
 
 // Multi-day / continuation events. Each day is its own event record (own QR,
 // time window, attendee list, attendance rows), but events sharing a
@@ -78,12 +78,18 @@ export function aggregateUnit(entries) {
 
 // One student's expected-day statuses for one unit.
 // ctx: { excluded: Map eventId→Set, records: Map eventId→Map studentId→record,
-//        cutoffs: Map eventId→Date|null, now: Date }
+//        cutoffs: Map eventId→Date|null, now: Date, studentStatusById?: Map }
 export function unitEntries(unit, studentId, ctx) {
   const entries = [];
+  const studentStatus = ctx.studentStatusById ? ctx.studentStatusById.get(studentId) : null;
+  const statusExcuse = studentStatusExcuseReason(studentStatus);
   for (const e of unit.events) {
     const out = ctx.excluded.get(e.id);
     if (out && out.has(studentId)) continue;
+    if (statusExcuse) {
+      entries.push({ status: 'excused', date: e.eventDate ?? e.event_date, reason: statusExcuse });
+      continue;
+    }
     const rec = ctx.records.get(e.id)?.get(studentId);
     const cls = rec
       ? displayStatus(e, rec)
