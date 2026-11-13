@@ -96,18 +96,7 @@ const todayCols = `a.id, a.event_id AS eventId, a.student_id AS studentId, a.sta
   s.student_no AS studentNo, s.first_name AS firstName, s.last_name AS lastName,
   e.name AS eventName, e.event_date AS eventDate, e.start_time AS startTime, e.end_time AS endTime`;
 
-// Every time-in recorded today (across all of today's events), with the
-// time-based classification applied.
-async function todaysCheckins(date) {
-  const records = await all(
-    `SELECT ${todayCols}
-     FROM attendance a
-     JOIN students s ON s.id = a.student_id
-     JOIN events e ON e.id = a.event_id
-     WHERE e.event_date = ? AND a.checked_in_at IS NOT NULL
-     ORDER BY a.checked_in_at DESC`,
-    [date]
-  );
+async function mapTodayCheckins(records) {
   return records.map((r) => ({
     id: r.id,
     eventId: r.eventId,
@@ -124,6 +113,34 @@ async function todaysCheckins(date) {
       r
     ),
   }));
+}
+
+// Every time-in recorded today (across all of today's events), with the
+// time-based classification applied.
+async function todaysCheckins(date) {
+  const records = await all(
+    `SELECT ${todayCols}
+     FROM attendance a
+     JOIN students s ON s.id = a.student_id
+     JOIN events e ON e.id = a.event_id
+     WHERE e.event_date = ? AND a.checked_in_at IS NOT NULL
+     ORDER BY a.checked_in_at DESC`,
+    [date]
+  );
+  return mapTodayCheckins(records);
+}
+
+async function todaysCheckinsForEvent(eventId) {
+  const records = await all(
+    `SELECT ${todayCols}
+     FROM attendance a
+     JOIN students s ON s.id = a.student_id
+     JOIN events e ON e.id = a.event_id
+     WHERE e.id = ? AND a.checked_in_at IS NOT NULL
+     ORDER BY a.checked_in_at DESC`,
+    [eventId]
+  );
+  return mapTodayCheckins(records);
 }
 
 // Manual marking by staff. Only attended statuses get a time-in.
@@ -287,12 +304,19 @@ function studentNoMatches(provided, expected) {
 
 // ---- Public self check-in (student scans event QR and enters their student number) ----
 
-// Public list of everyone who has checked in today (names only, no numbers).
-router.get('/public/today/checkins', publicReadRateLimit(), async (req, res) => {
+// Public list of check-ins for a specific event (scoped by event check-in code).
+router.get('/public/:code/checkins', publicReadRateLimit(), async (req, res) => {
+  // Retired global path: /public/today/checkins (prevents cross-event student data exposure).
+  if (req.params.code === 'today') {
+    return res.status(410).json({ error: 'This endpoint is no longer available. Use the event-specific check-in list.' });
+  }
+  const event = await get('SELECT id, event_date AS eventDate FROM events WHERE checkin_code = ?', [req.params.code]);
+  if (!event) return res.status(404).json({ error: 'Invalid or unknown check-in code' });
   const date = todayInTz();
-  const records = await todaysCheckins(date);
+  const records = await todaysCheckinsForEvent(event.id);
   res.json({
     date,
+    eventId: event.id,
     count: records.length,
     students: records.map((r) => ({
       firstName: r.firstName,

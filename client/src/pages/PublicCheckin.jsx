@@ -29,7 +29,7 @@ export default function PublicCheckin() {
       .publicEvent(code)
       .then(setEvent)
       .catch((e) => setError(e.message));
-    api.publicTodayCheckins()
+    api.publicEventCheckins(code)
       .then(setToday)
       .catch(() => {});
   }, [code]);
@@ -115,7 +115,7 @@ export default function PublicCheckin() {
               </button>
             </form>
             <div className="today-list" style={{ marginTop: '1rem', width: '100%' }}>
-              <h4 style={{ marginBottom: '0.5rem' }}>Already checked in today ({today.count})</h4>
+              <h4 style={{ marginBottom: '0.5rem' }}>Already checked in for this event ({today.count})</h4>
               <ul className="list" style={{ maxHeight: '12rem', overflow: 'auto' }}>
                 {today.students.length === 0 && <li className="muted small">No one yet.</li>}
                 {today.students.map((t, i) => (

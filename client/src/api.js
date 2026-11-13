@@ -208,7 +208,7 @@ export const api = {
 
   publicEvent: (code) => request(`/attendance/public/${code}`, { auth: false }),
   publicCheckin: (code, studentNo) => request(`/attendance/public/${code}/checkin`, { method: 'POST', body: { studentNo }, auth: false }),
-  publicTodayCheckins: () => request('/attendance/public/today/checkins', { auth: false }),
+  publicEventCheckins: (code) => request(`/attendance/public/${code}/checkins`, { auth: false }),
 
   studentSetup: (data) => request('/student/setup', { method: 'POST', body: data, auth: false }),
   studentLogin: (data) => request('/student/login', { method: 'POST', body: data, auth: false }),
