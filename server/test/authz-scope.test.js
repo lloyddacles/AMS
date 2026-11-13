@@ -405,4 +405,74 @@ describe('Authorization and department/program scoping', () => {
       .send({ studentId: studentB.id, interventionDate: new Date().toISOString().slice(0, 10), actionTaken: 'Follow-up', causeCategory: 'Other' });
     expect([400, 403, 404]).toContain(createCross.status);
   });
+
+  it('scopes schedule update/delete and event attendee/lifecycle operations by ID', async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    // Schedule in scope A (admin-created)
+    const schedA = await request(app).post('/api/schedules').set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Sched A Lifecycle', weekdays: [new Date().getUTCDay()], startDate: today, endDate: today, startTime: '08:00', endTime: '09:00', departmentId: deptA.id, programId: progA?.id || null, active: true });
+    expect([200, 201]).toContain(schedA.status);
+    const updB = await request(app).put(`/api/schedules/${schedA.body.id}`).set('Authorization', `Bearer ${staffBToken}`).send({ name: 'Hacked' });
+    expect(updB.status).toBe(404);
+    const delB = await request(app).delete(`/api/schedules/${schedA.body.id}`).set('Authorization', `Bearer ${staffBToken}`);
+    expect(delB.status).toBe(404);
+
+    // Event attendee/lifecycle operations on scope B event must not be accessible to staffA
+    const attB = await request(app).get(`/api/events/${eventB.id}/attendees`).set('Authorization', `Bearer ${staffAToken}`);
+    expect(attB.status).toBe(404);
+    const setAttB = await request(app).post(`/api/events/${eventB.id}/attendees`).set('Authorization', `Bearer ${staffAToken}`)
+      .send({ studentIds: [studentB.id], attending: false });
+    expect(setAttB.status).toBe(404);
+    const onlyAttB = await request(app).post(`/api/events/${eventB.id}/attendees/only`).set('Authorization', `Bearer ${staffAToken}`)
+      .send({ studentIds: [studentB.id] });
+    expect(onlyAttB.status).toBe(404);
+    const resetAttB = await request(app).post(`/api/events/${eventB.id}/attendees/reset`).set('Authorization', `Bearer ${staffAToken}`);
+    expect(resetAttB.status).toBe(404);
+
+    // Close/reopen/archive/unarchive/delete/regenerate-code by ID scoped
+    const tempB = await request(app).post('/api/events').set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Temp B', eventDate: today, startTime: '08:00', endTime: '09:00', status: 'active', departmentId: deptB.id, programId: progB?.id || null });
+    expect(tempB.status).toBe(201);
+    for (const [method, path] of [
+      ['post', `/api/events/${tempB.body.id}/close`],
+      ['post', `/api/events/${tempB.body.id}/reopen`],
+      ['post', `/api/events/${tempB.body.id}/archive`],
+      ['post', `/api/events/${tempB.body.id}/unarchive`],
+      ['post', `/api/events/${tempB.body.id}/regenerate-code`],
+      ['delete', `/api/events/${tempB.body.id}`],
+    ]) {
+      const r = await request(app)[method](path).set('Authorization', `Bearer ${staffAToken}`);
+      expect([403, 404]).toContain(r.status);
+    }
+
+    // StaffA can operate on own scope event lifecycle (smoke)
+    const tempA = await request(app).post('/api/events').set('Authorization', `Bearer ${adminToken}`)
+      .send({ name: 'Temp A', eventDate: today, startTime: '08:00', endTime: '09:00', status: 'active', departmentId: deptA.id, programId: progA?.id || null });
+    expect(tempA.status).toBe(201);
+    // staffA may or may not have permission depending on role policy for some actions, but should not be blocked by scope
+    const closeA = await request(app).post(`/api/events/${tempA.body.id}/close`).set('Authorization', `Bearer ${staffAToken}`);
+    expect([200, 403]).toContain(closeA.status);
+  });
+
+  it('scopes scan batch sync to accessible events/students', async () => {
+    // staffA cannot sync scans for scope B event/student
+    const batchCross = await request(app).post('/api/attendance/scan/batch').set('Authorization', `Bearer ${staffAToken}`)
+      .send({ scans: [{ clientScanId: 'x-scope-b', eventId: eventB.id, qrToken: studentB.qrToken, scannedAt: new Date().toISOString() }] });
+    expect(batchCross.status).toBe(200);
+    expect(batchCross.body.synced).toBe(0);
+    expect(Array.isArray(batchCross.body.results)).toBe(true);
+    expect(batchCross.body.results[0]?.ok).toBe(false);
+
+    // staffA can sync valid scan for scope A (eventA is active today from setup)
+    const batchOk = await request(app).post('/api/attendance/scan/batch').set('Authorization', `Bearer ${staffAToken}`)
+      .send({ scans: [{ clientScanId: 'x-scope-a-1', eventId: eventA.id, qrToken: studentA.qrToken, scannedAt: new Date().toISOString() }] });
+    expect(batchOk.status).toBe(200);
+    expect(batchOk.body.total).toBe(1);
+    expect(batchOk.body.results[0]).toBeTruthy();
+    // may be ok or blocked if timing window rules apply, but must not leak cross-scope data and must be scoped correctly
+    if (!batchOk.body.results[0].ok) {
+      expect(String(batchOk.body.results[0].error || '')).not.toMatch(/student B|Other Beta|SB001/i);
+    }
+  });
+
 });

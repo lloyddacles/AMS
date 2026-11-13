@@ -7,6 +7,7 @@ import { dashboardFor, historyFor, listTerms } from '../services/portal.js';
 import { checkLogin, recordFailure, recordSuccess } from '../services/loginGuard.js';
 import { logAudit } from '../services/audit.js';
 import { DEFAULT_PASSWORD } from '../services/users.js';
+import { sensitiveWriteRateLimit } from '../middleware/security.js';
 
 const router = Router();
 
@@ -171,7 +172,7 @@ router.get('/corrections', async (req, res) => {
   );
 });
 
-router.post('/corrections', async (req, res) => {
+router.post('/corrections', sensitiveWriteRateLimit(), async (req, res) => {
   const { eventId, requestedStatus, reason } = req.body || {};
   const result = await createForStudent({
     student: req.student,
@@ -183,7 +184,7 @@ router.post('/corrections', async (req, res) => {
   res.status(201).json(result.correction);
 });
 
-router.post('/password', async (req, res) => {
+router.post('/password', sensitiveWriteRateLimit(), async (req, res) => {
   const { currentPassword, newPassword } = req.body || {};
   if (!currentPassword || !newPassword) {
     return res.status(400).json({ error: 'Current and new password are required' });

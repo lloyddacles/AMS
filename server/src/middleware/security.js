@@ -50,3 +50,16 @@ export function apiRateLimit() {
     message: { error: 'Too many requests. Please slow down and try again.' },
   });
 }
+
+// Tighter limit for sensitive authenticated writes (e.g. password changes).
+// Uses in-memory store by default (per-process). For multi-instance deployments,
+// replace with a shared store (e.g. Redis) via express-rate-limit's `store` option.
+export function sensitiveWriteRateLimit() {
+  return rateLimit({
+    windowMs: 15 * 60 * 1000,
+    limit: 20,
+    standardHeaders: 'draft-7',
+    legacyHeaders: false,
+    message: { error: 'Too many sensitive requests. Please try again later.' },
+  });
+}

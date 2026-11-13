@@ -4,6 +4,7 @@ import { signToken, requireAuth } from '../middleware/auth.js';
 import { checkLogin, recordFailure, recordSuccess } from '../services/loginGuard.js';
 import { config } from '../config.js';
 import { validate, schemas } from '../validate.js';
+import { sensitiveWriteRateLimit } from '../middleware/security.js';
 
 const router = Router();
 
@@ -61,7 +62,7 @@ router.put('/profile', requireAuth, async (req, res) => {
   res.json({ user: result.user });
 });
 
-router.post('/password', requireAuth, validate(schemas.changePassword), async (req, res) => {
+router.post('/password', requireAuth, sensitiveWriteRateLimit(), validate(schemas.changePassword), async (req, res) => {
   const { currentPassword, newPassword } = req.body;
   if (String(newPassword).toLowerCase() === DEFAULT_PASSWORD) {
     return res.status(400).json({ error: 'Please choose a password other than the default' });
