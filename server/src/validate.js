@@ -113,6 +113,32 @@ export const schemas = {
   correctionDecision: z.object({
     note: z.string().trim().max(1000).optional().nullable(),
   }),
+  blocCreate: z.object({
+    name: trimmed(200).min(1, 'Bloc name is required'),
+    description: z.string().trim().max(2000).optional().nullable(),
+    course: optionalTrimmed(120),
+    yearLevel: optionalTrimmed(50),
+    section: optionalTrimmed(50),
+    departmentId: z.coerce.number().int().positive().optional().nullable(),
+    programId: z.coerce.number().int().positive().optional().nullable(),
+    active: z.coerce.boolean().optional(),
+  }),
+  blocUpdate: z.object({
+    name: trimmed(200).optional(),
+    description: z.string().trim().max(2000).optional().nullable(),
+    course: optionalTrimmed(120),
+    yearLevel: optionalTrimmed(50),
+    section: optionalTrimmed(50),
+    departmentId: z.coerce.number().int().positive().optional().nullable(),
+    programId: z.coerce.number().int().positive().optional().nullable(),
+    active: z.coerce.boolean().optional(),
+  }),
+  blocMembers: z.object({
+    studentIds: z.array(z.coerce.number().int().positive()).min(1, 'Select at least one student').max(5000, 'Too many students (max 5000)'),
+  }),
+  eventBlocAttendees: z.object({
+    blocIds: z.array(z.coerce.number().int().positive()).min(1, 'Select at least one bloc').max(200, 'Too many blocs (max 200)'),
+  }),
 };
 
 export function validateIdParam(param = 'id') {

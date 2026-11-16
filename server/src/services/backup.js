@@ -9,6 +9,8 @@ const TABLES = {
   students: ['id', 'student_no', 'first_name', 'last_name', 'email', 'course', 'year_level', 'section', 'qr_token', 'password_hash', 'password_set_at', 'created_at'],
   event_series: ['id', 'name', 'created_by', 'created_at'],
   events: ['id', 'name', 'description', 'location', 'event_date', 'start_time', 'end_time', 'checkin_code', 'status', 'archived', 'archived_at', 'require_student_confirm', 'auto_confirm', 'created_at', 'closed_at', 'report_summary', 'term_id', 'schedule_id', 'series_id'],
+  blocs: ['id', 'name', 'description', 'department_id', 'program_id', 'course', 'year_level', 'section', 'active', 'created_by', 'created_at', 'updated_at'],
+  bloc_members: ['bloc_id', 'student_id', 'added_at', 'added_by'],
   attendance: ['id', 'event_id', 'student_id', 'status', 'method', 'note', 'checked_in_at', 'checked_out_at', 'marked_by'],
   event_exclusions: ['event_id', 'student_id', 'excluded_at', 'excluded_by'],
   attendance_corrections: ['id', 'event_id', 'student_id', 'requested_status', 'reason', 'status', 'resolution_note', 'reviewed_by', 'reviewed_at', 'submitted_by', 'created_at'],
@@ -20,8 +22,8 @@ const TABLES = {
 };
 
 // Delete children before parents; insert parents before children.
-const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance_corrections', 'attendance', 'scan_receipts', 'event_exclusions', 'audit_log', 'settings', 'events', 'event_series', 'schedules', 'terms', 'students', 'users'];
-const INSERT_ORDER = ['users', 'terms', 'schedules', 'event_series', 'students', 'events', 'event_exclusions', 'attendance_corrections', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
+const DELETE_ORDER = ['notification_reads', 'notifications', 'attendance_corrections', 'bloc_members', 'blocs', 'attendance', 'scan_receipts', 'event_exclusions', 'audit_log', 'settings', 'events', 'event_series', 'schedules', 'terms', 'students', 'users'];
+const INSERT_ORDER = ['users', 'terms', 'schedules', 'event_series', 'students', 'blocs', 'bloc_members', 'events', 'event_exclusions', 'attendance_corrections', 'attendance', 'settings', 'scan_receipts', 'audit_log', 'notifications', 'notification_reads'];
 
 export async function exportData() {
   const tables = {};

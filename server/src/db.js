@@ -165,6 +165,35 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_exclusions_event ON event_exclusions(event_id);
   CREATE INDEX IF NOT EXISTS idx_exclusions_student ON event_exclusions(student_id);
 
+  -- Reusable student groups/sections (blocs) scoped to department/program.
+  CREATE TABLE IF NOT EXISTS blocs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT,
+    department_id INTEGER REFERENCES departments(id) ON DELETE SET NULL,
+    program_id INTEGER REFERENCES programs(id) ON DELETE SET NULL,
+    course TEXT,
+    year_level TEXT,
+    section TEXT,
+    active INTEGER NOT NULL DEFAULT 1,
+    created_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_blocs_department ON blocs(department_id);
+  CREATE INDEX IF NOT EXISTS idx_blocs_program ON blocs(program_id);
+  CREATE INDEX IF NOT EXISTS idx_blocs_active ON blocs(active);
+
+  CREATE TABLE IF NOT EXISTS bloc_members (
+    bloc_id INTEGER NOT NULL REFERENCES blocs(id) ON DELETE CASCADE,
+    student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+    added_at TEXT NOT NULL DEFAULT (datetime('now')),
+    added_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    PRIMARY KEY (bloc_id, student_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_bloc_members_bloc ON bloc_members(bloc_id);
+  CREATE INDEX IF NOT EXISTS idx_bloc_members_student ON bloc_members(student_id);
+
   -- Student-submitted attendance corrections: one pending request per student
   -- per event; staff approve (updates attendance) or reject with a note.
   CREATE TABLE IF NOT EXISTS attendance_corrections (
@@ -461,10 +490,15 @@ async function doInit() {
     CREATE INDEX IF NOT EXISTS idx_students_department ON students(department_id);
     CREATE INDEX IF NOT EXISTS idx_users_department ON users(department_id);
     CREATE INDEX IF NOT EXISTS idx_users_program ON users(program_id);
+    CREATE INDEX IF NOT EXISTS idx_blocs_department ON blocs(department_id);
+    CREATE INDEX IF NOT EXISTS idx_blocs_program ON blocs(program_id);
+    CREATE INDEX IF NOT EXISTS idx_blocs_active ON blocs(active);
+    CREATE INDEX IF NOT EXISTS idx_bloc_members_bloc ON bloc_members(bloc_id);
+    CREATE INDEX IF NOT EXISTS idx_bloc_members_student ON bloc_members(student_id);
   `);
   await seedAcademicStructure();
   // Record baseline/phase migrations so readiness checks can report status.
-  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms', '004_departments_programs_scoping', '005_event_department_program_scoping', '006_schedule_department_program_scoping', '007_notification_department_program_scoping']) {
+  for (const name of ['001_baseline_schema', '002_attendance_nullable_checkin', '003_event_archive_series_terms', '004_departments_programs_scoping', '005_event_department_program_scoping', '006_schedule_department_program_scoping', '007_notification_department_program_scoping', '008_blocs_student_groups']) {
     await run(`INSERT OR IGNORE INTO schema_migrations (name) VALUES (?)`, [name]);
   }
 }

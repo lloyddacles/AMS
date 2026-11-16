@@ -23,6 +23,7 @@ import searchRoutes from './routes/search.js';
 import cronRoutes from './routes/cron.js';
 import interventionRoutes from './routes/interventions.js';
 import academicRoutes from './routes/academic.js';
+import blocRoutes from './routes/blocs.js';
 import { getSettings, refreshSettingsIfStale } from './services/settings.js';
 import { securityHeaders, apiRateLimit, authRateLimit, publicWriteRateLimit } from './middleware/security.js';
 import { requestId, requestLogger } from './middleware/requestLog.js';
@@ -109,6 +110,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/cron', cronRoutes);
 app.use('/api/interventions', interventionRoutes);
 app.use('/api/academic', academicRoutes);
+app.use('/api/blocs', blocRoutes);
 
 app.use((err, req, res, next) => {
   const status = err.status || err.statusCode || 500;

@@ -77,19 +77,23 @@ export default function EventDetail() {
   const [seriesData, setSeriesData] = useState(null);
   const [showContinue, setShowContinue] = useState(false);
   const [continueForm, setContinueForm] = useState({ eventDate: '', startTime: '', endTime: '', name: '' });
+  const [blocs, setBlocs] = useState([]);
+  const [selectedBlocIds, setSelectedBlocIds] = useState([]);
 
   async function load() {
     try {
-      const [ev, att, studs, list] = await Promise.all([
+      const [ev, att, studs, list, blocList] = await Promise.all([
         api.getEvent(id),
         api.getEventAttendance(id),
         api.getStudents(),
         api.getEventAttendees(id),
+        api.getBlocs().catch(() => []),
       ]);
       setEvent(ev);
       setAttendance(att);
       setStudents(studs);
       setAttendees(list);
+      setBlocs(Array.isArray(blocList) ? blocList : []);
       setAttendeeSel(new Set());
       if (ev.seriesId) {
         api.getSeries(ev.seriesId).then(setSeriesData).catch(() => {});
@@ -274,6 +278,22 @@ export default function EventDetail() {
       const res = await api.resetEventAttendees(id);
       await load();
       flash(res.changed ? `All students restored · ${res.attending}/${res.totalStudents} attending` : 'Everyone already attends this event');
+    } catch (e) {
+      alert(e.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applySelectedBlocs() {
+    const blocIds = selectedBlocIds.map(Number).filter(Number.isFinite);
+    if (!blocIds.length) return;
+    setBusy(true);
+    try {
+      const res = await api.applyEventBlocs(id, blocIds);
+      await load();
+      setSelectedBlocIds([]);
+      flash(`Applied ${blocIds.length} bloc(s): added ${res.added || 0} member(s) to attendee list`);
     } catch (e) {
       alert(e.message);
     } finally {
@@ -695,6 +715,38 @@ export default function EventDetail() {
             {excludedCount > 0
               ? ' Students off the list cannot check in, are not marked absent, and the event does not count for them in reports.'
               : ''}
+          </div>
+
+          <div className="card section-bulk-card" style={{ marginBottom: '0.75rem' }}>
+            <div className="section-bulk-head">
+              <div>
+                <h4 style={{ margin: 0, fontSize: '0.95rem' }}>Add blocs to attendee list</h4>
+                <p className="muted small" style={{ margin: '0.15rem 0 0' }}>
+                  Select one or more blocs to add their members to this event’s attendee roster (existing exclusions for those members are removed).
+                </p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  multiple
+                  value={selectedBlocIds.map(String)}
+                  onChange={(e) => setSelectedBlocIds(Array.from(e.target.selectedOptions).map((o) => o.value))}
+                  style={{ minWidth: 260, minHeight: 90 }}
+                  aria-label="Select blocs"
+                  disabled={busy || blocs.length === 0}
+                >
+                  {blocs.map((b) => (
+                    <option key={b.id} value={b.id}>
+                      {b.name}{b.memberCount != null ? ` (${b.memberCount})` : ''}{b.programName ? ` · ${b.programName}` : b.departmentName ? ` · ${b.departmentName}` : ''}
+                    </option>
+                  ))}
+                </select>
+                <button className="btn btn-sm btn-primary" disabled={busy || selectedBlocIds.length === 0} onClick={applySelectedBlocs}>
+                  Apply bloc(s) ({selectedBlocIds.length})
+                </button>
+                <Link className="btn btn-sm" to="/blocs">Manage blocs</Link>
+              </div>
+            </div>
+            {blocs.length === 0 && <p className="muted small" style={{ margin: '0.5rem 0 0' }}>No blocs available yet. Create blocs in the Blocs section to add groups quickly.</p>}
           </div>
           <div className="toolbar">
             <input

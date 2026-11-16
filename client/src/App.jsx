@@ -15,6 +15,7 @@ const Events = lazy(() => import('./pages/Events.jsx'));
 const EventDetail = lazy(() => import('./pages/EventDetail.jsx'));
 const PrintSheet = lazy(() => import('./pages/PrintSheet.jsx'));
 const Schedules = lazy(() => import('./pages/Schedules.jsx'));
+const Blocs = lazy(() => import('./pages/Blocs.jsx'));
 const Terms = lazy(() => import('./pages/Terms.jsx'));
 const Scanner = lazy(() => import('./pages/Scanner.jsx'));
 const Live = lazy(() => import('./pages/Live.jsx'));
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/events/:id/print-sheet" element={<Protected><PrintSheet /></Protected>} />
           <Route path="/events/:id/scan" element={<Protected><Scanner /></Protected>} />
           <Route path="/schedules" element={<Protected><Schedules /></Protected>} />
+          <Route path="/blocs" element={<Protected><Blocs /></Protected>} />
           <Route path="/terms" element={<Protected><AdminOnly><Terms /></AdminOnly></Protected>} />
           <Route path="/colleges" element={<Protected><AdminOnly><Colleges /></AdminOnly></Protected>} />
           <Route path="/settings" element={<Protected><AdminOnly><Settings /></AdminOnly></Protected>} />

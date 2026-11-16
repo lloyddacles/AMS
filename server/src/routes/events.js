@@ -20,6 +20,7 @@ import {
 import { config } from '../config.js';
 import { validate, schemas } from '../validate.js';
 import { eventScopeFilter } from '../services/academic.js';
+import { applyBlocsToEvent } from '../services/blocs.js';
 
 const router = Router();
 router.use(requireAuth);
@@ -388,6 +389,24 @@ router.post('/:id/attendees/reset', async (req, res) => {
     });
   }
   res.json({ ...list, changed });
+});
+
+// Add students to the attendee list by applying one or more blocs (adds members
+// back onto the event roster; existing exclusions for those members are removed).
+router.post('/:id/attendees/blocs', validate(schemas.eventBlocAttendees), async (req, res) => {
+  const event = await getScopedEvent(req.params.id, req.user);
+  if (!event) return res.status(404).json({ error: 'Event not found' });
+  const result = await applyBlocsToEvent({ eventId: event.id, blocIds: req.body.blocIds, user: req.user });
+  if (!result.ok) return res.status(result.status || 400).json({ error: result.error });
+  const list = await attendeeList(event.id);
+  await logAudit({
+    user: req.user,
+    action: 'event.attendees.blocs',
+    entity: 'event',
+    entityId: event.id,
+    detail: `Applied ${result.blocs?.length || 0} bloc(s) · ${result.memberCount || 0} member(s) · +${result.added || 0} added back · ${list.attending}/${list.totalStudents} attending${result.missing?.length ? ` · ${result.missing.length} bloc(s) not found` : ''}`,
+  });
+  res.json({ ...list, ...result });
 });
 
 // Offline scan pack: everything the scanner needs to validate and record scans
