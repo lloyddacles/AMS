@@ -63,6 +63,20 @@ function footer(doc, { preparedBy } = {}) {
   }
 }
 
+function defaultComprehensiveSections() {
+  return {
+    reportInfo: true,
+    aiDisclosure: true,
+    aiInsights: true,
+    summaryMetrics: true,
+    visuals: true,
+    studentDetails: true,
+    trendsTable: false,
+    atRiskTable: false,
+    complianceTable: false,
+  };
+}
+
 function ensureSpace(doc, y, needed = 20) {
   const height = doc.internal.pageSize.getHeight();
   if (y + needed > height - 18) {
@@ -234,46 +248,62 @@ export function exportComprehensiveReportPdf({
   preparedBy = '—',
   viewLabel = 'Reports',
   visuals = null,
+  sections = null,
+  students: studentsOverride = null,
+  fileName = null,
 }) {
-  const students = overview?.students || [];
-  const totalEvents = Number(overview?.totalEvents || 0);
+  const sec = { ...defaultComprehensiveSections(), ...(sections || {}) };
+  const students = Array.isArray(studentsOverride)
+    ? studentsOverride
+    : (Array.isArray(overview?.students) ? overview.students : []);
+  const totalEvents = Number(overview?.totalEvents ?? trends?.summary?.events ?? atRisk?.totalEvents ?? compliance?.totalEvents ?? 0);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
 
   const contextParts = [
     filters.termName ? `Term: ${filters.termName}` : null,
+    filters.programName ? `Program: ${filters.programName}` : null,
     filters.course ? `Course: ${filters.course}` : null,
     filters.search ? `Search: ${filters.search}` : null,
     filters.from || filters.to ? `Date range: ${filters.from || '—'} to ${filters.to || '—'}` : 'Date range: All time',
-    `View context: ${viewLabel}`,
+    filters.granularity ? `Trend granularity: ${filters.granularity}` : null,
+    filters.sortLabel ? `Sort: ${filters.sortLabel}` : null,
+    viewLabel ? `View/context: ${viewLabel}` : null,
   ].filter(Boolean);
 
-  let y = header(doc, 'Comprehensive Attendance Report', contextParts.join('  ·  '));
+  let y = header(doc, 'Attendance Report (PDF)', contextParts.join('  ·  ') || 'Filtered attendance report');
 
-  y = sectionTitle(doc, y, 'Report Information');
-  autoTable(doc, {
-    startY: y,
-    theme: 'plain',
-    styles: { fontSize: 9, cellPadding: 1.2, textColor: [51, 65, 85] },
-    columnStyles: { 0: { fontStyle: 'bold', cellWidth: 38 }, 1: { cellWidth: 140 } },
-    body: [
+  if (sec.reportInfo) {
+    y = sectionTitle(doc, y, 'Report Information');
+    const infoRows = [
       ['Prepared by', preparedBy || '—'],
       ['Generated on', new Date().toLocaleString()],
       ['Report coverage', `${students.length} student${students.length === 1 ? '' : 's'} · ${totalEvents} event${totalEvents === 1 ? '' : 's'}`],
-      ['AI confidence', insights ? `${insights.confidence?.level || '—'} (${insights.confidence?.score ?? '—'}/100)` : '—'],
-    ],
-    margin: { left: 14, right: 14 },
-  });
-  y = doc.lastAutoTable.finalY + 4;
+    ];
+    if (insights) infoRows.push(['AI confidence', `${insights.confidence?.level || '—'} (${insights.confidence?.score ?? '—'}/100)`]);
+    const applied = contextParts.filter((p) => !String(p).startsWith('View/context:')).join(' · ');
+    if (applied) infoRows.push(['Filters applied', applied]);
+    autoTable(doc, {
+      startY: y,
+      theme: 'plain',
+      styles: { fontSize: 9, cellPadding: 1.2, textColor: [51, 65, 85] },
+      columnStyles: { 0: { fontStyle: 'bold', cellWidth: 38 }, 1: { cellWidth: 140 } },
+      body: infoRows,
+      margin: { left: 14, right: 14 },
+    });
+    y = doc.lastAutoTable.finalY + 4;
+  }
 
-  y = sectionTitle(doc, y, 'AI Disclosure');
-  y = writeParagraph(
-    doc,
-    y,
-    'AI Disclosure: This report is monitored by AI. AI-assisted attendance insights are used to summarize available attendance, trend, risk, and compliance data, highlight patterns, and recommend possible actions for teachers. These AI-generated insights are advisory and should be reviewed alongside professional judgment, school policies, and the actual student context before making formal decisions.',
-    { fontSize: 9, color: [30, 41, 59] }
-  );
+  if (sec.aiDisclosure) {
+    y = sectionTitle(doc, y, 'AI Disclosure');
+    y = writeParagraph(
+      doc,
+      y,
+      'AI Disclosure: This report is monitored by AI. AI-assisted attendance insights are used to summarize available attendance, trend, risk, and compliance data, highlight patterns, and recommend possible actions for teachers. These AI-generated insights are advisory and should be reviewed alongside professional judgment, school policies, and the actual student context before making formal decisions.',
+      { fontSize: 9, color: [30, 41, 59] }
+    );
+  }
 
-  if (insights) {
+  if (sec.aiInsights && insights) {
     y = sectionTitle(doc, y, 'Executive Summary & AI Insights');
     y = writeParagraph(doc, y, insights.headline || 'Attendance insights summary', { bold: true, fontSize: 10, color: [15, 23, 42] });
     y = writeParagraph(doc, y, insights.summary || '', { fontSize: 9 });
@@ -353,50 +383,61 @@ export function exportComprehensiveReportPdf({
   }
 
   const trendSummary = trends?.summary;
-  const complianceSummary = compliance && compliance.eligible ? compliance : null;
   const atRiskSummary = atRisk || null;
+  const complianceSummary = compliance || null;
 
-  y = sectionTitle(doc, y, 'Attendance Summary Metrics');
-  const metricRows = [
-    ['Students (in scope)', students.length],
-    ['Events (in range)', totalEvents],
-    ['Average attendance rate', insights ? `${insights.metrics?.avgRate ?? 0}%` : '—'],
-    ['Perfect attendance', insights ? insights.metrics?.perfect ?? 0 : '—'],
-    ['Below 80% attendance', insights ? insights.metrics?.below80 ?? 0 : '—'],
-  ];
-  if (trendSummary) {
-    metricRows.push(['Trend periods/events analyzed', trends.points?.length || 0]);
-    metricRows.push(['Trend attendance rate', `${trendSummary.rate ?? 0}%`]);
-    metricRows.push(['Trend present / absent / excused', `${trendSummary.present ?? 0} / ${trendSummary.absent ?? 0} / ${trendSummary.excused ?? 0}`]);
+  if (sec.summaryMetrics) {
+    y = sectionTitle(doc, y, 'Attendance Summary Metrics');
+    const metricRows = [];
+    if (overview || students.length || totalEvents) {
+      metricRows.push(['Students (in scope)', overview?.students?.length ?? students.length ?? 0]);
+      metricRows.push(['Events (in range)', totalEvents]);
+    }
+    if (insights) {
+      metricRows.push(['Average attendance rate', `${insights.metrics?.avgRate ?? 0}%`]);
+      metricRows.push(['Perfect attendance', insights.metrics?.perfect ?? 0]);
+      metricRows.push(['Below 80% attendance', insights.metrics?.below80 ?? 0]);
+    }
+    if (trendSummary) {
+      metricRows.push(['Trend periods/events analyzed', trends.points?.length || 0]);
+      metricRows.push(['Trend attendance rate', `${trendSummary.rate ?? 0}%`]);
+      metricRows.push(['Trend present / absent / excused', `${trendSummary.present ?? 0} / ${trendSummary.absent ?? 0} / ${trendSummary.excused ?? 0}`]);
+    }
+    if (atRiskSummary) {
+      metricRows.push(['At-risk threshold', `${atRiskSummary.threshold ?? '—'}%`]);
+      metricRows.push(['At-risk students', atRiskSummary.students?.length ?? 0]);
+    }
+    if (complianceSummary) {
+      if (complianceSummary.minimum != null) metricRows.push(['Compliance minimum', `${complianceSummary.minimum}%`]);
+      if (complianceSummary.below != null) metricRows.push(['Non-compliant students', complianceSummary.below]);
+      if (complianceSummary.totalStudents != null) metricRows.push(['Students evaluated (compliance)', complianceSummary.totalStudents]);
+    }
+    if (metricRows.length) {
+      autoTable(doc, {
+        startY: y,
+        theme: 'grid',
+        head: [['Metric', 'Value']],
+        body: metricRows,
+        headStyles: { fillColor: PRIMARY, fontSize: 8.5 },
+        styles: { fontSize: 8.3, cellPadding: 2 },
+        columnStyles: { 0: { cellWidth: 90, fontStyle: 'bold' }, 1: { cellWidth: 88 } },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 14, right: 14 },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+    } else {
+      y = writeParagraph(doc, y, 'No summary metrics available for the selected filters/sections.', { fontSize: 9, color: MUTED });
+    }
   }
-  if (atRiskSummary) {
-    metricRows.push(['At-risk threshold', `${atRiskSummary.threshold ?? '—'}%`]);
-    metricRows.push(['At-risk students', atRiskSummary.students?.length ?? 0]);
-  }
-  if (complianceSummary) {
-    metricRows.push(['Compliance minimum', `${complianceSummary.minimum ?? '—'}%`]);
-    metricRows.push(['Non-compliant students', complianceSummary.below ?? 0]);
-  }
-  autoTable(doc, {
-    startY: y,
-    theme: 'grid',
-    head: [['Metric', 'Value']],
-    body: metricRows,
-    headStyles: { fillColor: PRIMARY, fontSize: 8.5 },
-    styles: { fontSize: 8.3, cellPadding: 2 },
-    columnStyles: { 0: { cellWidth: 90, fontStyle: 'bold' }, 1: { cellWidth: 88 } },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { left: 14, right: 14 },
-  });
-  y = doc.lastAutoTable.finalY + 4;
 
-  if (visuals && (visuals.status || visuals.distribution || visuals.trend)) {
+  if (sec.visuals && visuals && (visuals.status || visuals.distribution || visuals.trend)) {
     y = sectionTitle(doc, y, 'Visual Overview');
     const pageWidth = doc.internal.pageSize.getWidth();
     const left = 14;
     const right = 14;
     const usable = pageWidth - left - right;
     const gap = 6;
+    const halfW = (usable - gap) / 2;
 
     const addChart = (img, title, x, w, maxH = 60) => {
       if (!img?.dataUrl) return 0;
@@ -424,54 +465,117 @@ export function exportComprehensiveReportPdf({
       return drawH + 6;
     };
 
-    const halfW = (usable - gap) / 2;
     const startY = y;
-    let leftH = 0;
-    let rightH = 0;
-    if (visuals.status) leftH = addChart(visuals.status, 'Attendance status breakdown', left, halfW, 55);
+    if (visuals.status) addChart(visuals.status, 'Attendance status breakdown', left, halfW, 55);
     const afterLeftY = y;
     y = startY;
-    if (visuals.distribution) rightH = addChart(visuals.distribution, 'Attendance rate distribution', left + halfW + gap, halfW, 55);
+    if (visuals.distribution) addChart(visuals.distribution, 'Attendance rate distribution', left + halfW + gap, halfW, 55);
     y = Math.max(afterLeftY, y) + 2;
 
     if (visuals.trend) {
-      addChart(visuals.trend, 'Attendance rate trend (recent periods)', left, usable, 55);
+      addChart(visuals.trend, `Attendance rate trend${filters.granularity ? ` (${filters.granularity})` : ''}`, left, usable, 55);
       y += 2;
     } else {
       y += 1;
     }
   }
 
-  y = sectionTitle(doc, y, 'Student Attendance Details');
-  autoTable(doc, {
-    startY: y,
-    head: [['Student No', 'Name', 'Course', 'Early', 'On-time', 'Late', 'Excused', 'Absent', 'Attended/Expected', 'Rate']],
-    body: students.map((s) => [
-      s.studentNo || '—',
-      `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, '') || '—',
-      s.course || '—',
-      s.early ?? 0,
-      s.onTime ?? 0,
-      s.late ?? 0,
-      s.excused ?? 0,
-      s.absent ?? 0,
-      `${s.attended ?? 0}/${s.expected ?? 0}`,
-      `${s.rate ?? 0}%`,
-    ]),
-    theme: 'grid',
-    headStyles: { fillColor: [15, 23, 42], fontSize: 7.6 },
-    styles: { fontSize: 7.4, cellPadding: 1.4, halign: 'center' },
-    columnStyles: {
-      0: { halign: 'left', cellWidth: 22 },
-      1: { halign: 'left', cellWidth: 38 },
-      2: { halign: 'left', cellWidth: 24 },
-      8: { cellWidth: 24 },
-      9: { cellWidth: 14 },
-    },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { left: 10, right: 10 },
-  });
-  y = doc.lastAutoTable.finalY + 8;
+  if (sec.trendsTable && trends?.points?.length) {
+    y = sectionTitle(doc, y, 'Trends Detail');
+    autoTable(doc, {
+      startY: y,
+      head: [['Period', 'Events', 'Present', 'Early', 'On-time', 'Late', 'Excused', 'Absent', 'Rate']],
+      body: trends.points.map((p) => [p.label, p.events, p.present, p.early, p.onTime, p.late, p.excused, p.absent, `${p.rate}%`]),
+      theme: 'grid',
+      headStyles: { fillColor: [37, 99, 235], fontSize: 8 },
+      styles: { fontSize: 7.8, cellPadding: 1.5, halign: 'center' },
+      columnStyles: { 0: { halign: 'left', cellWidth: 36 } },
+      alternateRowStyles: { fillColor: [248, 250, 252] },
+      margin: { left: 14, right: 14 },
+    });
+    y = doc.lastAutoTable.finalY + 4;
+  }
+
+  if (sec.atRiskTable) {
+    y = sectionTitle(doc, y, 'At-Risk Students');
+    const rows = atRisk?.students || [];
+    if (rows.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Student No', 'Name', 'Course', 'Year', 'Attended', 'Absent', 'Excused', 'Rate']],
+        body: rows.map((s) => [s.studentNo, `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, ''), s.course || '—', s.yearLevel || '—', s.attended, s.absent, s.excused, `${s.rate}%`]),
+        theme: 'grid',
+        headStyles: { fillColor: [220, 38, 38], fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 1.4, halign: 'center' },
+        columnStyles: { 0: { halign: 'left' }, 1: { halign: 'left' }, 2: { halign: 'left' }, 3: { halign: 'left' } },
+        alternateRowStyles: { fillColor: [254, 242, 242] },
+        margin: { left: 14, right: 14 },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+    } else {
+      y = writeParagraph(doc, y, 'No at-risk students for the selected filters.', { fontSize: 9, color: MUTED });
+    }
+  }
+
+  if (sec.complianceTable) {
+    y = sectionTitle(doc, y, 'Compliance (Below Minimum)');
+    const rows = compliance?.students || [];
+    if (rows.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Student No', 'Name', 'Course', 'Year', 'Attended', 'Absent', 'Excused', 'Rate', 'Needed']],
+        body: rows.map((s) => [s.studentNo, `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, ''), s.course || '—', s.yearLevel || '—', s.attended, s.absent, s.excused, `${s.rate}%`, s.needed ?? '—']),
+        theme: 'grid',
+        headStyles: { fillColor: [124, 58, 237], fontSize: 8 },
+        styles: { fontSize: 8, cellPadding: 1.4, halign: 'center' },
+        columnStyles: { 0: { halign: 'left' }, 1: { halign: 'left' }, 2: { halign: 'left' }, 3: { halign: 'left' } },
+        alternateRowStyles: { fillColor: [245, 243, 255] },
+        margin: { left: 14, right: 14 },
+      });
+      y = doc.lastAutoTable.finalY + 4;
+    } else if (compliance?.eligible === false) {
+      y = writeParagraph(doc, y, 'No events in the selected range for compliance evaluation.', { fontSize: 9, color: MUTED });
+    } else {
+      y = writeParagraph(doc, y, 'All students meet the minimum attendance requirement for the selected filters.', { fontSize: 9, color: MUTED });
+    }
+  }
+
+  if (sec.studentDetails) {
+    y = sectionTitle(doc, y, 'Student Attendance Details');
+    if (students.length) {
+      autoTable(doc, {
+        startY: y,
+        head: [['Student No', 'Name', 'Course', 'Early', 'On-time', 'Late', 'Excused', 'Absent', 'Attended/Expected', 'Rate']],
+        body: students.map((s) => [
+          s.studentNo || '—',
+          `${s.lastName || ''}, ${s.firstName || ''}`.replace(/^,\s*/, '') || '—',
+          s.course || '—',
+          s.early ?? 0,
+          s.onTime ?? 0,
+          s.late ?? 0,
+          s.excused ?? 0,
+          s.absent ?? 0,
+          `${s.attended ?? 0}/${s.expected ?? 0}`,
+          `${s.rate ?? 0}%`,
+        ]),
+        theme: 'grid',
+        headStyles: { fillColor: [15, 23, 42], fontSize: 7.6 },
+        styles: { fontSize: 7.4, cellPadding: 1.4, halign: 'center' },
+        columnStyles: {
+          0: { halign: 'left', cellWidth: 22 },
+          1: { halign: 'left', cellWidth: 38 },
+          2: { halign: 'left', cellWidth: 24 },
+          8: { cellWidth: 24 },
+          9: { cellWidth: 14 },
+        },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        margin: { left: 10, right: 10 },
+      });
+      y = doc.lastAutoTable.finalY + 8;
+    } else {
+      y = writeParagraph(doc, y, 'No student detail rows available for the selected filters.', { fontSize: 9, color: MUTED });
+    }
+  }
 
   y = ensureSpace(doc, y, 30);
   doc.setDrawColor(203, 213, 225);
@@ -486,5 +590,5 @@ export function exportComprehensiveReportPdf({
 
   footer(doc, { preparedBy });
   const datePart = new Date().toISOString().slice(0, 10);
-  doc.save(`attendance-comprehensive-report-${datePart}.pdf`);
+  doc.save(fileName || `attendance-report-${datePart}.pdf`);
 }

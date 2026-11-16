@@ -95,6 +95,9 @@ export default function Reports() {
   const [visualGranularity, setVisualGranularity] = useState('day');
   const [interventionData, setInterventionData] = useState(null);
   const [interventionModal, setInterventionModal] = useState(null); // { student, form, history, saving, generating, error }
+  const [pdfExportOpen, setPdfExportOpen] = useState(false);
+  const [pdfExportBusy, setPdfExportBusy] = useState(false);
+  const [pdfExportSections, setPdfExportSections] = useState(null);
   const chartRefs = {
     status: useRef(null),
     distribution: useRef(null),
@@ -302,6 +305,45 @@ export default function Reports() {
     setSort((s) => (s.key === key ? { key, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { key, dir: 'asc' }));
   }
 
+  function defaultPdfSectionsForView(v = view) {
+    const base = {
+      reportInfo: true,
+      aiDisclosure: false,
+      aiInsights: false,
+      summaryMetrics: true,
+      visuals: false,
+      studentDetails: false,
+      trendsTable: false,
+      atRiskTable: false,
+      complianceTable: false,
+    };
+    if (v === 'summary') return { ...base, aiDisclosure: true, aiInsights: true, visuals: true, studentDetails: true };
+    if (v === 'trends') return { ...base, visuals: true, trendsTable: true };
+    if (v === 'at-risk') return { ...base, atRiskTable: true };
+    if (v === 'compliance') return { ...base, complianceTable: true };
+    if (v === 'matrix' || v === 'interventions') return { ...base, summaryMetrics: true };
+    return base;
+  }
+
+  function fullPdfSections() {
+    return {
+      reportInfo: true,
+      aiDisclosure: true,
+      aiInsights: true,
+      summaryMetrics: true,
+      visuals: true,
+      studentDetails: true,
+      trendsTable: true,
+      atRiskTable: true,
+      complianceTable: true,
+    };
+  }
+
+  function openPdfExportModal(preset = 'current') {
+    setPdfExportSections(preset === 'full' ? fullPdfSections() : defaultPdfSectionsForView(view));
+    setPdfExportOpen(true);
+  }
+
   async function exportPdf() {
     if (!overview) return;
     try {
@@ -323,20 +365,43 @@ export default function Reports() {
   }
 
   async function exportFullReportPdf() {
-    if (!overview) return;
+    openPdfExportModal('full');
+  }
+
+  async function runFlexiblePdfExport(sections) {
+    if (!overview && !trends && !atRisk && !compliance) return;
+    setPdfExportBusy(true);
     try {
-      const [trendsData, atRiskData, complianceData] = await Promise.all([
-        trends ? Promise.resolve(trends) : api.getReportTrends({ course, granularity, ...rangeParams }).catch(() => null),
-        atRisk ? Promise.resolve(atRisk) : api.getAtRisk({ search, course, ...rangeParams }).catch(() => null),
-        compliance ? Promise.resolve(compliance) : api.getReportCompliance({ search, course, ...rangeParams }).catch(() => null),
+      const needOverview = sections.studentDetails || sections.summaryMetrics || sections.aiInsights || sections.visuals || sections.reportInfo;
+      const needTrends = sections.trendsTable || sections.summaryMetrics || sections.visuals;
+      const needAtRisk = sections.atRiskTable || sections.summaryMetrics || sections.aiInsights;
+      const needCompliance = sections.complianceTable || sections.summaryMetrics;
+
+      const exportGranularity = sections.trendsTable ? granularity : visualGranularity;
+      const [overviewData, trendsData, atRiskData, complianceData] = await Promise.all([
+        needOverview ? (overview ? Promise.resolve(overview) : api.getReportOverview({ search, course, ...rangeParams }).catch(() => null)) : Promise.resolve(null),
+        needTrends
+          ? (
+              (sections.trendsTable ? trends : visualTrends) && (sections.trendsTable ? granularity : visualGranularity) === exportGranularity
+                ? Promise.resolve(sections.trendsTable ? trends : visualTrends)
+                : api.getReportTrends({ course, granularity: exportGranularity, ...rangeParams }).catch(() => null)
+            )
+          : Promise.resolve(null),
+        needAtRisk ? (atRisk ? Promise.resolve(atRisk) : api.getAtRisk({ search, course, ...rangeParams }).catch(() => null)) : Promise.resolve(null),
+        needCompliance ? (compliance ? Promise.resolve(compliance) : api.getReportCompliance({ search, course, ...rangeParams }).catch(() => null)) : Promise.resolve(null),
       ]);
-      // Give charts a moment to render if needed (e.g. when switching views)
-      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-      const [statusImg, distImg, trendImg] = await Promise.all([
-        captureChartImage(chartRefs.status),
-        captureChartImage(chartRefs.distribution),
-        captureChartImage(chartRefs.trend),
-      ]);
+
+      let visuals = null;
+      if (sections.visuals) {
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const [statusImg, distImg, trendImg] = await Promise.all([
+          captureChartImage(chartRefs.status),
+          captureChartImage(chartRefs.distribution),
+          captureChartImage(chartRefs.trend),
+        ]);
+        visuals = { status: statusImg, distribution: distImg, trend: trendImg };
+      }
+
       const termName = termId ? (terms.find((t) => String(t.id) === String(termId))?.name || '') : '';
       const programName = programId ? ((academic.programs || []).find((p) => String(p.id) === String(programId))?.name || '') : '';
       const preparedBy = String(user?.name || '').trim() || '—';
@@ -346,21 +411,42 @@ export default function Reports() {
         trends: 'Trends',
         'at-risk': 'At-Risk',
         compliance: 'Compliance',
+        interventions: 'Interventions',
       };
+      const sortLabel = sections.studentDetails
+        ? `${(SUMMARY_COLUMNS.find((c) => c.key === sort.key)?.label || sort.key)} (${sort.dir})`
+        : null;
+
+      const exportInsights = sections.aiInsights
+        ? buildReportInsights({
+            overview: overviewData || overview || null,
+            trends: trendsData || trends || visualTrends || null,
+            atRisk: atRiskData || atRisk || null,
+            compliance: complianceData || compliance || null,
+            riskModel,
+            filters: { search, course, from, to, termId, programId },
+          })
+        : null;
+
       const { exportComprehensiveReportPdf } = await import('../pdf.js');
       exportComprehensiveReportPdf({
-        overview,
-        insights,
-        trends: trendsData,
-        atRisk: atRiskData,
-        compliance: complianceData,
-        filters: { search, course, from, to, termId, termName, programId, programName },
+        overview: overviewData || overview || null,
+        insights: exportInsights,
+        trends: trendsData || null,
+        atRisk: atRiskData || null,
+        compliance: complianceData || null,
+        filters: { search, course, from, to, termId, termName, programId, programName, granularity: needTrends ? exportGranularity : '', sortLabel },
         preparedBy,
         viewLabel: viewLabelMap[view] || 'Reports',
-        visuals: { status: statusImg, distribution: distImg, trend: trendImg },
+        visuals,
+        sections,
+        students: sections.studentDetails ? sortedStudents : undefined,
       });
+      setPdfExportOpen(false);
     } catch (e) {
-      await notify({ title: 'Export failed', message: e.message || 'Unable to export the full report PDF.' });
+      await notify({ title: 'Export failed', message: e.message || 'Unable to export the PDF.' });
+    } finally {
+      setPdfExportBusy(false);
     }
   }
 
@@ -592,21 +678,17 @@ export default function Reports() {
         subtitle={VIEW_COPY[view] || VIEW_COPY.summary}
         actions={
           <>
-            <button className="btn btn-primary" onClick={exportFullReportPdf} disabled={!overview} title="Export complete report with summary, AI insights, and attendance details for submission">
-              Export Full Report (PDF)
+            <button className="btn btn-primary" onClick={() => openPdfExportModal('current')} disabled={!overview && !trends && !atRisk && !compliance} title="Export a PDF with selected sections and current filters">
+              Export PDF…
             </button>
             {view === 'at-risk' ? (
-              <>
-                <button className="btn" onClick={exportAtRiskPdf} disabled={!atRisk}>At-Risk PDF</button>
-                <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
-              </>
+              <button className="btn" onClick={() => exportCsv('at-risk', null, { search, course, ...rangeParams })}>Export CSV</button>
             ) : view === 'trends' ? (
               <button className="btn" onClick={exportTrendsCsv} disabled={!trends}>Export CSV</button>
             ) : view === 'compliance' ? (
               <button className="btn" onClick={() => exportCsv('compliance', null, { search, course, ...rangeParams })} disabled={!compliance}>Export CSV</button>
             ) : (
               <>
-                <button className="btn" onClick={exportPdf} disabled={!overview || view !== 'summary'}>Summary PDF</button>
                 <button className="btn" onClick={() => exportCsv('students', null, rangeParams)}>Summary CSV</button>
                 <button className="btn" onClick={() => exportCsv('matrix', null, rangeParams)}>Matrix CSV</button>
               </>
@@ -1401,6 +1483,75 @@ export default function Reports() {
             </>
           )}
         </>
+      )}
+
+      {pdfExportOpen && pdfExportSections && (
+        <Modal
+          wide
+          title="Export PDF Report"
+          onClose={() => !pdfExportBusy && setPdfExportOpen(false)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setPdfExportOpen(false)} disabled={pdfExportBusy}>Cancel</button>
+              <button className="btn btn-primary" onClick={() => runFlexiblePdfExport(pdfExportSections)} disabled={pdfExportBusy}>
+                {pdfExportBusy ? 'Preparing PDF…' : 'Export PDF'}
+              </button>
+            </>
+          }
+        >
+          <div className="form event-form">
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Scope and presets</h4>
+                <p className="muted small">Export uses the current filters/date range/search/program. Choose which sections to include in the PDF.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections(defaultPdfSectionsForView(view))}>Current view</button>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections(fullPdfSections())}>Full report</button>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections({ ...defaultPdfSectionsForView('summary'), visuals: false })}>Summary only</button>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections({ ...defaultPdfSectionsForView('at-risk'), visuals: false })}>At-risk only</button>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections({ ...defaultPdfSectionsForView('compliance'), visuals: false })}>Compliance only</button>
+                <button type="button" className="btn btn-sm" onClick={() => setPdfExportSections({ ...defaultPdfSectionsForView('trends'), visuals: false })}>Trends only</button>
+              </div>
+              <div className="muted small" style={{ marginTop: '0.5rem' }}>
+                Current view: <strong>{({ summary: 'Student Summary', matrix: 'Event Matrix', trends: 'Trends', 'at-risk': 'At-Risk', compliance: 'Compliance', interventions: 'Interventions' }[view] || view)}</strong>
+                {activeFilters.length ? ` · Filters: ${activeFilters.join(' · ')}` : ' · No extra filters'}
+              </div>
+            </section>
+
+            <section className="event-form-section">
+              <div className="event-form-section-head">
+                <h4>Sections to include</h4>
+                <p className="muted small">Select only the sections you need (filtered to the current report context).</p>
+              </div>
+              <div className="form grid-form">
+                {[
+                  ['reportInfo', 'Report information & filters'],
+                  ['aiDisclosure', 'AI disclosure'],
+                  ['aiInsights', 'AI insights (summary, findings, actions, priorities, groups)'],
+                  ['summaryMetrics', 'Summary metrics'],
+                  ['visuals', 'Visual charts (status/distribution/trend)'],
+                  ['studentDetails', 'Student attendance details table (filtered/sorted summary data)'],
+                  ['trendsTable', 'Trends detail table'],
+                  ['atRiskTable', 'At-risk students table'],
+                  ['complianceTable', 'Compliance (below minimum) table'],
+                ].map(([key, label]) => (
+                  <label key={key} className={`checkbox ${key === 'aiInsights' || key === 'studentDetails' ? 'span-2' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={!!pdfExportSections[key]}
+                      onChange={(e) => setPdfExportSections((s) => ({ ...s, [key]: e.target.checked }))}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+              <p className="muted small" style={{ marginTop: '0.5rem' }}>
+                Note: Some sections require corresponding data (e.g. trends/at-risk/compliance tables). Missing data will be fetched for the current filters when available.
+              </p>
+            </section>
+          </div>
+        </Modal>
       )}
 
       {interventionModal && (
