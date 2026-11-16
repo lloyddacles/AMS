@@ -81,6 +81,7 @@ export default function Events() {
   const [selected, setSelected] = useState(() => new Set());
   const [bulkBusy, setBulkBusy] = useState(false);
   const [scopeModal, setScopeModal] = useState(null); // { departmentId, programId, saving, error }
+  const [pdfExport, setPdfExport] = useState(null); // { event, attendance, blocs, options, busy, loading }
 
   async function load() {
     setLoading(true);
@@ -194,6 +195,118 @@ export default function Events() {
       await notify({ title: 'Event restored', message: `"${ev.name}" was restored from archive.` });
     } catch (e) {
       await notify({ title: 'Action failed', message: e.message || 'Unable to restore the event.' });
+    }
+  }
+
+  async function openEventPdfExport(ev) {
+    setPdfExport({ event: ev, attendance: [], blocs: [], options: null, busy: false, loading: true, error: '' });
+    try {
+      const [eventDetail, attendance, blocList] = await Promise.all([
+        api.getEvent(ev.id).catch(() => ev),
+        api.getEventAttendance(ev.id),
+        api.getBlocs().catch(() => []),
+      ]);
+      const att = Array.isArray(attendance) ? attendance : [];
+      const sections = [...new Set(att.map((r) => String(r.section || '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      const courses = [...new Set(att.map((r) => String(r.course || '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      const years = [...new Set(att.map((r) => String(r.yearLevel || '').trim()).filter(Boolean))]
+        .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+      setPdfExport({
+        event: eventDetail || ev,
+        attendance: att,
+        blocs: Array.isArray(blocList) ? blocList : [],
+        busy: false,
+        loading: false,
+        error: '',
+        options: {
+          roster: 'attending',
+          section: '',
+          course: '',
+          yearLevel: '',
+          blocId: '',
+          statuses: new Set(),
+          includePending: false,
+          includeNotAttending: false,
+          sections,
+          courses,
+          years,
+        },
+      });
+    } catch (e) {
+      setPdfExport((s) => s ? ({ ...s, loading: false, error: e.message || 'Unable to load event export data.' }) : s);
+    }
+  }
+
+  async function runEventPdfExport() {
+    if (!pdfExport?.options || !pdfExport?.event) return;
+    setPdfExport((s) => ({ ...s, busy: true, error: '' }));
+    try {
+      const m = pdfExport.options;
+      let rows = Array.isArray(pdfExport.attendance) ? [...pdfExport.attendance] : [];
+      const labels = [];
+
+      if (m.blocId) {
+        const bloc = pdfExport.blocs.find((b) => String(b.id) === String(m.blocId));
+        const membersRes = await api.getBlocMembers(m.blocId);
+        const memberIds = new Set((membersRes?.members || []).map((x) => Number(x.studentId)));
+        rows = rows.filter((r) => memberIds.has(Number(r.studentId)));
+        labels.push(`Bloc: ${bloc?.name || m.blocId}`);
+      }
+
+      if (m.roster === 'attending') {
+        rows = rows.filter((r) => r.attending !== false);
+        labels.push('Attending/on-list only');
+      } else if (m.roster === 'not-attending') {
+        rows = rows.filter((r) => r.attending === false);
+        labels.push('Not attending/off-list only');
+      } else {
+        labels.push('All scoped students');
+      }
+
+      if (m.section) { rows = rows.filter((r) => String(r.section || '').trim() === m.section); labels.push(`Section: ${m.section}`); }
+      if (m.course) { rows = rows.filter((r) => String(r.course || '').trim() === m.course); labels.push(`Course/Program: ${m.course}`); }
+      if (m.yearLevel) { rows = rows.filter((r) => String(r.yearLevel || '').trim() === m.yearLevel); labels.push(`Year level: ${m.yearLevel}`); }
+
+      if (m.statuses && m.statuses.size) {
+        const wanted = new Set([...m.statuses].map(String));
+        rows = rows.filter((r) => {
+          if (r.attending === false) return wanted.has('not-attending');
+          const cls = r.classification || 'pending';
+          return wanted.has(cls);
+        });
+        labels.push(`Status: ${[...wanted].join(', ')}`);
+      } else {
+        if (!m.includeNotAttending && m.roster === 'all') {
+          rows = rows.filter((r) => r.attending !== false);
+          labels.push('Excluded off-list rows');
+        }
+        if (!m.includePending) {
+          rows = rows.filter((r) => r.attending === false || r.classification);
+        } else if (m.roster !== 'not-attending') {
+          labels.push('Includes pending');
+        }
+      }
+
+      rows.sort((a, b) => {
+        const c = String(a.lastName || '').localeCompare(String(b.lastName || ''), undefined, { sensitivity: 'base' });
+        if (c !== 0) return c;
+        return String(a.firstName || '').localeCompare(String(b.firstName || ''), undefined, { sensitivity: 'base' });
+      });
+
+      const { exportEventPdf } = await import('../pdf.js');
+      exportEventPdf(pdfExport.event, rows, null, {
+        scopeLabel: labels.join(' · ') || 'Filtered attendance list',
+        criteriaLabel: labels.join(' · ') || 'Filtered attendance list',
+        fileSuffix: labels.slice(0, 2).join('-') || 'filtered',
+        includeSection: true,
+        includeYearLevel: true,
+      });
+      setPdfExport(null);
+      await notify({ title: 'PDF exported', message: `Exported ${rows.length} student(s) for "${pdfExport.event.name}".` });
+    } catch (e) {
+      setPdfExport((s) => s ? ({ ...s, busy: false, error: e.message || 'Unable to export PDF.' }) : s);
     }
   }
 
@@ -462,6 +575,7 @@ export default function Events() {
                 {isArchived ? (
                   <>
                     <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}`}>Open</Link>
+                    <button className="btn btn-sm" onClick={() => openEventPdfExport(ev)}>Export PDF…</button>
                     <button className="btn btn-sm" onClick={() => unarchive(ev)}>Unarchive</button>
                     <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
                     <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
@@ -470,6 +584,7 @@ export default function Events() {
                   <>
                     {phase === 'active' && <Link className="btn btn-sm btn-primary" to={`/events/${ev.id}/scan`}>Scan</Link>}
                     <Link className={`btn btn-sm ${phase === 'active' ? '' : 'btn-primary'}`} to={`/events/${ev.id}`}>Open</Link>
+                    <button className="btn btn-sm" onClick={() => openEventPdfExport(ev)}>Export PDF…</button>
                     <button className="btn btn-sm" onClick={() => openEdit(ev)}>Edit</button>
                     {ev.status === 'closed' && <button className="btn btn-sm" onClick={() => archive(ev)} title="Move to the Archived section">Archive</button>}
                     <button className="btn btn-sm btn-danger" onClick={() => remove(ev)}>Delete</button>
@@ -694,6 +809,115 @@ export default function Events() {
             </label>
             {scopeModal.error && <div className="alert alert-error">{scopeModal.error}</div>}
           </form>
+        </Modal>
+      )}
+
+      {pdfExport && (
+        <Modal
+          wide
+          title={`Export attendance PDF — ${pdfExport.event?.name || 'Event'}`}
+          onClose={() => !pdfExport.busy && !pdfExport.loading && setPdfExport(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setPdfExport(null)} disabled={pdfExport.busy || pdfExport.loading}>Cancel</button>
+              <button className="btn btn-primary" onClick={runEventPdfExport} disabled={pdfExport.busy || pdfExport.loading || !pdfExport.options}>
+                {pdfExport.loading ? 'Loading…' : pdfExport.busy ? 'Preparing PDF…' : 'Export PDF'}
+              </button>
+            </>
+          }
+        >
+          {pdfExport.loading ? (
+            <div className="card"><Spinner label="Loading event attendance data…" size="lg" variant="panel" /></div>
+          ) : pdfExport.error && !pdfExport.options ? (
+            <div className="alert alert-error">{pdfExport.error}</div>
+          ) : pdfExport.options && (
+            <div className="form grid-form">
+              <section className="event-form-section span-2">
+                <div className="event-form-section-head">
+                  <h4>Roster scope & criteria</h4>
+                  <p className="muted small">Export a specific list of attendees/students for this event using flexible filters (section, bloc, year level, course/program, status).</p>
+                </div>
+              </section>
+
+              <label>
+                <span>Roster scope</span>
+                <select value={pdfExport.options.roster} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, roster: e.target.value } }))}>
+                  <option value="attending">Attending/on-list only (recommended)</option>
+                  <option value="all">All scoped students (including off-list)</option>
+                  <option value="not-attending">Not attending/off-list only</option>
+                </select>
+              </label>
+              <label>
+                <span>Bloc</span>
+                <select value={pdfExport.options.blocId} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, blocId: e.target.value } }))}>
+                  <option value="">All blocs / no bloc filter</option>
+                  {pdfExport.blocs.map((b) => <option key={b.id} value={b.id}>{b.name}{b.memberCount != null ? ` (${b.memberCount})` : ''}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Section</span>
+                <select value={pdfExport.options.section} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, section: e.target.value } }))}>
+                  <option value="">All sections</option>
+                  {pdfExport.options.sections.map((x) => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Course / Program</span>
+                <select value={pdfExport.options.course} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, course: e.target.value } }))}>
+                  <option value="">All courses/programs</option>
+                  {pdfExport.options.courses.map((x) => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </label>
+              <label>
+                <span>Year level</span>
+                <select value={pdfExport.options.yearLevel} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, yearLevel: e.target.value } }))}>
+                  <option value="">All year levels</option>
+                  {pdfExport.options.years.map((x) => <option key={x} value={x}>{x}</option>)}
+                </select>
+              </label>
+              <label className="checkbox" style={{ alignSelf: 'end' }}>
+                <input type="checkbox" checked={!!pdfExport.options.includePending} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, includePending: e.target.checked } }))} />
+                <span>Include pending (no recorded status yet)</span>
+              </label>
+              {pdfExport.options.roster === 'all' && (
+                <label className="checkbox span-2">
+                  <input type="checkbox" checked={!!pdfExport.options.includeNotAttending} onChange={(e) => setPdfExport((s) => ({ ...s, options: { ...s.options, includeNotAttending: e.target.checked } }))} />
+                  <span>Include off-list/not-attending rows (when no status filter is selected)</span>
+                </label>
+              )}
+
+              <section className="event-form-section span-2" style={{ marginBottom: 0 }}>
+                <div className="event-form-section-head">
+                  <h4>Status filters (optional)</h4>
+                  <p className="muted small">Select one or more statuses to export only matching rows. Leave all unchecked to include statuses based on scope/options above.</p>
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem 1rem', flexWrap: 'wrap' }}>
+                  {[
+                    ['early', 'Early'], ['on-time', 'On-time'], ['present', 'Present'], ['late', 'Late'],
+                    ['excused', 'Excused'], ['absent', 'Absent'], ['pending', 'Pending'], ['not-attending', 'Not attending'],
+                  ].map(([val, label]) => (
+                    <label key={val} className="checkbox">
+                      <input
+                        type="checkbox"
+                        checked={pdfExport.options.statuses.has(val)}
+                        onChange={(e) => setPdfExport((s) => {
+                          const next = new Set(s.options.statuses);
+                          if (e.target.checked) next.add(val); else next.delete(val);
+                          return { ...s, options: { ...s.options, statuses: next } };
+                        })}
+                      />
+                      <span>{label}</span>
+                    </label>
+                  ))}
+                </div>
+              </section>
+
+              {pdfExport.error && <div className="alert alert-error span-2" style={{ marginBottom: 0 }}>{pdfExport.error}</div>}
+              <div className="alert alert-info span-2" style={{ marginBottom: 0 }}>
+                Tip: For exporting a hand-picked set of specific attendees, open the event and use <strong>Export PDF…</strong> in Event Detail with <strong>Selected attendees</strong>.
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>
