@@ -95,7 +95,7 @@ export default function PortalHistory() {
 
   function openRequest(row) {
     setModal(row);
-    setWant('on-time');
+    setWant(row?.status === 'absent' || row?.status === 'pending' ? 'excused' : 'on-time');
     setReason('');
     setFormError('');
   }
@@ -112,7 +112,7 @@ export default function PortalHistory() {
     try {
       await api.studentCreateCorrection({ eventId: modal.eventId, requestedStatus: want, reason: text });
       setModal(null);
-      flash('Correction request sent for review.');
+      flash(want === 'excused' ? 'Excuse request sent for review.' : 'Correction request sent for review.');
       setPage(0);
       const params = { limit: PAGE_SIZE, offset: 0 };
       if (term) params.termId = term;
@@ -136,7 +136,7 @@ export default function PortalHistory() {
       <div className="page-head">
         <div>
           <h2>Attendance history</h2>
-          <p className="muted">Every recorded event, including archived ones.</p>
+          <p className="muted">Review your attendance and submit an excuse or correction request for eligible events.</p>
         </div>
       </div>
 
@@ -216,7 +216,7 @@ export default function PortalHistory() {
                 <th>Event</th>
                 <th>Status</th>
                 <th>Time in</th>
-                <th>Correction</th>
+                <th>Request</th>
                 <th></th>
               </tr>
             </thead>
@@ -251,7 +251,7 @@ export default function PortalHistory() {
                   <td>
                     {r.canRequest ? (
                       <button className="btn btn-sm" onClick={() => openRequest(r)}>
-                        Request correction
+                        {r.status === 'absent' || r.status === 'pending' ? 'Request excuse/correction' : 'Request correction'}
                       </button>
                     ) : null}
                   </td>
@@ -278,7 +278,7 @@ export default function PortalHistory() {
 
       {modal && (
         <Modal
-          title="Request a correction"
+          title="Request excuse or correction"
           onClose={() => setModal(null)}
           footer={
             <>
@@ -286,7 +286,7 @@ export default function PortalHistory() {
                 Cancel
               </button>
               <button className="btn btn-primary" form="portal-corr-form" disabled={busy}>
-                {busy ? 'Sending…' : 'Send request'}
+                {busy ? 'Sending…' : 'Submit request'}
               </button>
             </>
           }
@@ -299,26 +299,27 @@ export default function PortalHistory() {
               </span>
             </p>
             <label>
-              Correct status
+              Requested status
               <select value={want} onChange={(e) => setWant(e.target.value)}>
                 {REQUESTABLE.map((s) => (
                   <option key={s} value={s}>
-                    {STATUS_LABEL[s] || s}
+                    {s === 'excused' ? 'Excused (absence justification)' : (STATUS_LABEL[s] || s)}
                   </option>
                 ))}
               </select>
             </label>
             <label>
-              Reason
+              Reason / note
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
                 maxLength={300}
-                placeholder="What happened? Staff will review your request."
+                placeholder={want === 'excused' ? 'Explain why you were absent or should be excused (e.g. medical, official activity). Staff will review your request.' : 'Explain what happened. Staff will review your request.'}
                 required
               />
             </label>
+            <p className="muted small">Your request will be reviewed by staff. Nothing changes until it is approved.</p>
             {formError && <div className="alert alert-error">{formError}</div>}
           </form>
         </Modal>

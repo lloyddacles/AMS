@@ -64,7 +64,7 @@ export default function Corrections() {
 
   function startRequest(rec) {
     setSelecting(rec);
-    setWantStatus('on-time');
+    setWantStatus(rec?.classification === 'absent' || !rec?.classification ? 'excused' : 'on-time');
     setReason('');
     setFormError('');
   }
@@ -82,7 +82,7 @@ export default function Corrections() {
         reason,
       });
       setSelecting(null);
-      setToast('Request submitted — staff will review it shortly.');
+      setToast(wantStatus === 'excused' ? 'Excuse request submitted — staff will review it shortly.' : 'Request submitted — staff will review it shortly.');
       setTimeout(() => setToast(''), 4000);
       const refreshed = await api.correctionLookup(creds.studentNo, creds.name);
       setData(refreshed);
@@ -108,8 +108,8 @@ export default function Corrections() {
           <LiveClock className="public-clock" />
           <div className="login-brand">
             <span className="brand-mark lg"><img src="/logo.png" alt="AttendX logo" /></span>
-            <h1>Attendance Corrections</h1>
-            <p className="muted">Spotted a wrong or missing check-in? Look yourself up and send a correction request.</p>
+            <h1>Excuse & Attendance Corrections</h1>
+            <p className="muted">Spotted a wrong or missing check-in, or need to submit an absence excuse? Look yourself up and send a request for staff review.</p>
           </div>
           <form className="form" onSubmit={lookup}>
             <label>
@@ -182,7 +182,9 @@ export default function Corrections() {
                   {r.classification ? STATUS_LABEL[r.classification] || r.classification : 'Not marked'}
                 </span>
                 {r.canRequest && (
-                  <button className="btn btn-sm" onClick={() => startRequest(r)}>Request correction</button>
+                  <button className="btn btn-sm" onClick={() => startRequest(r)}>
+                    {r.classification === 'absent' || !r.classification ? 'Request excuse/correction' : 'Request correction'}
+                  </button>
                 )}
               </div>
             </li>
@@ -194,7 +196,7 @@ export default function Corrections() {
 
       {selecting && (
         <Modal
-          title={`Request correction — ${selecting.name}`}
+          title={`Request excuse/correction — ${selecting.name}`}
           onClose={() => setSelecting(null)}
           footer={
             <>
@@ -213,26 +215,26 @@ export default function Corrections() {
               </span>
             </p>
             <label>
-              What should your status be? *
+              Requested status *
               <select value={wantStatus} onChange={(e) => setWantStatus(e.target.value)}>
                 {REQUESTABLE.map((s) => (
-                  <option key={s} value={s}>{STATUS_LABEL[s]}</option>
+                  <option key={s} value={s}>{s === 'excused' ? 'Excused (absence justification)' : STATUS_LABEL[s]}</option>
                 ))}
               </select>
             </label>
             <label>
-              Why is this correction needed? *
+              Reason / note *
               <textarea
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
                 rows={3}
                 maxLength={300}
-                placeholder="e.g. I attended the whole session but my QR was not scanned."
+                placeholder={wantStatus === 'excused' ? 'Explain why you were absent or should be excused (e.g. medical, official activity).' : 'Explain what happened and why this correction is needed.'}
                 required
               />
             </label>
             {formError && <div className="alert alert-error">{formError}</div>}
-            <p className="muted small">Your request goes to the organizers for review. Nothing changes until it is approved.</p>
+            <p className="muted small">Your request goes to staff for review. Nothing changes until it is approved.</p>
           </form>
         </Modal>
       )}

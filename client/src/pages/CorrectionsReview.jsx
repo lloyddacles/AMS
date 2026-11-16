@@ -114,8 +114,8 @@ export default function CorrectionsReview() {
     <div className="page">
       <PageHeader
         eyebrow="Review queue"
-        title="Correction Requests"
-        subtitle="Students submit these themselves. Approving applies the change to attendance."
+        title="Excuse & Correction Requests"
+        subtitle="Review student-submitted excuse and attendance correction requests. Approving applies the requested status to attendance."
       />
 
       <div className="stat-grid">
@@ -155,7 +155,7 @@ export default function CorrectionsReview() {
                 <th>Event</th>
                 <th>Current</th>
                 <th>Requested</th>
-                <th>Reason</th>
+                <th>Reason / Note</th>
                 <th>Submitted</th>
                 <th className="right">Actions</th>
               </tr>
@@ -177,9 +177,12 @@ export default function CorrectionsReview() {
                     </span>
                   </td>
                   <td>
-                    <span className={`pill ${STATUS_PILL[r.requestedStatus] || 'pill-blue'}`}>
-                      {STATUS_LABEL[r.requestedStatus] || r.requestedStatus}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                      <span className={`pill ${STATUS_PILL[r.requestedStatus] || 'pill-blue'}`}>
+                        {STATUS_LABEL[r.requestedStatus] || r.requestedStatus}
+                      </span>
+                      <span className="muted small">{r.requestedStatus === 'excused' ? 'Excuse request' : 'Correction'}</span>
+                    </div>
                   </td>
                   <td style={{ maxWidth: '18rem' }}>
                     <div className="small">{r.reason}</div>
@@ -250,6 +253,7 @@ export default function CorrectionsReview() {
               <p className="muted small">
                 Approving sets this student's status to{' '}
                 <strong>{STATUS_LABEL[reviewing.row.requestedStatus] || reviewing.row.requestedStatus}</strong> for this event.
+                {reviewing.row.requestedStatus === 'excused' && ' The submitted reason will be recorded as the excuse note on attendance.'}
                 {reviewing.row.eventStatus === 'closed' && ' The event is closed — its final report will be refreshed.'}
               </p>
             ) : (

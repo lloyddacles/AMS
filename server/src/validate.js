@@ -107,8 +107,8 @@ export const schemas = {
     eventId: z.coerce.number().int().positive(),
     studentNo: trimmed(50).min(1),
     name: trimmed(200).min(1),
-    requestedStatus: z.enum(['early', 'on-time', 'late', 'present', 'absent', 'excused']),
-    reason: trimmed(1000).min(1, 'Please provide a reason'),
+    requestedStatus: z.enum(['early', 'on-time', 'late', 'present', 'excused']),
+    reason: trimmed(300).min(3, 'Reason must be between 3 and 300 characters'),
   }),
   correctionDecision: z.object({
     note: z.string().trim().max(1000).optional().nullable(),

@@ -53,12 +53,12 @@ export default function PortalCorrections() {
     <div className="portal-page">
       <div className="page-head">
         <div>
-          <h2>My correction requests</h2>
-          <p className="muted">Track what you asked for and how staff resolved it.</p>
+          <h2>My excuse & correction requests</h2>
+          <p className="muted">Submit and track excuse or attendance correction requests, including staff review decisions.</p>
         </div>
         <div className="head-actions">
-          <Link className="btn btn-sm" to="/portal/history">
-            + New request from history
+          <Link className="btn btn-sm btn-primary" to="/portal/history">
+            + Submit from attendance history
           </Link>
         </div>
       </div>
@@ -82,10 +82,11 @@ export default function PortalCorrections() {
         ) : rows.length === 0 ? (
           <div className="empty">
             <p className="muted">
-              {tab === 'pending' ? 'No requests awaiting review.' : 'Nothing here yet.'}
+              {tab === 'pending' ? 'No requests awaiting review.' : 'No requests found.'}
             </p>
+            <p className="muted small">To submit an excuse or correction, choose an eligible event from your attendance history.</p>
             <Link className="btn btn-sm" to="/portal/history">
-              Browse attendance history
+              Go to attendance history
             </Link>
           </div>
         ) : (
@@ -108,9 +109,12 @@ export default function PortalCorrections() {
                   </td>
                   <td>{r.eventDate}</td>
                   <td>
-                    <span className={`pill ${STATUS_PILL[r.requestedStatus] || 'pill-gray'}`}>
-                      {STATUS_LABEL[r.requestedStatus] || r.requestedStatus}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', alignItems: 'flex-start' }}>
+                      <span className={`pill ${STATUS_PILL[r.requestedStatus] || 'pill-gray'}`}>
+                        {STATUS_LABEL[r.requestedStatus] || r.requestedStatus}
+                      </span>
+                      <span className="muted small">{r.requestedStatus === 'excused' ? 'Excuse request' : 'Correction request'}</span>
+                    </div>
                   </td>
                   <td className="portal-reason">{r.reason}</td>
                   <td>
