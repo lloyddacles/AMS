@@ -79,6 +79,8 @@ export default function EventDetail() {
   const [continueForm, setContinueForm] = useState({ eventDate: '', startTime: '', endTime: '', name: '' });
   const [blocs, setBlocs] = useState([]);
   const [selectedBlocIds, setSelectedBlocIds] = useState([]);
+  const [pdfModal, setPdfModal] = useState(null); // export options state
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   async function load() {
     try {
@@ -159,11 +161,113 @@ export default function EventDetail() {
   }
 
   async function exportPdf() {
+    // open flexible export modal (defaults to attending list)
+    const sections = [...new Set(attendance.map((r) => String(r.section || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const courses = [...new Set(attendance.map((r) => String(r.course || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    const years = [...new Set(attendance.map((r) => String(r.yearLevel || '').trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    setPdfModal({
+      roster: 'attending', // attending | all | not-attending | selected
+      section: '',
+      course: '',
+      yearLevel: '',
+      blocId: '',
+      statuses: new Set(), // classification/status filters
+      includePending: false,
+      includeNotAttending: false,
+      sections,
+      courses,
+      years,
+    });
+  }
+
+  async function runEventPdfExport() {
+    if (!pdfModal) return;
+    setPdfBusy(true);
     try {
+      let rows = Array.isArray(attendance) ? [...attendance] : [];
+      const labels = [];
+
+      // bloc filter (fetch members)
+      if (pdfModal.blocId) {
+        const bloc = blocs.find((b) => String(b.id) === String(pdfModal.blocId));
+        const membersRes = await api.getBlocMembers(pdfModal.blocId);
+        const memberIds = new Set((membersRes?.members || []).map((m) => Number(m.studentId)));
+        rows = rows.filter((r) => memberIds.has(Number(r.studentId)));
+        labels.push(`Bloc: ${bloc?.name || pdfModal.blocId}`);
+      }
+
+      if (pdfModal.roster === 'attending') {
+        rows = rows.filter((r) => r.attending !== false);
+        labels.push('Attending/on-list only');
+      } else if (pdfModal.roster === 'not-attending') {
+        rows = rows.filter((r) => r.attending === false);
+        labels.push('Not attending/off-list only');
+      } else if (pdfModal.roster === 'selected') {
+        const sel = attendeeSel instanceof Set ? attendeeSel : new Set();
+        rows = rows.filter((r) => sel.has(Number(r.studentId)));
+        labels.push(`Selected attendees (${sel.size})`);
+      } else {
+        labels.push('All scoped students');
+      }
+
+      if (pdfModal.section) {
+        rows = rows.filter((r) => String(r.section || '').trim() === pdfModal.section);
+        labels.push(`Section: ${pdfModal.section}`);
+      }
+      if (pdfModal.course) {
+        rows = rows.filter((r) => String(r.course || '').trim() === pdfModal.course);
+        labels.push(`Course/Program: ${pdfModal.course}`);
+      }
+      if (pdfModal.yearLevel) {
+        rows = rows.filter((r) => String(r.yearLevel || '').trim() === pdfModal.yearLevel);
+        labels.push(`Year level: ${pdfModal.yearLevel}`);
+      }
+
+      if (pdfModal.statuses && pdfModal.statuses.size) {
+        const wanted = new Set([...pdfModal.statuses].map(String));
+        rows = rows.filter((r) => {
+          if (r.attending === false) return wanted.has('not-attending');
+          const cls = r.classification || 'pending';
+          return wanted.has(cls);
+        });
+        labels.push(`Status: ${[...wanted].join(', ')}`);
+      } else {
+        if (!pdfModal.includeNotAttending && pdfModal.roster === 'all') {
+          rows = rows.filter((r) => r.attending !== false);
+          labels.push('Excluded off-list rows');
+        }
+        if (!pdfModal.includePending) {
+          rows = rows.filter((r) => r.attending === false || r.classification);
+        } else if (pdfModal.roster !== 'not-attending') {
+          labels.push('Includes pending');
+        }
+      }
+
+      rows.sort((a, b) => {
+        const la = String(a.lastName || '');
+        const lb = String(b.lastName || '');
+        const c = la.localeCompare(lb, undefined, { sensitivity: 'base' });
+        if (c !== 0) return c;
+        return String(a.firstName || '').localeCompare(String(b.firstName || ''), undefined, { sensitivity: 'base' });
+      });
+
       const { exportEventPdf } = await import('../pdf.js');
-      exportEventPdf(event, attendance, event.reportSummary);
+      exportEventPdf(event, rows, null, {
+        scopeLabel: labels.join(' · ') || 'Filtered attendance list',
+        criteriaLabel: labels.join(' · ') || 'Filtered attendance list',
+        fileSuffix: labels.slice(0, 2).join('-') || 'filtered',
+        includeSection: true,
+        includeYearLevel: true,
+      });
+      setPdfModal(null);
+      flash(`Exported ${rows.length} student(s) to PDF`);
     } catch (e) {
-      alert(e.message);
+      alert(e.message || 'Unable to export PDF');
+    } finally {
+      setPdfBusy(false);
     }
   }
 
@@ -471,7 +575,7 @@ export default function EventDetail() {
             </>
           )}
           <button className="btn" onClick={() => exportCsv('event', id)}>Export CSV</button>
-          <button className="btn" onClick={exportPdf}>Export PDF</button>
+          <button className="btn" onClick={exportPdf}>Export PDF…</button>
           <button
             className="btn"
             title="Blank paper sign-in sheet for this event"
@@ -951,6 +1055,115 @@ export default function EventDetail() {
           </form>
         </Modal>
       )}
+      {pdfModal && (
+        <Modal
+          wide
+          title="Export attendance PDF"
+          onClose={() => !pdfBusy && setPdfModal(null)}
+          footer={
+            <>
+              <button className="btn" onClick={() => setPdfModal(null)} disabled={pdfBusy}>Cancel</button>
+              <button className="btn btn-primary" onClick={runEventPdfExport} disabled={pdfBusy}>
+                {pdfBusy ? 'Preparing PDF…' : 'Export PDF'}
+              </button>
+            </>
+          }
+        >
+          <div className="form grid-form">
+            <section className="event-form-section span-2">
+              <div className="event-form-section-head">
+                <h4>Roster scope & criteria</h4>
+                <p className="muted small">Export a specific list of attendees/students for this event using flexible filters (section, bloc, year level, course/program, status, selection).</p>
+              </div>
+            </section>
+
+            <label>
+              <span>Roster scope</span>
+              <select value={pdfModal.roster} onChange={(e) => setPdfModal((m) => ({ ...m, roster: e.target.value }))}>
+                <option value="attending">Attending/on-list only (recommended)</option>
+                <option value="all">All scoped students (including off-list)</option>
+                <option value="not-attending">Not attending/off-list only</option>
+                <option value="selected">Selected attendees (from Attendees tab checkboxes)</option>
+              </select>
+            </label>
+            <label>
+              <span>Bloc</span>
+              <select value={pdfModal.blocId} onChange={(e) => setPdfModal((m) => ({ ...m, blocId: e.target.value }))}>
+                <option value="">All blocs / no bloc filter</option>
+                {blocs.map((b) => <option key={b.id} value={b.id}>{b.name}{b.memberCount != null ? ` (${b.memberCount})` : ''}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Section</span>
+              <select value={pdfModal.section} onChange={(e) => setPdfModal((m) => ({ ...m, section: e.target.value }))}>
+                <option value="">All sections</option>
+                {pdfModal.sections.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Course / Program</span>
+              <select value={pdfModal.course} onChange={(e) => setPdfModal((m) => ({ ...m, course: e.target.value }))}>
+                <option value="">All courses/programs</option>
+                {pdfModal.courses.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label>
+              <span>Year level</span>
+              <select value={pdfModal.yearLevel} onChange={(e) => setPdfModal((m) => ({ ...m, yearLevel: e.target.value }))}>
+                <option value="">All year levels</option>
+                {pdfModal.years.map((s) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </label>
+            <label className="checkbox" style={{ alignSelf: 'end' }}>
+              <input type="checkbox" checked={!!pdfModal.includePending} onChange={(e) => setPdfModal((m) => ({ ...m, includePending: e.target.checked }))} />
+              <span>Include pending (no recorded status yet)</span>
+            </label>
+            {pdfModal.roster === 'all' && (
+              <label className="checkbox span-2">
+                <input type="checkbox" checked={!!pdfModal.includeNotAttending} onChange={(e) => setPdfModal((m) => ({ ...m, includeNotAttending: e.target.checked }))} />
+                <span>Include off-list/not-attending rows (when no status filter is selected)</span>
+              </label>
+            )}
+
+            <section className="event-form-section span-2" style={{ marginBottom: 0 }}>
+              <div className="event-form-section-head">
+                <h4>Status filters (optional)</h4>
+                <p className="muted small">Select one or more statuses to export only matching rows. Leave all unchecked to include statuses based on scope/options above.</p>
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem 1rem', flexWrap: 'wrap' }}>
+                {[
+                  ['early', 'Early'],
+                  ['on-time', 'On-time'],
+                  ['present', 'Present'],
+                  ['late', 'Late'],
+                  ['excused', 'Excused'],
+                  ['absent', 'Absent'],
+                  ['pending', 'Pending'],
+                  ['not-attending', 'Not attending'],
+                ].map(([val, label]) => (
+                  <label key={val} className="checkbox">
+                    <input
+                      type="checkbox"
+                      checked={pdfModal.statuses.has(val)}
+                      onChange={(e) => setPdfModal((m) => {
+                        const next = new Set(m.statuses);
+                        if (e.target.checked) next.add(val); else next.delete(val);
+                        return { ...m, statuses: next };
+                      })}
+                    />
+                    <span>{label}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+
+            <div className="alert alert-info span-2" style={{ marginBottom: 0 }}>
+              Tip: Use the <strong>Attendees</strong> tab to select specific students/sections first, then choose <strong>Selected attendees</strong>. Bloc filter uses current bloc membership.
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {excuseFor && (
         <Modal
           title={`Mark excused — ${excuseFor.firstName || ''} ${excuseFor.lastName || ''}`.trim()}

@@ -112,25 +112,63 @@ function writeParagraph(doc, y, text, opts = {}) {
   return y + 1;
 }
 
-export function exportEventPdf(event, rows, summary) {
+function computeEventPdfSummary(rows = []) {
+  const list = Array.isArray(rows) ? rows : [];
+  const totalStudents = list.length;
+  let early = 0, onTime = 0, late = 0, present = 0, excused = 0, absent = 0, notAttending = 0, pending = 0;
+  for (const r of list) {
+    if (r?.attending === false) { notAttending += 1; continue; }
+    const cls = r?.classification;
+    if (cls === 'early') early += 1;
+    else if (cls === 'on-time') onTime += 1;
+    else if (cls === 'late') late += 1;
+    else if (cls === 'present') present += 1;
+    else if (cls === 'excused') excused += 1;
+    else if (cls === 'absent') absent += 1;
+    else pending += 1;
+  }
+  const attended = early + onTime + late + present;
+  const rate = totalStudents ? Math.round((attended / totalStudents) * 100) : 0;
+  return { attended, totalStudents, rate, early, onTime, late, present, excused, absent, notAttending, pending };
+}
+
+export function exportEventPdf(event, rows, summaryOrOptions = null, optionsArg = null) {
+  const options = (summaryOrOptions && !Array.isArray(summaryOrOptions) && !('attended' in summaryOrOptions) && !('totalStudents' in summaryOrOptions))
+    ? summaryOrOptions
+    : (optionsArg || {});
+  const providedSummary = (summaryOrOptions && typeof summaryOrOptions === 'object' && ('attended' in summaryOrOptions || 'totalStudents' in summaryOrOptions))
+    ? summaryOrOptions
+    : null;
+
+  const list = Array.isArray(rows) ? rows : [];
+  const summary = providedSummary || computeEventPdfSummary(list);
   const doc = new jsPDF({ unit: 'mm', format: 'a4' });
-  const meta = [
-    event.eventDate,
-    event.startTime ? `${event.startTime}${event.endTime ? `–${event.endTime}` : ''}` : null,
-    event.location,
-  ].filter(Boolean).join('  ·  ');
-  let y = header(doc, event.name, meta);
+  const metaParts = [
+    event?.eventDate,
+    event?.startTime ? `${event.startTime}${event.endTime ? `–${event.endTime}` : ''}` : null,
+    event?.location,
+  ].filter(Boolean);
+  if (options.scopeLabel) metaParts.push(options.scopeLabel);
+  const meta = metaParts.join('  ·  ');
+  let y = header(doc, event?.name || 'Event Attendance', meta || null);
+
+  if (options.criteriaLabel) {
+    y = writeParagraph(doc, y, `Export criteria: ${options.criteriaLabel}`, { fontSize: 9, color: MUTED });
+  }
 
   if (summary) {
     const stats = [
-      ['Attended', `${summary.attended}/${summary.totalStudents}`],
+      ['Students', `${summary.totalStudents}`],
+      ['Attended', `${summary.attended}`],
       ['Rate', `${summary.rate}%`],
-      ['Early', summary.early],
-      ['On-time', summary.onTime],
-      ['Late', summary.late],
-      ['Excused', summary.excused],
-      ['Absent', summary.absent],
+      ['Early', summary.early ?? 0],
+      ['On-time', summary.onTime ?? 0],
+      ['Late', summary.late ?? 0],
+      ['Excused', summary.excused ?? 0],
+      ['Absent', summary.absent ?? 0],
     ];
+    if ((summary.notAttending || 0) > 0) stats.push(['Not attending', summary.notAttending]);
+    if ((summary.pending || 0) > 0) stats.push(['Pending', summary.pending]);
     autoTable(doc, {
       startY: y,
       body: [stats.map(([k, v]) => `${k}: ${v}`)],
@@ -142,28 +180,43 @@ export function exportEventPdf(event, rows, summary) {
     y = doc.lastAutoTable.finalY + 4;
   }
 
+  const includeSection = options.includeSection ?? list.some((r) => String(r?.section || '').trim());
+  const includeYear = options.includeYearLevel ?? list.some((r) => String(r?.yearLevel || '').trim());
+  const head = ['Student No', 'Name', 'Course'];
+  if (includeSection) head.push('Section');
+  if (includeYear) head.push('Year');
+  head.push('Status', 'Method', 'Time In', 'Time Out');
+
   autoTable(doc, {
     startY: y,
-    head: [['Student No', 'Name', 'Course', 'Status', 'Method', 'Time In', 'Time Out']],
-    body: rows.map((r) => [
-      r.studentNo,
-      `${r.lastName}, ${r.firstName}`,
-      r.course || '—',
-      r.attending === false ? 'Not attending' : classificationLabel(r.classification),
-      r.method || '—',
-      fmtTime(r.checkedInAt),
-      fmtTime(r.checkedOutAt),
-    ]),
+    head: [head],
+    body: list.map((r) => {
+      const row = [
+        r.studentNo || '—',
+        `${r.lastName || ''}, ${r.firstName || ''}`.replace(/^,\s*/, '') || '—',
+        r.course || '—',
+      ];
+      if (includeSection) row.push(r.section || '—');
+      if (includeYear) row.push(r.yearLevel || '—');
+      row.push(
+        r.attending === false ? 'Not attending' : classificationLabel(r.classification),
+        r.method || '—',
+        fmtTime(r.checkedInAt),
+        fmtTime(r.checkedOutAt),
+      );
+      return row;
+    }),
     theme: 'grid',
-    headStyles: { fillColor: PRIMARY, fontSize: 9 },
-    styles: { fontSize: 8, cellPadding: 1.6 },
+    headStyles: { fillColor: PRIMARY, fontSize: 8.5 },
+    styles: { fontSize: 7.8, cellPadding: 1.4 },
     alternateRowStyles: { fillColor: [248, 250, 252] },
-    margin: { left: 14, right: 14 },
+    margin: { left: 10, right: 10 },
   });
 
   footer(doc);
-  const safe = event.name.replace(/[^a-z0-9]+/gi, '-').toLowerCase();
-  doc.save(`attendance-${safe}-${event.eventDate}.pdf`);
+  const safe = String(event?.name || 'event').replace(/[^a-z0-9]+/gi, '-').toLowerCase();
+  const suffix = options.fileSuffix ? `-${String(options.fileSuffix).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}` : '';
+  doc.save(options.fileName || `attendance-${safe}-${event?.eventDate || 'export'}${suffix}.pdf`);
 }
 
 export function exportAtRiskPdf(students, threshold, totalEvents) {
